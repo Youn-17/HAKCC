@@ -1,0 +1,200 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="02_knowledge_building_en" name="02 knowledge_building [en]">
+    <mxGraphModel dx="800" dy="600" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="800" pageHeight="600" background="#FFFFFF" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FFFFFF;strokeColor=none;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="0" y="0" width="800" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="How public ideas develop over time" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=21;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="28" y="16" width="744" height="31" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="Shared questions, Build-on moves, evidence, and revisions advance community knowledge" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#697482;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="28" y="49" width="744" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=none;endFill=1;strokeColor=#ABB5C0;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="28" y="80" as="sourcePoint" />
+            <mxPoint x="772" y="80" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="6" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=none;endFill=1;strokeColor=#ABB5C0;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="28" y="563" as="sourcePoint" />
+            <mxPoint x="772" y="563" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="7" value="HAKCC · Human–AI Knowledge Collaboration Commons  |  Mechanism schematic; local implementation" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#697482;fontFamily=Arial;fontSize=8.5;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="28" y="574" width="710" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="02" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=9;fontStyle=1;align=right;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="740" y="574" width="32" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FAFBFC;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;dashed=1;dashPattern=5 4;" parent="1" vertex="1">
+          <mxGeometry x="28" y="94" width="744" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="(a) Questions and multimodal contributions" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="40" y="102" width="720" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#A1C1E2;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="43" y="130" width="188" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="Shared inquiry problem" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="53" y="138" width="168" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="231" y="150" as="sourcePoint" />
+            <mxPoint x="257" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="14" value="Text Note" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#DDEDD1;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="260" y="138" width="93" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="Drawing" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FBE8D7;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="365" y="138" width="89" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="Files / links" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#BFDCE0;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="466" y="138" width="123" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="Epistemic scaffolds" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#CFBCDA;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="601" y="138" width="155" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="18" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FAFBFC;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;dashed=1;dashPattern=5 4;" parent="1" vertex="1">
+          <mxGeometry x="28" y="202" width="450" height="309" as="geometry" />
+        </mxCell>
+        <mxCell id="19" value="(b) Public, improvable idea network" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="40" y="210" width="426" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="20" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#A1C1E2;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="46" y="246" width="119" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="n1 Initial&#10;explanation" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.0;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="56" y="254" width="99" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="My theory…" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="56" y="281" width="99" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="23" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FBE8D7;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="299" y="246" width="161" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="24" value="n2 A new question" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="309" y="254" width="141" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="25" value="I need to understand…" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="309" y="281" width="141" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="26" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#DDEDD1;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="46" y="387" width="119" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="27" value="n3 Bring evidence" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.25;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="56" y="395" width="99" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="28" value="This evidence&#10;comes from…" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.0;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="56" y="422" width="99" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="29" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#CFBCDA;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="299" y="387" width="161" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="30" value="n4 Better explanation" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="309" y="395" width="141" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="I revised my earlier idea…" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="309" y="422" width="141" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="32" value="question" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="299" y="277" as="sourcePoint" />
+            <mxPoint x="165" y="277" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="33" value="evidence" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="105" y="387" as="sourcePoint" />
+            <mxPoint x="105" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="34" value="extend" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="299" y="419" as="sourcePoint" />
+            <mxPoint x="165" y="419" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="35" value="clarify" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="379" y="387" as="sourcePoint" />
+            <mxPoint x="379" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="36" value="Each new Note retains its author and move;&#10;public ideas invite peer response, revision, and reinterpretation." style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="46" y="463" width="414" height="33" as="geometry" />
+        </mxCell>
+        <mxCell id="37" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FAFBFC;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;dashed=1;dashPattern=5 4;" parent="1" vertex="1">
+          <mxGeometry x="498" y="202" width="274" height="309" as="geometry" />
+        </mxCell>
+        <mxCell id="38" value="(c) Moves and traceability" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="510" y="210" width="250" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="39" value="Extend" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#DDEDD1;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="512" y="243" width="116" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="40" value="Clarify" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#A1C1E2;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="636" y="243" width="116" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="Question" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FBE8D7;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="512" y="277" width="116" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="42" value="Challenge" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#EDB5B0;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="636" y="277" width="116" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="43" value="Evidence" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#CFBCDA;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="512" y="311" width="116" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="44" value="Synthesize" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#BFDCE0;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=10;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="636" y="311" width="116" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="45" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FFFFFF;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="512" y="363" width="246" height="63" as="geometry" />
+        </mxCell>
+        <mxCell id="46" value="" style="rounded=0;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FFFFFF;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="522" y="375" width="14.040000000000001" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="47" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=none;endFill=1;strokeColor=#303643;strokeWidth=0.8;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="524.7" y="380.4" as="sourcePoint" />
+            <mxPoint x="533.16" y="380.4" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="48" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=none;endFill=1;strokeColor=#303643;strokeWidth=0.8;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="524.7" y="384.36" as="sourcePoint" />
+            <mxPoint x="533.16" y="384.36" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="49" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=none;endFill=1;strokeColor=#303643;strokeWidth=0.8;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="524.7" y="388.32" as="sourcePoint" />
+            <mxPoint x="533.16" y="388.32" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="50" value="Revisions &amp; participation" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="552" y="371" width="196" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="51" value="Edits / reads / relations / feedback" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="522" y="398" width="226" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="52" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#DDEDD1;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="512" y="444" width="246" height="51" as="geometry" />
+        </mxCell>
+        <mxCell id="53" value="Promising ideas &amp; knowledge gaps" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="522" y="452" width="226" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="54" value="Illustrated direction matches storage: new Note → prior Note being addressed. Colors are figure-specific." style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#697482;fontFamily=Arial;fontSize=9;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="34" y="539" width="732" height="16" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

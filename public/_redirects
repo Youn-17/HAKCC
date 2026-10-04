@@ -1,0 +1,7 @@
+# Missing assets must 404, never fall back to index.html — the fallback HTML
+# was edge-cached under asset URLs (with the immutable header from _headers)
+# during a deploy propagation window, permanently white-screening clients.
+/assets/* /404-asset 404
+
+# SPA fallback
+/* /index.html 200

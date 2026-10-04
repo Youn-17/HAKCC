@@ -1,0 +1,136 @@
+{
+  "component": "api",
+  "checked_on": "2026-10-04",
+  "summary": {
+    "info": 0,
+    "low": 0,
+    "moderate": 3,
+    "high": 4,
+    "critical": 0,
+    "total": 7
+  },
+  "packages": [
+    {
+      "name": "body-parser",
+      "severity": "moderate",
+      "direct": false,
+      "range": "<=1.20.6",
+      "advisories": [
+        {
+          "title": "body-parser vulnerable to denial of service when invalid limit value silently disables size enforcement",
+          "url": "https://github.com/advisories/GHSA-v422-hmwv-36x6",
+          "range": "<1.20.6"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "brace-expansion",
+      "severity": "high",
+      "direct": false,
+      "range": "3.0.0 - 5.0.11",
+      "advisories": [
+        {
+          "title": "brace-expansion: DoS via exponential-time expansion of consecutive non-expanding {} groups",
+          "url": "https://github.com/advisories/GHSA-3jxr-9vmj-r5cp",
+          "range": ">=3.0.0 <5.0.7"
+        },
+        {
+          "title": "brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash",
+          "url": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+          "range": ">=4.0.0 <5.0.8"
+        },
+        {
+          "title": "brace-expansion: DoS via unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation",
+          "url": "https://github.com/advisories/GHSA-rgw5-rvv9-x895",
+          "range": ">=4.0.0 <5.0.9"
+        },
+        {
+          "title": "brace-expansion: Quadratic-time expansion of the `{a},b}` rewrite causes CPU denial of service",
+          "url": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+          "range": ">=4.0.0 <5.0.12"
+        },
+        {
+          "title": "brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion",
+          "url": "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+          "range": ">=4.0.0 <5.0.11"
+        },
+        {
+          "title": "brace-expansion: DoS via uncontrolled recursion in parseCommaParts causing stack exhaustion",
+          "url": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+          "range": ">=4.0.0 <5.0.10"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "braces",
+      "severity": "high",
+      "direct": false,
+      "range": "*",
+      "advisories": [
+        {
+          "title": "braces vulnerable to stack-exhaustion denial of service through deeply nested patterns",
+          "url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+          "range": "<=3.0.3"
+        }
+      ],
+      "npm_reported_fix": {
+        "name": "nodemon",
+        "version": "1.14.10",
+        "isSemVerMajor": true
+      }
+    },
+    {
+      "name": "chokidar",
+      "severity": "high",
+      "direct": false,
+      "range": "2.0.0 - 3.6.0",
+      "advisories": [],
+      "npm_reported_fix": {
+        "name": "nodemon",
+        "version": "1.14.10",
+        "isSemVerMajor": true
+      }
+    },
+    {
+      "name": "express",
+      "severity": "moderate",
+      "direct": true,
+      "range": "4.22.2",
+      "advisories": [],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "nodemon",
+      "severity": "high",
+      "direct": true,
+      "range": "0.0.0-development || >=1.14.11",
+      "advisories": [],
+      "npm_reported_fix": {
+        "name": "nodemon",
+        "version": "1.14.10",
+        "isSemVerMajor": true
+      }
+    },
+    {
+      "name": "qs",
+      "severity": "moderate",
+      "direct": false,
+      "range": "2.2.5 - 6.15.3",
+      "advisories": [
+        {
+          "title": "qs array-limit bypass via bracket-key comma parsing",
+          "url": "https://github.com/advisories/GHSA-x5fp-wj9c-mxmx",
+          "range": ">=6.14.2 <=6.15.3"
+        },
+        {
+          "title": "qs: Denial of Service via Attacker Controlled isBuffer",
+          "url": "https://github.com/advisories/GHSA-4mjr-xmp4-gh2g",
+          "range": ">=2.2.5 <6.16.0"
+        }
+      ],
+      "npm_reported_fix": true
+    }
+  ]
+}

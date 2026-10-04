@@ -1,0 +1,684 @@
+@import "tailwindcss";
+@import "./styles/remixicon/remixicon.css";
+
+/* Enable class-based dark mode (ThemeContext toggles .dark on <html>) */
+@variant dark (&:where(.dark, .dark *));
+
+/* ── Safe area insets for native mobile (Capacitor) ──
+   这两条写在层外，优先级高过所有工具类：和 py-* / pt-* / pb-* 放在同一个元素上，
+   电脑上 env() 是 0，会把那一侧的内边距清零（笔记页顶栏、底栏曾经这样贴边）。
+   要内边距又要让出安全区的，写 pb-[max(0.625rem,env(safe-area-inset-bottom))]。safeAreaPadding.test.ts 会查。 */
+.safe-area-top { padding-top: env(safe-area-inset-top, 0); }
+.safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
+
+/* ── 界面字号 ────────────────────────────────────────────────
+   全站文字与间距都用 rem，只改根字号就整体放大。定在 19px：有学生看不清小字，
+   比原来的 16px 大约大两成。手机屏窄，放到 18px，免得侧栏和工具条挤不下。
+   画布上的笔记卡片按像素坐标排布，不跟随（画布自己有缩放）。 */
+html { font-size: 19px; }
+@media (max-width: 639px) {
+  html { font-size: 18px; }
+}
+
+/* ── Custom base styles ────────────────────────────────────── */
+
+body {
+  font-family: Arial, 'Noto Sans SC', 'Atkinson Hyperlegible', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #fafaf9;
+  color: #0c0a09;
+}
+
+.dark body {
+  background: #0a0f1a;
+  color: #f5f5f4;
+}
+
+.font-academic {
+  font-family: 'Crimson Pro', Georgia, serif;
+}
+
+/* ── 笔记正文字体 ────────────────────────────────────────────
+   中文宋体、英文 Times New Roman。Times New Roman 没有汉字字形，
+   浏览器会自动让汉字落到后面的宋体上 —— 一条字体栈就同时管住两种文字。
+   界面本身（按钮、菜单、面板）仍用无衬线，只有笔记内容走这套。 */
+.note-prose,
+.note-prose input,
+.note-prose textarea {
+  font-family: 'Times New Roman', Times, 'SimSun', '宋体', 'Songti SC', 'STSong', 'Noto Serif SC', serif;
+}
+
+/* ── 笔记里的支架标记：支架[学生写的内容] ──────────────────────
+   括号外是课堂给的话头，括号里是学生自己的话。研究编码认 data-scaffold-id，
+   不认这里的样式，所以样式随时能改。 */
+[data-scaffold-id] {
+  margin: 0.9em 0 0.5em;
+  line-height: inherit;
+}
+
+[data-scaffold-tag] {
+  font-weight: 600;
+  /* 话头比正文小一号：它是课堂给的框，学生写的字才是主体 */
+  font-size: 0.86em;
+  color: #000080;
+  /* 话头和学生的话之间留一口气，原来紧贴着括号 */
+  margin-right: 0.45em;
+}
+
+.dark [data-scaffold-tag] {
+  color: #93b4ff;
+}
+
+/* 只有方括号本身是灰的：它是边界提示，不是内容 */
+/* 括号和话头同色同重：它们是一体的，都是课堂给的框 */
+[data-scaffold-slot],
+[data-scaffold-bracket] {
+  color: #000080;
+  font-weight: 600;
+  font-size: 0.92em;
+}
+/* 只有括号本身不可选。以前把 user-select:none 写在外层 slot 上，
+   输入槽跟着算成 none，学生在支架里拖不出选区，也就没法选中一段删掉或改写。 */
+[data-scaffold-bracket] { user-select: none; }
+.dark [data-scaffold-slot],
+.dark [data-scaffold-bracket] { color: #93b4ff; }
+
+/* 学生的话与两侧括号之间留出明显的空 */
+[data-scaffold-input] {
+  margin: 0 0.5em;
+}
+
+/* 学生写在括号里的字必须是正文黑。
+   之前写的是 color: inherit —— 从灰色的 slot 继承下来，整段内容都变灰了。 */
+[data-scaffold-id] [data-scaffold-input],
+[data-scaffold-input] {
+  color: #0c0a09;
+  font-weight: 400;
+  user-select: text;
+}
+
+.dark [data-scaffold-id] [data-scaffold-input],
+.dark [data-scaffold-input] {
+  color: #f5f5f4;
+}
+
+/* 空的支架槽给一个可见的落笔位置，否则光标看起来像掉在括号外面 */
+[data-scaffold-input]:empty::before {
+  content: '';
+  display: inline-block;
+  width: 1.5em;
+  border-bottom: 1px dashed #d4d4d8;
+}
+
+/* 刚插入的支架，括号里提示一句「写在这里……」，学生一看就知道直接在括号里写。
+   只在编辑器里出现：阅读页、别人看到的正文里不该有这句话。
+   用 ::after：光标停在提示前面，一打字 normalizeScaffoldMarkers 就摘掉 data-scaffold-empty，提示随之消失。 */
+[contenteditable="true"] [data-scaffold-input][data-scaffold-empty]::after {
+  content: '写在这里……';
+  color: #a1a1aa;
+  font-weight: 400;
+  pointer-events: none;
+}
+[contenteditable="true"]:lang(en) [data-scaffold-input][data-scaffold-empty]::after {
+  content: 'Write here…';
+}
+.dark [contenteditable="true"] [data-scaffold-input][data-scaffold-empty]::after {
+  color: #71717a;
+}
+
+/* Landing page scrolling */
+.page-landing {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Hide scrollbar for horizontal scroll strips */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Sidebar: ultra-thin scrollbar, visible only on hover */
+.sidebar-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.sidebar-scroll:hover { scrollbar-color: rgba(0,0,0,0.15) transparent; }
+.sidebar-scroll::-webkit-scrollbar { width: 3px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
+.sidebar-scroll:hover::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+
+/* 画布详情栏里的正文：单独一个、一直看得见的细滚动条，学生才知道还能往下读。
+   Chrome/Safari 设了 scrollbar-color 就不再认 ::-webkit-scrollbar，而且 macOS 上会退回自动隐藏，
+   所以标准属性只给不认 webkit 伪元素的浏览器（Firefox）。 */
+.reading-scroll::-webkit-scrollbar { width: 6px; }
+.reading-scroll::-webkit-scrollbar-track { background: transparent; }
+.reading-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.reading-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+@supports not selector(::-webkit-scrollbar) {
+  .reading-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+}
+
+/* AI 画图时的动画（DrawingProgress）：线稿一笔笔描出来又淡去，画笔轻轻晃 */
+.drawing-stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: drawing-stroke 3.6s ease-in-out infinite;
+}
+@keyframes drawing-stroke {
+  0% { stroke-dashoffset: 1; opacity: 0.25; }
+  45%, 80% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0.2; }
+}
+.drawing-brush { animation: drawing-brush 1.6s ease-in-out infinite; }
+@keyframes drawing-brush {
+  0%, 100% { transform: translate(0, 0) rotate(-10deg); }
+  50% { transform: translate(-6px, -3px) rotate(6deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawing-stroke { animation: none; stroke-dashoffset: 0; }
+  .drawing-brush { animation: none; }
+}
+
+/* AI 在想、在写：三个点依次跳一下，文字上有一道光扫过；头像外圈轻轻扩散。简单，但让人知道它没有卡住 */
+.ai-dots { display: inline-flex; align-items: center; gap: 0.24rem; }
+.ai-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: #000080;
+  opacity: 0.3;
+  animation: ai-dot-wave 1.2s ease-in-out infinite;
+}
+.ai-dot:nth-child(2) { animation-delay: 0.16s; }
+.ai-dot:nth-child(3) { animation-delay: 0.32s; }
+@keyframes ai-dot-wave {
+  0%, 70%, 100% { transform: translateY(0); opacity: 0.3; }
+  35% { transform: translateY(-0.28rem); opacity: 1; }
+}
+.ai-shimmer {
+  color: transparent;
+  background-image: linear-gradient(100deg, #52525b 0%, #52525b 38%, #000080 50%, #52525b 62%, #52525b 100%);
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: ai-shimmer 2.4s linear infinite;
+}
+@keyframes ai-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+.ai-avatar-working { animation: ai-avatar-ring 1.8s ease-out infinite; }
+@keyframes ai-avatar-ring {
+  0% { box-shadow: 0 0 0 0 rgba(0, 0, 128, 0.28); }
+  70%, 100% { box-shadow: 0 0 0 0.45rem rgba(0, 0, 128, 0); }
+}
+.dark .ai-dot { background: #93aafd; }
+.dark .ai-shimmer {
+  background-image: linear-gradient(100deg, #9ca3af 0%, #9ca3af 38%, #dbe4ff 50%, #9ca3af 62%, #9ca3af 100%);
+}
+.dark .ai-avatar-working { animation-name: ai-avatar-ring-dark; }
+@keyframes ai-avatar-ring-dark {
+  0% { box-shadow: 0 0 0 0 rgba(147, 170, 253, 0.32); }
+  70%, 100% { box-shadow: 0 0 0 0.45rem rgba(147, 170, 253, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-dot { animation: none; opacity: 0.65; }
+  .ai-shimmer { animation: none; background-image: none; color: #52525b; }
+  .dark .ai-shimmer { color: #9ca3af; }
+  .ai-avatar-working { animation: none; }
+}
+
+/* Custom scrollbar for note lists */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+/* Logged-in dashboard: compact royal-blue surface and React Bits-style motion polish */
+.dashboard-blue-shell {
+  background:
+    linear-gradient(135deg, rgba(246, 248, 255, 0.98), rgba(238, 242, 255, 0.82)),
+    repeating-linear-gradient(90deg, rgba(52, 87, 213, 0.045) 0 1px, transparent 1px 84px);
+}
+
+.dark .dashboard-blue-shell {
+  background:
+    linear-gradient(135deg, #05064d 0%, #071069 52%, #000080 100%),
+    repeating-linear-gradient(90deg, rgba(142, 164, 255, 0.045) 0 1px, transparent 1px 88px);
+}
+
+.dashboard-blue-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(52, 87, 213, 0.09) 40%, transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 42%);
+  opacity: 0.68;
+}
+
+.dark .dashboard-blue-shell::before {
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(142, 164, 255, 0.10) 42%, transparent 70%),
+    linear-gradient(180deg, rgba(142, 164, 255, 0.08), transparent 38%);
+  opacity: 0.72;
+}
+
+.dashboard-topbar,
+.dashboard-hero-panel,
+.dashboard-command-strip,
+.dashboard-overview-card,
+.dashboard-metric-card,
+.dashboard-course-card {
+  box-shadow: 0 22px 70px -46px rgba(0, 0, 128, 0.46);
+}
+
+.dashboard-hero-panel,
+.dashboard-command-strip,
+.dashboard-overview-card,
+.dashboard-metric-card,
+.dashboard-course-card {
+  position: relative;
+  isolation: isolate;
+}
+
+.dashboard-hero-panel::after,
+.dashboard-command-strip::after,
+.dashboard-overview-card::after,
+.dashboard-metric-card::after,
+.dashboard-course-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 0%, rgba(142, 164, 255, 0.18) 46%, transparent 62%);
+  opacity: 0;
+  transform: translateX(-18%);
+  transition: opacity 260ms ease, transform 520ms ease;
+}
+
+.dashboard-hero-panel > *,
+.dashboard-command-strip > *,
+.dashboard-overview-card > *,
+.dashboard-metric-card > *,
+.dashboard-course-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-hero-panel:hover::after,
+.dashboard-command-strip:hover::after,
+.dashboard-overview-card:hover::after,
+.dashboard-metric-card:hover::after,
+.dashboard-course-card:hover::after {
+  opacity: 1;
+  transform: translateX(16%);
+}
+
+.dashboard-card-sheen {
+  background: linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.22) 46%, transparent 62%);
+  transform: translateX(-30%);
+}
+
+.dashboard-course-card:hover .dashboard-card-sheen {
+  transform: translateX(32%);
+  transition: transform 720ms ease;
+}
+
+.dashboard-role-tab[data-active="true"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 14px 36px -25px rgba(0, 0, 128, 0.7);
+}
+
+.dashboard-primary-button,
+.dashboard-secondary-button,
+.dashboard-icon-button,
+.dashboard-user-button,
+.dashboard-role-tab {
+  transform: translateZ(0);
+}
+
+.dashboard-primary-button:hover,
+.dashboard-secondary-button:hover,
+.dashboard-icon-button:hover,
+.dashboard-user-button:hover,
+.dashboard-role-tab:hover {
+  transform: translateY(-1px);
+}
+
+.dashboard-search-input {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.dashboard-mini-stat {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+.dark .dashboard-topbar,
+.dark .dashboard-hero-panel,
+.dark .dashboard-command-strip,
+.dark .dashboard-overview-card,
+.dark .dashboard-metric-card,
+.dark .dashboard-course-card {
+  box-shadow: inset 0 1px 0 rgba(142, 164, 255, 0.10), 0 26px 80px -48px rgba(0, 0, 80, 0.92);
+}
+
+.dark .dashboard-search-input,
+.dark .dashboard-mini-stat {
+  box-shadow: inset 0 1px 0 rgba(142, 164, 255, 0.10);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-hero-panel::after,
+  .dashboard-command-strip::after,
+  .dashboard-overview-card::after,
+  .dashboard-metric-card::after,
+  .dashboard-course-card::after,
+  .dashboard-card-sheen {
+    transition: none;
+  }
+
+  .dashboard-primary-button:hover,
+  .dashboard-secondary-button:hover,
+  .dashboard-icon-button:hover,
+  .dashboard-user-button:hover,
+  .dashboard-role-tab:hover,
+  .dashboard-course-card:hover {
+    transform: none;
+  }
+}
+
+/* Dashboard palette bridge: override legacy stone/gray/green utilities left in nested panels and modals. */
+.dashboard-blue-shell .bg-stone-50,
+.dashboard-blue-shell .bg-gray-50,
+.dashboard-blue-shell .bg-slate-50 {
+  background-color: #f6f8ff !important;
+}
+
+.dashboard-blue-shell .bg-stone-100,
+.dashboard-blue-shell .bg-gray-100,
+.dashboard-blue-shell .bg-slate-100 {
+  background-color: #eef2ff !important;
+}
+
+.dashboard-blue-shell .bg-stone-200,
+.dashboard-blue-shell .bg-gray-200,
+.dashboard-blue-shell .bg-slate-200 {
+  background-color: #dde6ff !important;
+}
+
+.dashboard-blue-shell .bg-stone-800,
+.dashboard-blue-shell .bg-stone-900,
+.dashboard-blue-shell .bg-stone-950,
+.dashboard-blue-shell .bg-slate-800,
+.dashboard-blue-shell .bg-slate-900,
+.dashboard-blue-shell .bg-green-600,
+.dashboard-blue-shell .bg-emerald-500,
+.dashboard-blue-shell .bg-emerald-600 {
+  background-color: #000080 !important;
+}
+
+.dashboard-blue-shell .hover\:bg-stone-50:hover,
+.dashboard-blue-shell .hover\:bg-gray-50:hover,
+.dashboard-blue-shell .hover\:bg-slate-50:hover {
+  background-color: #eef2ff !important;
+}
+
+.dashboard-blue-shell .hover\:bg-stone-100:hover,
+.dashboard-blue-shell .hover\:bg-gray-100:hover,
+.dashboard-blue-shell .hover\:bg-slate-100:hover,
+.dashboard-blue-shell .hover\:bg-stone-200:hover,
+.dashboard-blue-shell .hover\:bg-gray-200:hover,
+.dashboard-blue-shell .hover\:bg-slate-200:hover {
+  background-color: #dde6ff !important;
+}
+
+.dashboard-blue-shell .hover\:bg-stone-700:hover,
+.dashboard-blue-shell .hover\:bg-stone-800:hover,
+.dashboard-blue-shell .hover\:bg-stone-900:hover,
+.dashboard-blue-shell .hover\:bg-slate-700:hover,
+.dashboard-blue-shell .hover\:bg-slate-800:hover,
+.dashboard-blue-shell .hover\:bg-slate-900:hover,
+.dashboard-blue-shell .hover\:bg-green-700:hover,
+.dashboard-blue-shell .hover\:bg-emerald-700:hover {
+  background-color: #3457d5 !important;
+}
+
+.dashboard-blue-shell .border-stone-200,
+.dashboard-blue-shell .border-gray-200,
+.dashboard-blue-shell .border-slate-200,
+.dashboard-blue-shell .border-stone-300,
+.dashboard-blue-shell .border-gray-300,
+.dashboard-blue-shell .border-slate-300 {
+  border-color: rgba(52, 87, 213, 0.18) !important;
+}
+
+.dashboard-blue-shell .border-stone-700,
+.dashboard-blue-shell .border-stone-800,
+.dashboard-blue-shell .border-slate-700,
+.dashboard-blue-shell .border-slate-800 {
+  border-color: rgba(52, 87, 213, 0.22) !important;
+}
+
+.dashboard-blue-shell .hover\:border-stone-300:hover,
+.dashboard-blue-shell .hover\:border-gray-300:hover,
+.dashboard-blue-shell .hover\:border-slate-300:hover,
+.dashboard-blue-shell .hover\:border-stone-700:hover,
+.dashboard-blue-shell .hover\:border-slate-700:hover {
+  border-color: rgba(52, 87, 213, 0.36) !important;
+}
+
+.dashboard-blue-shell .text-stone-950,
+.dashboard-blue-shell .text-stone-900,
+.dashboard-blue-shell .text-gray-900,
+.dashboard-blue-shell .text-gray-800,
+.dashboard-blue-shell .text-slate-900,
+.dashboard-blue-shell .text-slate-800 {
+  color: #071069 !important;
+}
+
+.dashboard-blue-shell .text-stone-800,
+.dashboard-blue-shell .text-stone-700,
+.dashboard-blue-shell .text-gray-700,
+.dashboard-blue-shell .text-slate-700 {
+  color: #10235c !important;
+}
+
+.dashboard-blue-shell .text-stone-600,
+.dashboard-blue-shell .text-stone-500,
+.dashboard-blue-shell .text-gray-600,
+.dashboard-blue-shell .text-gray-500,
+.dashboard-blue-shell .text-slate-600,
+.dashboard-blue-shell .text-slate-500 {
+  color: #32447d !important;
+}
+
+.dashboard-blue-shell .text-stone-400,
+.dashboard-blue-shell .text-gray-400,
+.dashboard-blue-shell .text-slate-400,
+.dashboard-blue-shell .text-emerald-700,
+.dashboard-blue-shell .text-emerald-600,
+.dashboard-blue-shell .text-green-700,
+.dashboard-blue-shell .text-green-600 {
+  color: #5b78e8 !important;
+}
+
+.dashboard-blue-shell .text-stone-50,
+.dashboard-blue-shell .text-white {
+  color: #ffffff !important;
+}
+
+.dashboard-blue-shell .ring-stone-300,
+.dashboard-blue-shell .focus\:ring-stone-300:focus,
+.dashboard-blue-shell .focus\:ring-stone-400:focus,
+.dashboard-blue-shell .focus\:ring-gray-300:focus,
+.dashboard-blue-shell .focus\:ring-slate-300:focus {
+  --tw-ring-color: rgba(142, 164, 255, 0.62) !important;
+}
+
+.dark .dashboard-blue-shell .dark\:bg-stone-950,
+.dark .dashboard-blue-shell .dark\:bg-stone-900,
+.dark .dashboard-blue-shell .dark\:bg-slate-950,
+.dark .dashboard-blue-shell .dark\:bg-slate-900,
+.dark .dashboard-blue-shell .dark\:bg-slate-800 {
+  background-color: #071069 !important;
+}
+
+.dark .dashboard-blue-shell .dark\:bg-stone-800,
+.dark .dashboard-blue-shell .dark\:bg-slate-700 {
+  background-color: rgba(142, 164, 255, 0.12) !important;
+}
+
+.dark .dashboard-blue-shell .dark\:bg-stone-100,
+.dark .dashboard-blue-shell .dark\:bg-slate-100 {
+  background-color: #8ea4ff !important;
+}
+
+.dark .dashboard-blue-shell .dark\:hover\:bg-stone-900:hover,
+.dark .dashboard-blue-shell .dark\:hover\:bg-slate-900:hover,
+.dark .dashboard-blue-shell .dark\:hover\:bg-slate-800:hover,
+.dark .dashboard-blue-shell .dark\:hover\:bg-stone-800:hover,
+.dark .dashboard-blue-shell .dark\:hover\:bg-slate-700:hover {
+  background-color: rgba(142, 164, 255, 0.16) !important;
+}
+
+.dark .dashboard-blue-shell .dark\:border-stone-800,
+.dark .dashboard-blue-shell .dark\:border-stone-700,
+.dark .dashboard-blue-shell .dark\:border-slate-800,
+.dark .dashboard-blue-shell .dark\:border-slate-700 {
+  border-color: rgba(142, 164, 255, 0.18) !important;
+}
+
+.dark .dashboard-blue-shell .dark\:text-stone-100,
+.dark .dashboard-blue-shell .dark\:text-stone-200,
+.dark .dashboard-blue-shell .dark\:text-gray-100,
+.dark .dashboard-blue-shell .dark\:text-gray-200,
+.dark .dashboard-blue-shell .dark\:text-slate-100,
+.dark .dashboard-blue-shell .dark\:text-slate-200 {
+  color: #eef2ff !important;
+}
+
+.dark .dashboard-blue-shell .dark\:text-stone-300,
+.dark .dashboard-blue-shell .dark\:text-stone-400,
+.dark .dashboard-blue-shell .dark\:text-gray-300,
+.dark .dashboard-blue-shell .dark\:text-gray-400,
+.dark .dashboard-blue-shell .dark\:text-slate-300,
+.dark .dashboard-blue-shell .dark\:text-slate-400 {
+  color: rgba(221, 230, 255, 0.78) !important;
+}
+
+.dark .dashboard-blue-shell .dark\:text-stone-950,
+.dark .dashboard-blue-shell .dark\:text-slate-950 {
+  color: #071069 !important;
+}
+
+/* ── Markdown 附件预览 ──────────────────────────────────────────
+   marked 出的是裸 HTML，没有任何间距和层级。这里只管排版，
+   不碰颜色以外的语义结构，好让深色模式沿用容器的文字色。 */
+.md-preview > :first-child { margin-top: 0; }
+.md-preview h1 { font-size: 1.7em; font-weight: 700; letter-spacing: -0.01em; margin: 1.4em 0 0.5em; }
+.md-preview h2 { font-size: 1.35em; font-weight: 700; letter-spacing: -0.01em; margin: 1.3em 0 0.45em; }
+.md-preview h3 { font-size: 1.15em; font-weight: 600; margin: 1.2em 0 0.4em; }
+.md-preview h4 { font-size: 1em; font-weight: 600; margin: 1.1em 0 0.35em; }
+.md-preview p { margin: 0.75em 0; }
+.md-preview ul,
+.md-preview ol { margin: 0.75em 0; padding-left: 1.5em; }
+.md-preview ul { list-style: disc; }
+.md-preview ol { list-style: decimal; }
+.md-preview li { margin: 0.3em 0; }
+.md-preview li > ul,
+.md-preview li > ol { margin: 0.3em 0; }
+.md-preview blockquote {
+  margin: 1em 0;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid #d4d4d8;
+  color: #52525b;
+}
+.dark .md-preview blockquote { border-left-color: #3f3f46; color: #a1a1aa; }
+.md-preview code {
+  background: #f4f4f5;
+  border-radius: 4px;
+  padding: 0.12em 0.35em;
+  font-size: 0.9em;
+}
+.dark .md-preview code { background: #27272a; }
+.md-preview pre {
+  background: #fafafa;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  padding: 0.9em 1em;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.dark .md-preview pre { background: #18181b; border-color: #3f3f46; }
+.md-preview pre code { background: none; padding: 0; font-size: 0.88em; }
+/* 宽表格自己横向滚动，不把整页撑破 */
+.md-preview table { display: block; overflow-x: auto; border-collapse: collapse; margin: 1em 0; max-width: 100%; }
+.md-preview th,
+.md-preview td { border: 1px solid #e4e4e7; padding: 0.5em 0.75em; text-align: left; }
+.dark .md-preview th,
+.dark .md-preview td { border-color: #3f3f46; }
+.md-preview th { background: #fafafa; font-weight: 600; }
+.dark .md-preview th { background: #27272a; }
+.md-preview hr { border: 0; border-top: 1px solid #e4e4e7; margin: 1.6em 0; }
+.dark .md-preview hr { border-top-color: #3f3f46; }
+.md-preview a { color: #000080; text-decoration: underline; text-underline-offset: 2px; }
+.dark .md-preview a { color: #93b4ff; }
+.md-preview img { max-width: 100%; border-radius: 8px; }
+.md-preview input[type="checkbox"] { margin-right: 0.45em; }
+
+
+/* 从文档摘录到笔记里的引注。data-imported-from 是给研究数据分层用的属性，
+   读者看不见；这一行是给读者看的出处。 */
+blockquote[data-imported-from] cite {
+  display: block;
+  margin-top: 0.5rem;
+  font-style: normal;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+
+/* AI 侧栏里的 markdown。比正文紧凑：这是对话，不是文档。 */
+.md-chat > :first-child { margin-top: 0; }
+.md-chat > :last-child { margin-bottom: 0; }
+.md-chat p { margin: 0.45rem 0; }
+.md-chat h1, .md-chat h2, .md-chat h3 { margin: 0.7rem 0 0.35rem; font-size: 0.8125rem; font-weight: 600; }
+.md-chat ul, .md-chat ol { margin: 0.4rem 0; padding-left: 1.15rem; }
+.md-chat ul { list-style: disc; }
+.md-chat ol { list-style: decimal; }
+.md-chat li { margin: 0.2rem 0; }
+.md-chat blockquote {
+  margin: 0.5rem 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid #C9A96E;
+  color: #52525b;
+}
+.md-chat code {
+  padding: 0.05rem 0.25rem;
+  border-radius: 0.25rem;
+  background: #f4f4f5;
+  font-size: 0.9em;
+}
+.md-chat pre { margin: 0.5rem 0; padding: 0.5rem; border-radius: 0.5rem; background: #f4f4f5; overflow-x: auto; }
+.md-chat pre code { padding: 0; background: none; }
+.md-chat a { color: #000080; text-decoration: underline; }
+.md-chat strong { font-weight: 600; }
+/* 对话里画出来的图（「画一张……」） */
+.md-chat img { margin: 0.5rem 0; max-height: 20rem; width: auto; border-radius: 0.5rem; border: 1px solid #e4e4e7; }

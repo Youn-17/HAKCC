@@ -1,0 +1,37 @@
+# HAKCC API — Optimized for Alibaba Cloud FC / SAE
+# Minimal image for fast cold starts
+
+# ── Stage 1: Build ──
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --ignore-scripts
+COPY . .
+RUN npm run build
+
+# ── Stage 2: Production ──
+FROM node:20-alpine
+
+ENV NODE_ENV=production \
+    PORT=4000
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev --ignore-scripts && \
+    npm cache clean --force && \
+    rm -rf /tmp/* /root/.npm
+
+COPY --from=builder /app/dist ./dist
+
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+USER nodejs
+
+EXPOSE 4000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:4000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+
+CMD ["node", "dist/index.js"]

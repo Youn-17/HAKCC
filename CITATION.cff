@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "Please cite this version when discussing HAKCC's software or system design."
+type: software
+title: "HAKCC: Human-AI Knowledge Collaboration Commons"
+authors:
+  - family-names: "He"
+    given-names: "Zhenhai"
+version: "0.2.0"
+date-released: "2026-10-04"
+url: "https://github.com/Youn-17/HAKCC"
+repository-code: "https://github.com/Youn-17/HAKCC"
+abstract: "A shared knowledge-building platform with public Notes, Build-on discourse, bounded AI partners, reflective uptake, conditional feedback, and source-visible Rise-above synthesis."
+keywords:
+  - knowledge building
+  - human-AI collaboration
+  - epistemic agency
+  - computer-supported collaborative learning
+license: MIT

@@ -1,0 +1,282 @@
+{
+  "component": "frontend",
+  "checked_on": "2026-10-04",
+  "summary": {
+    "info": 0,
+    "low": 1,
+    "moderate": 5,
+    "high": 6,
+    "critical": 0,
+    "total": 12
+  },
+  "packages": [
+    {
+      "name": "@babel/core",
+      "severity": "low",
+      "direct": false,
+      "range": "<=7.29.0",
+      "advisories": [
+        {
+          "title": "@babel/core: Arbitrary File Read via sourceMappingURL Comment",
+          "url": "https://github.com/advisories/GHSA-4x5r-pxfx-6jf8",
+          "range": "<=7.29.0"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "@vitest/mocker",
+      "severity": "moderate",
+      "direct": false,
+      "range": "2.1.0 - 4.1.10",
+      "advisories": [
+        {
+          "title": "Vitest: Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock",
+          "url": "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+          "range": ">=2.1.0 <4.1.11"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "@xmldom/xmldom",
+      "severity": "high",
+      "direct": false,
+      "range": "0.9.0-beta.1 - 0.9.11",
+      "advisories": [
+        {
+          "title": "xmldom: XML fragment injection via invalid EntityReference.nodeName during requireWellFormed serialization",
+          "url": "https://github.com/advisories/GHSA-6gmq-8vp8-gcm6",
+          "range": ">=0.9.0 <=0.9.11"
+        },
+        {
+          "title": "xmldom: HTML raw-text closing-tag case mismatch causes output amplification",
+          "url": "https://github.com/advisories/GHSA-6mj3-qw4j-hgrw",
+          "range": ">=0.9.0-beta.1 <=0.9.11"
+        },
+        {
+          "title": "xmldom PI grammar regex ReDoS: quadratic backtracking on unterminated processing instructions",
+          "url": "https://github.com/advisories/GHSA-g53g-w8rj-fmg7",
+          "range": ">=0.9.0-beta.9 <=0.9.10"
+        },
+        {
+          "title": "xmldom: Element name injection via createElement() bypasses requireWellFormed",
+          "url": "https://github.com/advisories/GHSA-w2rr-34g9-rvrj",
+          "range": ">=0.9.0 <=0.9.10"
+        },
+        {
+          "title": "xmldom: Attribute name injection via setAttribute() bypasses requireWellFormed",
+          "url": "https://github.com/advisories/GHSA-4w3w-2rp5-g8jm",
+          "range": ">=0.9.0 <=0.9.10"
+        },
+        {
+          "title": "xmldom: Processing Instruction Target Injection Bypasses requireWellFormed",
+          "url": "https://github.com/advisories/GHSA-c7q8-3ch8-vqpv",
+          "range": ">=0.9.0 <=0.9.11"
+        },
+        {
+          "title": "xmldom: DocType `name` Injection Bypasses requireWellFormed",
+          "url": "https://github.com/advisories/GHSA-27p8-2357-5qqv",
+          "range": ">=0.9.0 <=0.9.11"
+        },
+        {
+          "title": "xmldom: Creation-time XML Name/QName validation is bypassable via an embedded line terminator, allowing injection on the default serialization path",
+          "url": "https://github.com/advisories/GHSA-3px3-54cx-rmw9",
+          "range": ">=0.9.0 <=0.9.11"
+        },
+        {
+          "title": "xmldom: requireWellFormed DocType publicId/systemId validation is bypassable via an embedded line terminator",
+          "url": "https://github.com/advisories/GHSA-vr34-hp96-76pp",
+          "range": ">=0.9.10 <=0.9.11"
+        },
+        {
+          "title": "xmldom: Parser silently accepts a not-well-formed end tag whose name is followed by a line break and trailing content",
+          "url": "https://github.com/advisories/GHSA-6h8r-xr42-gp59",
+          "range": ">=0.9.0 <=0.9.11"
+        },
+        {
+          "title": "xmldom: Quadratic-time attribute deduplication",
+          "url": "https://github.com/advisories/GHSA-8344-3jmq-59r6",
+          "range": ">=0.9.0 <=0.9.11"
+        },
+        {
+          "title": "xmldom: Quadratic-memory consumption",
+          "url": "https://github.com/advisories/GHSA-965w-775f-mr7g",
+          "range": ">=0.9.0 <=0.9.11"
+        },
+        {
+          "title": "xmldom: Quadratic-time parsing via the malformed-input recovery path \u2014 `parseElementStartPart` re-scan and `normalize()` adjacent-text merge",
+          "url": "https://github.com/advisories/GHSA-93r5-fhx6-vmg9",
+          "range": ">=0.9.0 <=0.9.11"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "baseline-browser-mapping",
+      "severity": "moderate",
+      "direct": false,
+      "range": ">=2.0.0 <2.11.0",
+      "advisories": [
+        {
+          "title": "baseline-browser-mapping process termination on invalid input causes denial of service",
+          "url": "https://github.com/advisories/GHSA-w5vr-8v7q-w6rv",
+          "range": ">=2.0.0 <2.11.0"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "brace-expansion",
+      "severity": "high",
+      "direct": false,
+      "range": "4.0.0 - 5.0.11",
+      "advisories": [
+        {
+          "title": "brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash",
+          "url": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+          "range": ">=4.0.0 <5.0.8"
+        },
+        {
+          "title": "brace-expansion: DoS via unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation",
+          "url": "https://github.com/advisories/GHSA-rgw5-rvv9-x895",
+          "range": ">=4.0.0 <5.0.9"
+        },
+        {
+          "title": "brace-expansion: Quadratic-time expansion of the `{a},b}` rewrite causes CPU denial of service",
+          "url": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+          "range": ">=4.0.0 <5.0.12"
+        },
+        {
+          "title": "brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion",
+          "url": "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+          "range": ">=4.0.0 <5.0.11"
+        },
+        {
+          "title": "brace-expansion: DoS via uncontrolled recursion in parseCommaParts causing stack exhaustion",
+          "url": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+          "range": ">=4.0.0 <5.0.10"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "browserslist",
+      "severity": "high",
+      "direct": false,
+      "range": "<=4.28.6",
+      "advisories": [
+        {
+          "title": "Browserslist: Unbounded memory growth (no cache eviction) via distinct query results, leading to eventual OOM",
+          "url": "https://github.com/advisories/GHSA-c83g-rgw3-j3cx",
+          "range": "<=4.28.6"
+        },
+        {
+          "title": "Browserslist: Uncaught crash / prototype write via untrusted browserslist-stats.json custom stats (normalizeStats)",
+          "url": "https://github.com/advisories/GHSA-73wf-gq98-2v4g",
+          "range": "<=4.28.6"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "nanoid",
+      "severity": "high",
+      "direct": false,
+      "range": "<=3.3.17",
+      "advisories": [
+        {
+          "title": "nanoid: non-secure generators can loop indefinitely with negative size",
+          "url": "https://github.com/advisories/GHSA-28wg-ghj8-5hjv",
+          "range": "<3.3.16"
+        },
+        {
+          "title": "nanoid: custom generators can loop indefinitely when size is zero",
+          "url": "https://github.com/advisories/GHSA-2v37-7h3g-55p8",
+          "range": "<3.3.18"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "postcss",
+      "severity": "high",
+      "direct": true,
+      "range": "<=8.5.22",
+      "advisories": [
+        {
+          "title": "PostCSS: incomplete fix of GHSA-6g55-p6wh-862q \u2014 attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset",
+          "url": "https://github.com/advisories/GHSA-fxqj-rqcc-2cmp",
+          "range": "<=8.5.22"
+        },
+        {
+          "title": "PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure",
+          "url": "https://github.com/advisories/GHSA-r28c-9q8g-f849",
+          "range": "<=8.5.17"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "react-router",
+      "severity": "moderate",
+      "direct": false,
+      "range": "6.0.0 - 7.17.0",
+      "advisories": [
+        {
+          "title": "React Router: Open redirect via backslash in <Link> and useNavigate (CVE-2025-68470 bypass)",
+          "url": "https://github.com/advisories/GHSA-wrjc-x8rr-h8h6",
+          "range": ">=6.0.0 <7.18.0"
+        },
+        {
+          "title": "React Router: Arbitrary Constructor Injection via deserializeErrors() in React Router SSR Hydration",
+          "url": "https://github.com/advisories/GHSA-337j-9hxr-rhxg",
+          "range": ">=6.4.0 <7.18.0"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "react-router-dom",
+      "severity": "moderate",
+      "direct": true,
+      "range": "6.0.0-alpha.0 - 7.17.0",
+      "advisories": [
+        {
+          "title": "React Router: Open redirect leading to XSS",
+          "url": "https://github.com/advisories/GHSA-jjmj-jmhj-qwj2",
+          "range": ">=6.30.2 <=6.30.5"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "tar",
+      "severity": "high",
+      "direct": false,
+      "range": "<=7.5.20",
+      "advisories": [
+        {
+          "title": "node-tar: Uncontrolled recursion in mapHas/filesFilter allows uncatchable stack-overflow DoS via crafted long-path tar with member selection",
+          "url": "https://github.com/advisories/GHSA-r292-9mhp-454m",
+          "range": "<=7.5.20"
+        }
+      ],
+      "npm_reported_fix": true
+    },
+    {
+      "name": "vitest",
+      "severity": "moderate",
+      "direct": true,
+      "range": "2.1.0-beta.1 - 4.1.10",
+      "advisories": [
+        {
+          "title": "Vitest: Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock",
+          "url": "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+          "range": ">=2.1.0 <4.1.11"
+        }
+      ],
+      "npm_reported_fix": true
+    }
+  ]
+}

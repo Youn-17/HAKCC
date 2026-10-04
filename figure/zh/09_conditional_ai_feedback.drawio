@@ -1,0 +1,167 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="09_conditional_ai_feedback_zh" name="09 conditional_ai_feedback [zh]">
+    <mxGraphModel dx="800" dy="600" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="800" pageHeight="600" background="#FFFFFF" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FFFFFF;strokeColor=none;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="0" y="0" width="800" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="条件触发的 AI 反馈与自适应支架" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=21;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="28" y="16" width="744" height="31" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="识别当前表达中需要推进的地方，用短反馈支持学生的下一步思考" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#697482;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="28" y="49" width="744" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=none;endFill=1;strokeColor=#ABB5C0;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="28" y="80" as="sourcePoint" />
+            <mxPoint x="772" y="80" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="6" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=none;endFill=1;strokeColor=#ABB5C0;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="28" y="563" as="sourcePoint" />
+            <mxPoint x="772" y="563" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="7" value="HAKCC · 人机知识协作共同体  |  机制示意，依据本地实现" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#697482;fontFamily=Arial;fontSize=8.5;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="28" y="574" width="710" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="09" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=9;fontStyle=1;align=right;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="740" y="574" width="32" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FAFBFC;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;dashed=1;dashPattern=5 4;" parent="1" vertex="1">
+          <mxGeometry x="28" y="94" width="744" height="161" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="(a) 由课程配置与当前 Note 决定反馈路径" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="40" y="102" width="720" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FBE8D7;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="43" y="137" width="154" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="教师配置与当前草稿" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="53" y="145" width="134" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="启用反馈 / 触发类型&#10;冷却间隔 / 语言&#10;Note 内的当前表达" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="53" y="172" width="134" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#A1C1E2;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="225" y="137" width="154" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="预筛选与访问门控" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="235" y="145" width="134" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="Note 与课程权限&#10;课程 / 实验条件&#10;草稿 / 冷却 / 去重" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="235" y="172" width="134" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#CFBCDA;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="407" y="137" width="166" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="18" value="判断是否需要推进" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="417" y="145" width="146" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="19" value="符合条件时调用模型&#10;判断需要与反馈类型&#10;未命中则保持安静" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="417" y="172" width="146" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="20" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#DDEDD1;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="601" y="137" width="155" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="短反馈与支架起句" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="611" y="145" width="135" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="指出具体问题&#10;给出可继续思考的起句&#10;保留学生表达空间" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="611" y="172" width="135" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="23" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="197" y="181" as="sourcePoint" />
+            <mxPoint x="225" y="181" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="24" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="379" y="181" as="sourcePoint" />
+            <mxPoint x="407" y="181" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="25" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="573" y="181" as="sourcePoint" />
+            <mxPoint x="601" y="181" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="26" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FAFBFC;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;dashed=1;dashPattern=5 4;" parent="1" vertex="1">
+          <mxGeometry x="28" y="278" width="451" height="241" as="geometry" />
+        </mxCell>
+        <mxCell id="27" value="(b) 六类反馈关注点 T1–T6" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="40" y="286" width="427" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="28" value="T1  未消化 AI 输出" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#EDB5B0;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="43" y="320" width="204" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="29" value="T2  缺少推理" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FBE8D7;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="259" y="320" width="204" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="30" value="T3  缺少证据" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#DDEDD1;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="43" y="367" width="204" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="T4  缺少观点关联" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#A1C1E2;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="259" y="367" width="204" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="32" value="T5  有潜力的想法" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#CFBCDA;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="43" y="414" width="204" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="33" value="T6  表达或问题不清" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#BFDCE0;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="259" y="414" width="204" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="34" value="反馈指出需要推进的地方；T5 关注已有想法的潜力。" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="45" y="471" width="415" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="35" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FAFBFC;strokeColor=#ABB5C0;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;dashed=1;dashPattern=5 4;" parent="1" vertex="1">
+          <mxGeometry x="504" y="278" width="268" height="241" as="geometry" />
+        </mxCell>
+        <mxCell id="36" value="(c) 学生响应与可追溯记录" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="516" y="286" width="244" height="23" as="geometry" />
+        </mxCell>
+        <mxCell id="37" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#A1C1E2;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="519" y="320" width="238" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="38" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FFFFFF;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;shape=ellipse;" parent="1" vertex="1">
+          <mxGeometry x="534.4" y="332" width="7.2" height="7.2" as="geometry" />
+        </mxCell>
+        <mxCell id="39" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FFFFFF;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="531.52" y="340.28" width="12.959999999999999" height="9.0" as="geometry" />
+        </mxCell>
+        <mxCell id="40" value="我决定如何回应" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="559" y="328" width="188" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="补充理由 / 证据 / 关联&#10;澄清、修订或继续追问" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="529" y="355" width="218" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="42" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#BFDCE0;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;" parent="1" vertex="1">
+          <mxGeometry x="519" y="431" width="238" height="67" as="geometry" />
+        </mxCell>
+        <mxCell id="43" value="" style="rounded=1;arcSize=10;absoluteArcSize=1;html=0;whiteSpace=normal;fillColor=#FFFFFF;strokeColor=#303643;strokeWidth=1.1;fontColor=#303643;fontFamily=Arial;fontSize=11;fontStyle=0;spacing=5;verticalAlign=middle;align=center;shape=cylinder;" parent="1" vertex="1">
+          <mxGeometry x="529" y="443" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="44" value="反馈与想法的后续轨迹" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=11.5;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="559" y="439" width="188" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="45" value="记录反馈类型、上下文与版本&#10;为教师判断和研究导出提供依据" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#303643;fontFamily=Arial;fontSize=10.5;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="529" y="466" width="218" height="27" as="geometry" />
+        </mxCell>
+        <mxCell id="46" value="" parent="1" edge="1" style="edgeStyle=none;html=0;rounded=0;endArrow=block;endFill=1;strokeColor=#303643;strokeWidth=1.25;dashed=0;fontFamily=Arial;fontSize=9;fontColor=#303643;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="638" y="394" as="sourcePoint" />
+            <mxPoint x="638" y="431" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="47" value="自动检查与主动求助有不同入口；是否呈现反馈依课程设置、实验条件与具体请求而定。" style="text;html=0;whiteSpace=normal;overflow=visible;fillColor=none;strokeColor=none;fontColor=#697482;fontFamily=Arial;fontSize=9;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" parent="1" vertex="1">
+          <mxGeometry x="34" y="539" width="732" height="16" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
