@@ -70,6 +70,7 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
     finally { setPolicyBusy(false); }
   };
   const [activeL1, setActiveL1] = useState<ScaffoldL1 | 'all'>('all');
+  const [scaffoldLayout, setScaffoldLayout] = useState<'list' | 'cards'>('list');
   const [query, setQuery] = useState('');
   const [showHidden, setShowHidden] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -296,8 +297,8 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm dark:bg-black/60">
-      <div className="flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950">
+    <div className="workspace-view-shell fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm dark:bg-black/60">
+      <div role="dialog" aria-modal="true" aria-label={t.title} className="workspace-view-dialog flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950">
 
         <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-6 py-3.5 dark:border-gray-800">
           <div className="flex items-center gap-2.5">
@@ -307,7 +308,8 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
               {t.scaffoldCount(scaffolds.length)}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="view-toolbar flex items-center gap-2">
+            {!draft && <button type="button" aria-pressed={scaffoldLayout === 'cards'} onClick={() => setScaffoldLayout(value => value === 'list' ? 'cards' : 'list')}>{lang === 'zh' ? (scaffoldLayout === 'list' ? '列表' : '卡片') : (scaffoldLayout === 'list' ? 'List' : 'Cards')}</button>}
             {canEdit && !draft && (
               <button
                 type="button" role="switch" aria-checked={requireScaffold} onClick={() => void togglePolicy()} disabled={policyBusy}
@@ -509,13 +511,13 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
                         <div className="mb-1.5 text-xs font-semibold text-zinc-400 dark:text-gray-500">
                           {group.name} · {group.items.length}
                         </div>
-                        <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 dark:divide-gray-800 dark:border-gray-800">
+                        <ul className={scaffoldLayout === 'cards' ? 'grid gap-2 sm:grid-cols-2' : 'divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 dark:divide-gray-800 dark:border-gray-800'}>
                           {group.items.map(scaffold => {
                             const isGlobal = !scaffold.courseId;
                             const meta = scaffold.metadata;
                             return (
                               <li key={scaffold.id}
-                                className={`group flex items-center gap-3 px-3 py-2.5 transition-colors ${
+                                className={`view-content-card group flex items-center gap-3 px-3 py-2.5 transition-colors ${scaffoldLayout === 'cards' ? 'rounded-xl border border-zinc-200 dark:border-gray-800' : ''} ${
                                   scaffold.hidden ? 'bg-zinc-50/70 dark:bg-gray-900/60' : 'bg-white dark:bg-gray-950'
                                 } hover:bg-zinc-50 dark:hover:bg-gray-900`}>
                                 {canEdit && (

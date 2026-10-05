@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveAiNoteTitle } from './aiNoteTitle';
+import { cleanFeedbackTitle, deriveAiNoteTitle } from './aiNoteTitle';
 
 const FALLBACK = 'AI 延伸';
 
@@ -50,5 +50,38 @@ describe('deriveAiNoteTitle', () => {
     expect(title.endsWith('…')).toBe(true);
     expect(title.length).toBeLessThanOrEqual(60);
     expect(title).not.toMatch(/\s…$/);
+  });
+});
+
+describe('cleanFeedbackTitle：采纳反馈发布的笔记用的标题（模型给的，要洗一遍）', () => {
+  it('去掉引号、书名号、「标题：」和句末标点', () => {
+    expect(cleanFeedbackTitle('「高阶思维的编码标准」')).toBe('高阶思维的编码标准');
+    expect(cleanFeedbackTitle('标题：教师不可替代之处的边界。')).toBe('教师不可替代之处的边界');
+    expect(cleanFeedbackTitle('"Evidence for the retrieval claim."')).toBe('Evidence for the retrieval claim');
+    expect(cleanFeedbackTitle('  检索练习与间隔 \n ')).toBe('检索练习与间隔');
+  });
+
+  it('问句、对着「你」说的不要：放到公共画布上同学看不懂（线上原来的标题就是这样）', () => {
+    expect(cleanFeedbackTitle('你认同或质疑其中哪一条？')).toBe('');
+    expect(cleanFeedbackTitle('编码时用什么标准区分高低阶')).toBe('编码时用什么标准区分高低阶');
+    expect(cleanFeedbackTitle('哪条边界最该坚持?')).toBe('');
+    expect(cleanFeedbackTitle('你的论证还缺证据')).toBe('');
+    expect(cleanFeedbackTitle('What you could add next')).toBe('');
+  });
+
+  it('写缺点的不要：卡片连着学生的笔记、全班都看得到（10-05 试跑出的几条）', () => {
+    expect(cleanFeedbackTitle('缺少个人回应与取舍')).toBe('');
+    expect(cleanFeedbackTitle('AI代写分类缺乏个人体验')).toBe('');
+    expect(cleanFeedbackTitle('高阶思维判断标准的缺失')).toBe('');
+    expect(cleanFeedbackTitle('Missing evidence for the claim')).toBe('');
+    expect(cleanFeedbackTitle('教师不可替代作用的可争论命题')).toBe('教师不可替代作用的可争论命题');
+  });
+
+  it('太短、太长、不是字符串：不要', () => {
+    expect(cleanFeedbackTitle('证据')).toBe('');
+    expect(cleanFeedbackTitle('这是一个非常非常长的标题已经远远超过了二十二个字的上限了吧')).toBe('');
+    expect(cleanFeedbackTitle('Evidence')).toBe('');
+    expect(cleanFeedbackTitle(undefined)).toBe('');
+    expect(cleanFeedbackTitle(42)).toBe('');
   });
 });

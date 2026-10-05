@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RemixIcon from '../RemixIcon';
 import MarkdownMessage from '../chatMarkdown';
 import { MORANDI, noticeStyle, solidStyle } from '../morandiPalette';
@@ -33,6 +33,8 @@ export interface HelpChatProps {
   /** 每次打开面板加一，重新拉一遍历史：老师可能刚回复过 */
   refreshKey: number;
   autoFocus: boolean;
+  /** 谁在问。教师问的转给平台管理员，按含教师端的手册答（2026-10-05 起） */
+  asker?: 'student' | 'teacher';
 }
 
 /**
@@ -121,6 +123,32 @@ const COPY = {
 };
 
 type Copy = typeof COPY.zh;
+
+/** 教师问的：回答的人换成平台管理员，其余照旧 */
+const TEACHER_COPY: Record<HelpLang, Partial<Copy>> = {
+  zh: {
+    welcome: '平台怎么用、教师端的设置在哪、点了没反应，都可以在这里问。我按使用手册（含教师端）回答；手册里没写到的，可以一键转给平台管理员。',
+    teacher: '平台管理员',
+    notSolved: '没解决，转给平台管理员',
+    escalate: '转给平台管理员',
+    escalateHint: '补充一句会让管理员更快定位（可留空）',
+    waiting: '已转给平台管理员，回复后会显示在这里',
+    answered: '平台管理员已回复',
+    noAi: '这个问题 AI 暂时没能回答，已经转给平台管理员。回复后会显示在这里。',
+    teacherSource: '管理员以前的回答',
+  },
+  en: {
+    welcome: 'Ask here how to use the platform, where a teacher setting is, or why something does nothing. I answer from the user manual, including the teacher chapter, and anything it does not cover can go to the platform administrator in one click.',
+    teacher: 'Platform admin',
+    notSolved: 'Not solved, ask the platform admin',
+    escalate: 'Send to platform admin',
+    escalateHint: 'One more line helps the admin (optional)',
+    waiting: 'Sent to the platform administrator. Their reply will appear here.',
+    answered: 'Platform admin replied',
+    noAi: 'The AI could not answer this, so it went to the platform administrator. Their reply will appear here.',
+    teacherSource: "the administrator's earlier answer",
+  },
+};
 
 function formatTime(iso: string, lang: HelpLang): string {
   const d = new Date(iso);
@@ -297,8 +325,8 @@ function Exchange({ q, lang, t, busy, escalating, escalateNote, onEscalateNote, 
   );
 }
 
-const HelpChat: React.FC<HelpChatProps> = ({ courseId, lang, compact, surface, spaceId, pageContext, refreshKey, autoFocus }) => {
-  const t = COPY[lang];
+const HelpChat: React.FC<HelpChatProps> = ({ courseId, lang, compact, surface, spaceId, pageContext, refreshKey, autoFocus, asker = 'student' }) => {
+  const t = useMemo<Copy>(() => (asker === 'teacher' ? { ...COPY[lang], ...TEACHER_COPY[lang] } : COPY[lang]), [asker, lang]);
   const [items, setItems] = useState<SupportQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<{ question: string; shots: Shot[] } | null>(null);
@@ -420,7 +448,7 @@ const HelpChat: React.FC<HelpChatProps> = ({ courseId, lang, compact, surface, s
     }
   };
 
-  const chips = quickQuestions(surface, lang, compact);
+  const chips = quickQuestions(surface, lang, compact, asker);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

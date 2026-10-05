@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Sparkles, X } from 'lucide-react';
+import { Plus, Search, ChevronDown, X } from 'lucide-react';
 import type { Language, Scaffold } from '../types';
 import { isGenAiScaffold, scaffoldGroup, scaffoldLabel, scaffoldMatches } from './scaffoldLibrary';
 
@@ -121,11 +121,11 @@ const ScaffoldPicker: React.FC<Props> = ({
   return (
     <div className="flex min-h-0 flex-col gap-2.5">
       {aiSuggestions.length > 0 && onPickAi && (
-        <div className="rounded-lg border border-[#000080]/15 bg-[#000080]/[0.04] p-2 dark:border-blue-400/25 dark:bg-blue-950/30">
-          <div className="mb-1.5 flex items-center gap-1 text-[0.6875rem] font-semibold text-[#000080] dark:text-blue-300">
-            <Sparkles size={12} />{lang === 'zh' ? 'AI 为这条笔记建议' : 'AI suggests for this note'}
-          </div>
-          <div className="space-y-0.5">
+        <details className="group/suggestions rounded-lg border border-[#000080]/15 bg-[#000080]/[0.04] p-2 dark:border-blue-400/25 dark:bg-blue-950/30">
+          <summary className="flex cursor-pointer list-none items-center gap-1 text-[0.6875rem] font-semibold text-[#000080] dark:text-blue-300 [&::-webkit-details-marker]:hidden">
+            <ChevronDown size={13} className="-rotate-90 transition-transform group-open/suggestions:rotate-0" />{lang === 'zh' ? 'AI 建议支架' : 'AI suggested scaffolds'}<span className="ml-auto tabular-nums">{aiSuggestions.length}</span>
+          </summary>
+          <div className="mt-2 max-h-48 space-y-0.5 overflow-y-auto">
             {aiSuggestions.map(sg => (
               <button key={sg.id} type="button" onClick={() => onPickAi(sg)}
                 className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[0.8125rem] leading-snug text-zinc-800 transition-colors hover:bg-white dark:text-gray-100 dark:hover:bg-gray-800">
@@ -135,9 +135,9 @@ const ScaffoldPicker: React.FC<Props> = ({
             ))}
           </div>
           <p className="mt-1.5 text-[0.625rem] leading-relaxed text-zinc-500 dark:text-gray-400">
-            {lang === 'zh' ? '这是 AI 看了你这条笔记后给的话头，只出现在这里。用不用由你。' : 'A prompt the AI wrote for this note. Use it or not.'}
+            {lang === 'zh' ? '结合当前观点选择支架，补充你的解释或证据。' : 'Choose a scaffold to develop your explanation or evidence.'}
           </p>
-        </div>
+        </details>
       )}
       {groups.length > 1 && (
         <label className="block">

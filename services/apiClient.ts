@@ -418,7 +418,7 @@ export interface ShapePayload {
 
 export type TimelineItem = {
   id: string;
-  kind: 'note' | 'build_on' | 'ai_feedback' | 'ai_chat';
+  kind: 'note' | 'build_on' | 'revision' | 'ai_feedback' | 'ai_chat';
   at: string;
   actorId: string | null;
   actorName: string | null;
@@ -432,12 +432,23 @@ export type TimelineItem = {
   triggerType?: string | null;
   status?: string | null;
   aiGenerated?: boolean;
+  excerpt?: string;
+  beforeExcerpt?: string;
+  revisionNumber?: number;
+  changeSummary?: string;
+  snapshotComplete?: boolean;
+  excerptScope?: 'original' | 'current' | 'revision';
+  spaceId?: string | null; spaceTitle?: string; groupId?: string | null;
 };
+export type HistoryNote = { spaceId?: string | null; spaceTitle?: string; groupId?: string | null; id: string; title: string; excerpt: string; authorId: string | null; authorName: string | null; type: string; createdAt: string; aiGenerated: boolean };
+export type HistoryRelation = { id: string; source: string; target: string; relationType?: string; creatorId?: string; createdAt?: string; aiSuggested?: boolean };
+export type TimelineContext = { courseId: string; currentSpaceId: string; scope: 'space' | 'course'; canExport: boolean; membershipBasis: 'current'; spaces: {id:string; title:string; groupId:string|null}[]; groups: {id:string; name:string; memberIds:string[]}[]; participants: {id:string; name:string; code:string; role:'teacher'|'student'}[] };
+export type KnowledgeHistory = { context?: TimelineContext; items: TimelineItem[]; generatedAt: string; structure?: { notes: HistoryNote[]; relations: HistoryRelation[] }; coverage?: { truncated: boolean; limitPerSource: number; privateAiScope: 'self'; revisionHistoryComplete: boolean; revisionTimestampField?: 'edited_at' | 'created_at' } };
 
 export const notes = {
   /** 这个空间里知识是怎么一步步长出来的：观点、Build-on、AI 反馈、AI 对话，按时间排。 */
-  timeline: (spaceId: string) =>
-    request<{ items: TimelineItem[]; generatedAt: string }>('GET', `/spaces/${spaceId}/timeline`),
+  timeline: (spaceId: string, scope: 'space' | 'course' = 'space') =>
+    request<KnowledgeHistory>('GET', `/spaces/${spaceId}/timeline?scope=${scope}`),
   list: (spaceId: string, params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params?.limit) qs.set('limit', String(params.limit));
@@ -809,6 +820,7 @@ export interface AdminCourseSummary {
   verification_code: string | null;
   created_at: string;
   student_count: number;
+  teacher_count?: number;
   note_count: number;
   last_activity_at: string | null;
 }
@@ -823,6 +835,7 @@ export interface DashboardCourseSummary {
   verificationCode: string | null;
   createdAt: string;
   studentCount: number;
+  teacherCount?: number;
   noteCount: number;
   lastActivityAt: string | null;
   hasAi: boolean;
@@ -1981,6 +1994,8 @@ export const noteConversations = {
     attachments?: NoteConversationAttachment[];
     use_web_search?: boolean;
     agent_mode?: NoteConversationAgentMode;
+    /** 简短 / 适中 / 详细（2026-10-05 起），实际字数由后端按问题难度再调 */
+    answer_length?: 'short' | 'medium' | 'long';
   }, agentStream = true): Promise<ReadableStreamDefaultReader<Uint8Array>> => {
     const endpoint = agentStream ? 'ai/agent-stream' : 'ai/stream';
     const res = await fetch(`${BASE_URL}/note-conversations/${threadId}/${endpoint}`, {
@@ -2028,7 +2043,26 @@ export interface TriggerSettings {
   response_language: 'auto' | 'zh' | 'en';
   max_feedback_length: number;
   experiment_mode?: boolean;
+  /** 画布问题栏后面滚动的讨论主题，默认开 */
+  view_topics_enabled?: boolean;
 }
+
+/** 问题栏后面滚动的一个讨论主题（AI 按视图里的笔记总结） */
+export interface ViewTopic {
+  label: string;
+  noteIds: string[];
+  count: number;
+}
+
+export const viewTopics = {
+  get: (spaceId: string, viewId: string) =>
+    request<{
+      topics: ViewTopic[]; generatedAt?: string | null; stale?: boolean; disabled?: 'course' | 'experiment'; noteCount?: number;
+      /** 这次没生成出来；retryAfterMs 后再问 */
+      failed?: boolean; retryAfterMs?: number;
+    }>(
+      'GET', `/spaces/${encodeURIComponent(spaceId)}/view-topics?view_id=${encodeURIComponent(viewId)}`),
+};
 
 export type NoteAIFeedbackTriggerType =
   | 'undigested_ai' | 'no_reasoning' | 'no_evidence'
@@ -2051,7 +2085,8 @@ export interface NoteAIFeedback {
   responseText?: string;
   createdAt: string;
   respondedAt?: string;
-  /** 采纳后自动发布到画布的那条笔记；未采纳时为 null。 */
+  /** 贡献时判定后发布的关联笔记；原 Note 已回应反馈时为空。 */
+  publicationReview?: { state: 'pending' | 'processing' | 'addressed' | 'published' | 'uncertain'; evidence?: string | null; reason?: string } | null;
   publishedNoteId?: string | null;
   /** status='rejected' 时学生填的理由（可选补充） */
   rejectionReason?: string | null;
@@ -2092,6 +2127,9 @@ export const noteAiFeedback = {
     request<{ feedback: NoteAIFeedback; published_note_id?: string | null }>(
       'POST', `/notes/${noteId}/ai-feedback/${feedbackId}/respond`, data,
     ),
+
+  finalize: (noteId: string) => request<{ outcomes: { feedbackId: string; state: string; publishedNoteId?: string }[] }>(
+    'POST', `/notes/${noteId}/ai-feedback/finalize`, {}),
 
   requestFeedback: (noteId: string, data: { content?: string; provider_id?: string; model?: string }) =>
     request<{ triggered: boolean; reason?: string; feedback?: NoteAIFeedback }>('POST', `/notes/${noteId}/ai-feedback/request`, data),
@@ -2227,7 +2265,7 @@ export const courseSettings = {
 
   /** 课程概况：学生数、知识空间数、笔记数。 */
   getStats: (courseId: string) =>
-    request<{ studentCount: number; spaceCount: number; noteCount: number }>(
+    request<{ studentCount: number; teacherCount: number; spaceCount: number; noteCount: number }>(
       'GET', `/courses/${courseId}/stats`),
 
   /** 指定或撤销课程管理员。只有课程创建者能调。 */
@@ -2585,7 +2623,8 @@ export interface ResearchOverview {
 
 export type ExportDatasetKey =
   | 'notes' | 'interactions' | 'participants' | 'messages'
-  | 'ai_feedbacks' | 'ai_interventions' | 'events' | 'note_revisions';
+  | 'ai_feedbacks' | 'ai_interventions' | 'feedback_checks' | 'events' | 'note_revisions'
+  | 'support_questions' | 'sessions';
 
 export interface AiModelInfo {
   id: string;
@@ -3067,6 +3106,8 @@ export interface AgentConversation {
   provider_id?: string;
   model?: string;
   course_id?: string;
+  /** 知识空间助手的对话记着自己在哪个空间 */
+  space_id?: string | null;
   updated_at: string;
 }
 
@@ -3088,8 +3129,12 @@ export const workspaceAgent = {
     request<{ aiConfigs: ApiAIConfig[] }>('GET', `/workspace-agent/${courseId}/configs`)
       .then((r) => ({ aiConfigs: (r.aiConfigs ?? []).map(normalizeAIConfig) })),
 
-  listConversations: (courseId: string) =>
-    request<{ conversations: AgentConversation[] }>('GET', `/workspace-agent/${courseId}/conversations`),
+  /** spaceId：只要这个空间里的（后端按空间授权后再筛） */
+  listConversations: (courseId: string, spaceId?: string | null) =>
+    request<{ conversations: AgentConversation[] }>(
+      'GET',
+      `/workspace-agent/${courseId}/conversations${spaceId ? `?space_id=${encodeURIComponent(spaceId)}` : ''}`,
+    ),
 
   createConversation: (courseId: string, data?: { space_id?: string; title?: string }) =>
     request<{ conversation: AgentConversation; aiConfigs?: ApiAIConfig[] }>(
@@ -3693,6 +3738,12 @@ export type SupportQuestion = {
   updatedAt: string;
 };
 
+/** 使用帮助小球里「学生求助」的一条：带课程名；askerRole=teacher 是教师转给平台管理员的 */
+export type SupportInboxItem = SupportQuestion & {
+  courseTitle: string | null;
+  askerRole: 'student' | 'teacher';
+};
+
 /**
  * 学生求助：平台怎么用的问题。AI 先答，答不了转教师。
  * 攒下来的问答同时是平台改进和下一届学生的语料。
@@ -3762,4 +3813,8 @@ export const support = {
       'GET', `/support/questions?course_id=${encodeURIComponent(courseId)}${status ? `&status=${status}` : ''}`),
   answer: (id: string, answer: string) =>
     request<{ question: SupportQuestion }>('POST', `/support/questions/${id}/answer`, { answer }),
+  /** 教师、管理员：我当教职的课里等回复的学生求助；管理员另有教师转来的。小球上的数也从这里来 */
+  inbox: () =>
+    request<{ student: SupportInboxItem[]; teacher: SupportInboxItem[]; counts: { student: number; teacher: number } }>(
+      'GET', '/support/inbox'),
 };

@@ -2,7 +2,13 @@
 
 [English](README.md) · [访问平台](https://ideaweave.tech/) · [系统说明](write/SYSTEM_OVERVIEW.md) · [MIT 开源许可证](LICENSE)
 
-**作者与维护者：Zhenhai He（[Youn-17](https://github.com/Youn-17)）。** 本仓库开源应用代码、机制图和系统说明，英文为主、中文为辅。当前公开版本为 **v0.2.0**。
+**作者与维护者：Zhenhai He（[Youn-17](https://github.com/Youn-17)）。** 本仓库开源应用代码、机制图和系统说明，英文为主、中文为辅。当前公开版本为 **v0.3.0**。
+
+## 本次更新
+
+新增知识地图、构建时间线与序列回放，改进反馈采纳与原 Note 修订流程，增加 AI 工具步骤显示、回答长度偏好、讨论主题、可选 Jev 判断和教师求助路径。
+
+[详细补充说明、操作与升级要求](write/UPDATES_v0.3.0.md) · [完整英文说明](write/UPDATES_v0.3.0.en.md)
 
 ## 整体机制
 

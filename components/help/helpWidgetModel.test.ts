@@ -3,6 +3,8 @@ import {
   ballBounds,
   DEFAULT_BALL_RATIO,
   pickCourse,
+  inboxWaiting,
+  isHelpStaff,
   quickQuestions,
   ratioFromTop,
   readBallRatio,
@@ -27,8 +29,12 @@ describe('挂在哪些页面', () => {
     // 图灵测试是匿名群聊实验，不放一个能问「谁是 AI」的助手
     expect(shouldShowHelp('student', '/workspace/c-1/turing-test')).toBe(false);
     expect(shouldShowHelp('student', '/workspace/c-1/turing-test/act-1')).toBe(false);
-    expect(shouldShowHelp('teacher', '/workspace/c-1')).toBe(false);
-    expect(shouldShowHelp('admin', '/dashboard')).toBe(false);
+    // 2026-10-05 起教师、管理员也有：看学生的求助，自己也能问
+    expect(shouldShowHelp('teacher', '/workspace/c-1')).toBe(true);
+    expect(shouldShowHelp('admin', '/dashboard')).toBe(true);
+    // 主持图灵测试的老师不是被试
+    expect(shouldShowHelp('teacher', '/workspace/c-1/turing-test')).toBe(true);
+    expect(shouldShowHelp('teacher', '/')).toBe(false);
     expect(shouldShowHelp(undefined, '/dashboard')).toBe(false);
     expect(shouldShowHelp('student', '/')).toBe(false);
     expect(shouldShowHelp('student', '/login')).toBe(false);
@@ -117,5 +123,27 @@ describe('常见问题', () => {
     expect(quickQuestions('dashboard', 'en', false)[0]).toBe('How do I join a new course?');
     expect(quickQuestions('canvas', 'zh', true)).toHaveLength(3);
     expect(quickQuestions('mobile-notes', 'zh', true)).toContain('手机上能用吗？');
+  });
+});
+
+describe('教师、管理员', () => {
+  it('哪些账号算教职', () => {
+    expect(isHelpStaff('teacher')).toBe(true);
+    expect(isHelpStaff('admin')).toBe(true);
+    expect(isHelpStaff('student')).toBe(false);
+    expect(isHelpStaff(null)).toBe(false);
+  });
+
+  it('球上的数：学生求助加上教师转来的；没数据是 0', () => {
+    expect(inboxWaiting({ student: 3, teacher: 2 })).toBe(5);
+    expect(inboxWaiting({ student: 1, teacher: 0 })).toBe(1);
+    expect(inboxWaiting(null)).toBe(0);
+  });
+
+  it('教师的常见问题按教师端给：首页问设置，课程里问分组、支架', () => {
+    expect(quickQuestions('dashboard', 'zh', false, 'teacher')).toContain('怎么导出研究数据？');
+    expect(quickQuestions('canvas', 'zh', false, 'teacher')).toContain('怎么给学生分组？');
+    expect(quickQuestions('canvas', 'zh', true, 'teacher')).toHaveLength(3);
+    expect(quickQuestions('dashboard', 'zh', false, 'teacher')).not.toContain('怎么加入一门新课？');
   });
 });

@@ -1,6 +1,6 @@
 # Design contributions and attribution
 
-**Creator and maintainer: Zhenhai He.** Release: v0.2.0. Source snapshot: `f21893aaf50449c8835bd29d9a901464b79d1628`.
+**Creator and maintainer: Zhenhai He.** Release: v0.3.0. Source basis: `9f1e83a0ba93bb4a0fbdedf4d7e4d641fc9f7b70` plus inspected working-tree changes, identified by the public file manifest.
 
 HAKCC is an independently implemented platform for human–AI knowledge collaboration. This statement makes its design claims inspectable alongside the published source. It is not a claim that every underlying concept was first invented in HAKCC.
 

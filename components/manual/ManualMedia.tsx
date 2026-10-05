@@ -11,7 +11,7 @@ import type { MediaBlock } from './manualLayout';
  * 已经出过一次：更新日志那张截图明明换了，页面上纹丝不动。
  * 地址后面挂上版本号，改一次图就能立刻生效，同时保住长缓存。
  */
-const ASSET_V = '7';
+const ASSET_V = '9';
 const asset = (path: string) => `${path}?v=${ASSET_V}`;
 
 const control = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 active:scale-[0.98] dark:hover:bg-slate-800';

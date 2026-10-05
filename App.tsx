@@ -6,6 +6,7 @@ import HelpWidget from './components/help/HelpWidget';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { useScrollActivity } from './hooks/useScrollActivity';
 import { usePlatform } from './hooks/usePlatform';
 import { UserRole, Language } from './types';
 import { readAppLanguage, saveLanguagePreference } from './utils/languagePreference';
@@ -241,6 +242,7 @@ const AppRouter: React.FC = () => {
 
 // Main App Component
 const App: React.FC = () => {
+  useScrollActivity();
   return (
     <ThemeProvider>
       <BrowserRouter>

@@ -3,7 +3,8 @@
  *
  * Endpoints:
  *   GET  /api/spaces/:spaceId/triggers/history — Past interventions
- *   GET  /api/triggers/stats?course_id=…      — Per-group delivered/suppressed counts (editor_inline chain only)
+ *   GET  /api/triggers/stats?course_id=…      — Per-group delivered/suppressed counts (editor_inline chain only),
+ *                                               plus every feedback check: trigger rate and LLM–Jev agreement
  *   GET  /api/notes/:noteId/ai-context        — Build AI context for a note
  *
  * 2026-09-10 删除了 GET /spaces/:id/triggers（全空间规则检测并落 ai_interventions）与
@@ -17,6 +18,11 @@ import { verifyJWT, requireRole } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
 import { buildContext } from '../services/triggerEngine';
 import { ensureNoteAccess, ensureSpaceAccess, ensureCourseInstructor, isCourseStaff } from '../services/accessControl';
+import { summarizeChecks, type CheckStatRow } from '../services/feedbackChecks';
+import { jevConfig } from '../config/jev';
+
+/** 统计只看最近这么多次检查：一门课一学期几千次，够算一致率，又不至于一次拉太多 */
+const CHECK_STATS_LIMIT = 5000;
 
 const router = Router();
 
@@ -92,10 +98,28 @@ router.get('/triggers/stats', verifyJWT, requireRole('teacher', 'admin'), async 
   });
   const unassigned = interventions.filter(i => !i.group_id);
 
+  // 每一次检查（077 起）：触发率，以及 Jev 陪跑时和大模型一致不一致
+  const { data: checkRows } = await supabase
+    .from('feedback_trigger_checks')
+    .select('chain, outcome, decided_by, llm_need, llm_type, jev_mode, jev_need, jev_type, jev_error, jev_latency_ms, jev_cached')
+    .eq('course_id', courseId)
+    .order('created_at', { ascending: false })
+    .limit(CHECK_STATS_LIMIT);
+  const config = jevConfig();
+
   res.json({
     experiment: {
       groups: byGroup,
       unassigned: { delivered: unassigned.filter(r => !r.suppressed).length, suppressed: unassigned.filter(r => r.suppressed).length },
+    },
+    checks: {
+      ...summarizeChecks((checkRows ?? []) as CheckStatRow[]),
+      window: CHECK_STATS_LIMIT,
+      jevSetting: {
+        mode: config.feedbackMode,
+        model: config.model,
+        thresholds: { need: config.needThreshold, promising: config.promisingThreshold },
+      },
     },
   });
 });

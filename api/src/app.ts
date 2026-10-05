@@ -44,6 +44,7 @@ import thinkingTrainerRouter from './routes/thinkingTrainer';
 import codingTrainerRouter from './routes/codingTrainer';
 import ctToolRouter from './routes/ctTool';
 import supportRoutes from './routes/support';
+import viewTopicsRouter from './routes/viewTopics';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { rateLimitKey, ipOnlyKey } from './middleware/rateLimitKey';
 
@@ -169,6 +170,7 @@ app.use('/api', thinkingTrainerRouter);
 app.use('/api', codingTrainerRouter);
 app.use('/api', ctToolRouter);
 app.use('/api', supportRoutes);
+app.use('/api', viewTopicsRouter);
 
 // ── Error handling ────────────────────────────────────────────
 app.use(notFound);

@@ -61,6 +61,30 @@ function clamp(text: string, isCjk: boolean): string {
   return (cut > target * 0.5 ? head.slice(0, cut) : head).trim() + '…';
 }
 
+const WRAPPING_MARKS = /^["'“”‘’「」『』《》【】[\]()（）\s]+|["'“”‘’「」『』《》【】[\]()（）\s]+$/g;
+
+/**
+ * 模型给的反馈标题（2026-10-05 起采纳反馈发布的笔记用它）。去掉引号、书名号、「标题：」、句末标点；
+ * 问句、对着「你」说的、写缺点的、太短太长的一律不要，返回空串，调用方退回别的办法。
+ * 采纳后它是公共画布上一张卡片的标题，连着学生的笔记，同学也看得到：问「你认同哪一条？」别人看不懂，
+ * 写「缺少个人回应」等于当着全班点评这位同学（10-05 第一次试跑就出了好几条这样的）。
+ */
+export function cleanFeedbackTitle(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const text = stripMarkup(raw)
+    .replace(WRAPPING_MARKS, '')
+    .replace(/^(标题|题目|title)\s*[:：]\s*/i, '')
+    .replace(WRAPPING_MARKS, '')
+    .replace(/[。．.!！;；,，、:：…\s]+$/g, '')
+    .trim();
+  if (!text || /[?？]/.test(text)) return '';
+  if (/[你您]|\byou(r|rs|rself)?\b/i.test(text)) return '';
+  if (/缺少|缺乏|缺失|欠缺|不足|\b(lack|lacks|lacking|missing)\b/i.test(text)) return '';
+  if (CJK.test(text)) return text.length >= 4 && text.length <= 22 ? text : '';
+  const words = text.split(/\s+/).length;
+  return words >= 2 && words <= 12 && text.length <= 80 ? text : '';
+}
+
 /**
  * 从 AI 反馈正文里取标题。
  * @param fallback 取不到时用的通用标签（调用方按场景给不同的词）

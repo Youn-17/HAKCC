@@ -5,15 +5,16 @@
  * 界面一改它就过时，模型只能在过时的描述上猜。使用手册（components/manual/manualContent.ts）
  * 每次界面改动后都会对照更新，按钮名照界面原样写在「」里，回答应当以它为准。
  *
- * 后端编译只收 api/src 下的文件，读不到前端的手册源码，所以学生部分以纯文本快照放在
+ * 后端编译只收 api/src 下的文件，读不到前端的手册源码，所以手册以纯文本快照放在
  * supportManualData.ts。快照由 supportManual.test.ts 生成并校对：手册改了、快照没重新生成，
- * 测试就失败。教师专属的章节不进快照，学生问不出教师端的操作。
+ * 测试就失败。学生问的时候只用学生部分（STUDENT_MANUAL），教师专属的章节单独一份
+ * （TEACHER_MANUAL_EXTRA），只有教师问的时候才放进提示词：学生问不出教师端的操作。
  *
  * 提示词里放整本学生手册（见 manualDocument），另用关键词打分（中文相邻两字、英文单词，BM25）
  * 挑出最接近提问的几处作为提示。不用向量：手册一共几十段，关键词够用，也省掉一次网络调用。
  */
 
-import { STUDENT_MANUAL } from './supportManualData';
+import { STUDENT_MANUAL, TEACHER_MANUAL_EXTRA } from './supportManualData';
 
 export type ManualLang = 'zh' | 'en';
 
@@ -76,12 +77,15 @@ function blockText(block: ManualBlockInput, lang: ManualLang): string {
   }
 }
 
-/** 按小标题切段：一个小标题下的内容是一段，常见问题每一问单独一段。 */
-export function buildManualChunks(sections: ReadonlyArray<ManualSectionInput>): ManualChunk[] {
+/**
+ * 按小标题切段：一个小标题下的内容是一段，常见问题每一问单独一段。
+ * 默认只收学生能看到的章节；teacherOnly 为 true 时只收教师专属的章节。
+ */
+export function buildManualChunks(sections: ReadonlyArray<ManualSectionInput>, opts: { teacherOnly?: boolean } = {}): ManualChunk[] {
   const chunks: ManualChunk[] = [];
 
   for (const section of sections) {
-    if (section.teacherOnly) continue;
+    if (Boolean(section.teacherOnly) !== Boolean(opts.teacherOnly)) continue;
     let heading: Pair | null = null;
     let lines: Pair[] = [];
 
@@ -127,14 +131,17 @@ export function buildManualChunks(sections: ReadonlyArray<ManualSectionInput>): 
 }
 
 /** 快照文件的全文。测试拿它和 supportManualData.ts 逐字比对。 */
-export function renderManualDataModule(chunks: ManualChunk[]): string {
+export function renderManualDataModule(chunks: ManualChunk[], teacherChunks: ManualChunk[] = []): string {
   return [
-    '// 自动生成：学生版使用手册的纯文本快照，求助回答以它为依据。不要手改。',
+    '// 自动生成：使用手册的纯文本快照，求助回答以它为依据。不要手改。',
     '// 来源是 components/manual/manualContent.ts。手册改了以后重新生成：',
     '//   npx vitest run api/src/services/supportManual.test.ts -u',
     "import type { ManualChunk } from './supportManual';",
     '',
     `export const STUDENT_MANUAL: ManualChunk[] = ${JSON.stringify(chunks, null, 2)};`,
+    '',
+    '// 教师专属的章节，只有教师在「使用帮助」里提问时才用',
+    `export const TEACHER_MANUAL_EXTRA: ManualChunk[] = ${JSON.stringify(teacherChunks, null, 2)};`,
     '',
   ].join('\n');
 }
@@ -279,6 +286,10 @@ export function selectManualExcerpts(
 
 export const STUDENT_SECTION_NUMS: ReadonlySet<string> = new Set(STUDENT_MANUAL.map(c => c.num));
 
+/** 教师提问时用的整本：学生部分加教师专属的章节 */
+export const TEACHER_MANUAL: ReadonlyArray<ManualChunk> = [...STUDENT_MANUAL, ...TEACHER_MANUAL_EXTRA];
+export const TEACHER_SECTION_NUMS: ReadonlySet<string> = new Set(TEACHER_MANUAL.map(c => c.num));
+
 export function sectionTitle(num: string, lang: ManualLang, source: ReadonlyArray<ManualChunk> = STUDENT_MANUAL): string | null {
   return source.find(c => c.num === num)?.section[lang] ?? null;
 }
@@ -313,8 +324,8 @@ export function manualDocument(lang: ManualLang, source: ReadonlyArray<ManualChu
 }
 
 /** 关键词最接近提问的几处，作为提示放在手册后面，帮快速档模型先看对地方。 */
-export function manualHints(question: string, lang: ManualLang, limit = 3): ManualExcerpt[] {
-  return selectManualExcerpts(question, lang, { limit });
+export function manualHints(question: string, lang: ManualLang, limit = 3, source: ReadonlyArray<ManualChunk> = STUDENT_MANUAL): ManualExcerpt[] {
+  return selectManualExcerpts(question, lang, { limit }, source);
 }
 
 export function describeExcerpt(e: Pick<ManualExcerpt, 'num' | 'section' | 'heading'>): string {

@@ -24,6 +24,7 @@ export const DATASET_KEYS = [
   'messages',
   'ai_feedbacks',
   'ai_interventions',
+  'feedback_checks',
   'events',
   'note_revisions',
   'support_questions',
@@ -546,6 +547,46 @@ export const DATASET_COLUMNS: Record<DatasetKey, ColumnDef[]> = {
     { key: 'intervention_id', zh: '干预ID', en: 'intervention_id', group: 'meta' },
     { key: 'note_id', zh: '笔记ID', en: 'note_id', group: 'meta' },
   ],
+  // AI 反馈的每一次检查（077，2026-10-05 起）。没出反馈的检查也在，触发率和
+  // 大模型、Jev 的一致率都从这里算；Jev 的概率是原始值，换阈值可以自己重算。
+  feedback_checks: [
+    { key: 'seq', zh: '序号', en: 'seq', group: 'identity' },
+    { key: 'participant_id', zh: '参与者编号', en: 'participant_id', group: 'identity' },
+    { key: 'participant_name', zh: '姓名', en: 'participant_name', group: 'identity', sensitive: true },
+    { key: 'group_name', zh: '所属小组', en: 'group_name', group: 'identity' },
+    { key: 'condition', zh: '实验条件', en: 'condition', group: 'identity' },
+    { key: 'note_title', zh: '被检查的笔记', en: 'note_title', group: 'structure' },
+    { key: 'chain', zh: '检查来源', en: 'chain', group: 'content' },
+    { key: 'draft_length', zh: '当时草稿长度', en: 'draft_length', group: 'content' },
+    { key: 'outcome', zh: '结果', en: 'outcome', group: 'content' },
+    { key: 'decided_by', zh: '由谁决定', en: 'decided_by', group: 'ai' },
+    { key: 'trigger_type', zh: '反馈类型', en: 'trigger_type', group: 'ai' },
+    { key: 'llm_need', zh: '大模型：要不要', en: 'llm_need', group: 'ai' },
+    { key: 'llm_type', zh: '大模型：类型', en: 'llm_type', group: 'ai' },
+    { key: 'llm_model', zh: '大模型：模型', en: 'llm_model', group: 'ai' },
+    { key: 'llm_latency_ms', zh: '大模型：用时（毫秒）', en: 'llm_latency_ms', group: 'ai' },
+    { key: 'jev_mode', zh: 'Jev：模式', en: 'jev_mode', group: 'ai' },
+    { key: 'jev_need', zh: 'Jev：要不要', en: 'jev_need', group: 'ai' },
+    { key: 'jev_reason', zh: 'Jev：理由', en: 'jev_reason', group: 'ai' },
+    { key: 'jev_need_p', zh: 'Jev：有明显问题的概率', en: 'jev_need_p', group: 'ai' },
+    { key: 'jev_promising_p', zh: 'Jev：好想法的概率', en: 'jev_promising_p', group: 'ai' },
+    { key: 'jev_type', zh: 'Jev：类型', en: 'jev_type', group: 'ai' },
+    { key: 'jev_type_probs', zh: 'Jev：各类型概率', en: 'jev_type_probs', group: 'ai' },
+    { key: 'jev_need_threshold', zh: 'Jev：问题阈值', en: 'jev_need_threshold', group: 'ai' },
+    { key: 'jev_promising_threshold', zh: 'Jev：好想法阈值', en: 'jev_promising_threshold', group: 'ai' },
+    { key: 'jev_model', zh: 'Jev：版本', en: 'jev_model', group: 'ai' },
+    { key: 'jev_latency_ms', zh: 'Jev：用时（毫秒）', en: 'jev_latency_ms', group: 'ai' },
+    { key: 'jev_cached', zh: 'Jev：用了缓存', en: 'jev_cached', group: 'ai' },
+    { key: 'jev_error', zh: 'Jev：出错', en: 'jev_error', group: 'ai' },
+    { key: 'need_agree', zh: '两边要不要是否一致', en: 'need_agree', group: 'ai' },
+    { key: 'created_at_local', zh: '时间', en: 'created_at', group: 'time' },
+    { key: 'week_index', zh: '第几周', en: 'week', group: 'time' },
+    { key: 'weekday', zh: '星期', en: 'weekday', group: 'time' },
+    { key: 'hour', zh: '小时', en: 'hour', group: 'time' },
+    { key: 'check_id', zh: '检查ID', en: 'check_id', group: 'meta' },
+    { key: 'note_id', zh: '笔记ID', en: 'note_id', group: 'meta' },
+    { key: 'feedback_id', zh: '反馈ID', en: 'feedback_id', group: 'meta' },
+  ],
   events: [
     { key: 'seq', zh: '序号', en: 'seq', group: 'identity' },
     { key: 'participant_id', zh: '参与者编号', en: 'participant_id', group: 'identity' },
@@ -643,6 +684,7 @@ export const DATASET_LABELS: Record<DatasetKey, { zh: string; en: string; descZh
   messages: { zh: '对话消息', en: 'Messages', descZh: '一行一条消息:小组讨论、同伴私聊、与AI对话', descEn: 'Every message in group, peer, and AI threads' },
   ai_feedbacks: { zh: 'AI 内嵌反馈', en: 'AI feedbacks', descZh: '一行一条 T1-T6 反馈及学生处置', descEn: 'T1-T6 feedback and student disposition' },
   ai_interventions: { zh: 'AI 干预日志', en: 'AI interventions', descZh: '三条链的全部触发,含对照组影子记录', descEn: 'All trigger chains incl. control shadow logs' },
+  feedback_checks: { zh: 'AI 反馈检查记录', en: 'AI feedback checks', descZh: '一行一次自动反馈检查(2026-10-05 起),没出反馈的也在:要不要反馈、哪一类、大模型和 Jev 各自怎么判、由谁决定', descEn: 'One row per automatic feedback check (from 2026-10-05), including checks that produced no feedback: whether feedback was needed, which type, how the LLM and Jev each judged, and who decided' },
   events: { zh: '行为事件流', en: 'Event log', descZh: '一行一个操作事件,用于时序分析', descEn: 'Timestamped behaviour log' },
   note_revisions: { zh: '笔记修订史', en: 'Note revisions', descZh: '笔记内容随时间的演化', descEn: 'Content evolution over time' },
   sessions: { zh: '课次记录', en: 'Class sessions', descZh: '一行一次课:计划与实际的开课时间、是否上课、课堂期间的建构活动统计与教学日志', descEn: 'One row per class session: planned vs. actual time, whether it was held, in-class activity counts and the teaching log' },
@@ -1151,6 +1193,101 @@ async function buildInterventionsTable(scope: ExportScope, graph: NoteGraph): Pr
   return { key: 'ai_interventions', rows, truncated: (data ?? []).length > ROW_LIMIT };
 }
 
+const CHECK_CHAIN_LABEL: Record<string, string> = {
+  editor_inline: '打字时自动检查',
+  editor_request: '学生主动要',
+  teacher_batch: '教师批量',
+};
+const CHECK_OUTCOME_LABEL: Record<string, string> = {
+  triggered: '出了反馈',
+  silent: '判断不需要',
+  type_disabled: '需要，但这一类教师关掉了',
+  llm_declined: 'Jev 说要，大模型不写',
+  failed: '没判断出来',
+};
+const CHECK_DECIDER_LABEL: Record<string, string> = {
+  llm: '大模型', jev: 'Jev', regex_fallback: '关键词规则', none: '无',
+};
+const JEV_MODE_LABEL: Record<string, string> = {
+  off: '未开启', shadow: '陪跑（只记录）', gate: '由 Jev 决定',
+};
+const JEV_REASON_LABEL: Record<string, string> = { gap: '有明显问题', promising: '好想法推一把' };
+const yesNo = (value: unknown) => (value === true ? '是' : value === false ? '否' : '');
+
+/**
+ * AI 反馈的每一次检查（feedback_trigger_checks，077）。
+ *
+ * 参与者是被检查的那条笔记的作者：教师批量那一路发起人是教师，被判断的是学生的笔记。
+ * 对照组根本不检查，所以没有对照组的行。「两边要不要是否一致」只在打字时的自动检查里算：
+ * 学生主动要的那一路大模型被要求一定给，教师批量又要求放宽，都不是在判断要不要。
+ */
+async function buildFeedbackChecksTable(scope: ExportScope, graph: NoteGraph): Promise<Dataset> {
+  const { from, to } = scope.filters;
+  let query = supabase
+    .from('feedback_trigger_checks')
+    .select('id, note_id, user_id, chain, draft_length, outcome, decided_by, trigger_type, feedback_id, llm_need, llm_type, llm_provider, llm_model, llm_latency_ms, jev_mode, jev_need, jev_reason, jev_need_p, jev_promising_p, jev_type, jev_type_p, jev_thresholds, jev_model, jev_latency_ms, jev_cached, jev_error, created_at')
+    .eq('course_id', scope.courseId)
+    .in('space_id', scope.spaceIds)
+    .order('created_at', { ascending: true })
+    .limit(ROW_LIMIT + 1);
+  if (from) query = query.gte('created_at', from);
+  if (to) query = query.lte('created_at', to);
+
+  const { data } = await query;
+  const rows = (data ?? [])
+    .map((c) => {
+      const note = c.note_id ? graph.noteById.get(c.note_id as string) : undefined;
+      return { c, note, personId: note?.author_id ?? (c.user_id as string | null) };
+    })
+    .filter(({ c, note, personId }) => inScope(scope, personId) && (!c.note_id || !!note))
+    .slice(0, ROW_LIMIT)
+    .map(({ c, note, personId }, index) => {
+      const t = localTime(c.created_at as string, scope.tz, scope.courseStartMs);
+      const thresholds = (c.jev_thresholds ?? {}) as { need?: number; promising?: number };
+      const compared = c.chain === 'editor_inline' && typeof c.llm_need === 'boolean' && typeof c.jev_need === 'boolean';
+      return {
+        seq: index + 1,
+        participant_id: codeOf(scope, personId),
+        participant_name: nameOf(scope, personId),
+        group_name: groupNameOf(scope, personId),
+        condition: conditionOf(scope, personId),
+        note_title: note?.title ?? '',
+        chain: CHECK_CHAIN_LABEL[c.chain as string] ?? c.chain,
+        draft_length: c.draft_length ?? '',
+        outcome: CHECK_OUTCOME_LABEL[c.outcome as string] ?? c.outcome,
+        decided_by: CHECK_DECIDER_LABEL[c.decided_by as string] ?? c.decided_by,
+        trigger_type: c.trigger_type ?? '',
+        llm_need: yesNo(c.llm_need),
+        llm_type: c.llm_type ?? '',
+        llm_model: [c.llm_provider, c.llm_model].filter(Boolean).join('/'),
+        llm_latency_ms: c.llm_latency_ms ?? '',
+        jev_mode: JEV_MODE_LABEL[c.jev_mode as string] ?? (c.jev_mode ?? ''),
+        jev_need: yesNo(c.jev_need),
+        jev_reason: JEV_REASON_LABEL[c.jev_reason as string] ?? '',
+        jev_need_p: c.jev_need_p ?? '',
+        jev_promising_p: c.jev_promising_p ?? '',
+        jev_type: c.jev_type ?? '',
+        jev_type_probs: c.jev_type_p ?? '',
+        jev_need_threshold: thresholds.need ?? '',
+        jev_promising_threshold: thresholds.promising ?? '',
+        jev_model: c.jev_model ?? '',
+        jev_latency_ms: c.jev_latency_ms ?? '',
+        jev_cached: yesNo(c.jev_cached),
+        jev_error: c.jev_error ?? '',
+        need_agree: compared ? (c.llm_need === c.jev_need ? '是' : '否') : '',
+        created_at_local: t.local,
+        week_index: t.week,
+        weekday: t.weekday,
+        hour: t.hour,
+        check_id: c.id,
+        note_id: c.note_id ?? '',
+        feedback_id: c.feedback_id ?? '',
+      };
+    });
+
+  return { key: 'feedback_checks', rows, truncated: (data ?? []).length > ROW_LIMIT };
+}
+
 async function buildEventsTable(scope: ExportScope, graph: NoteGraph): Promise<Dataset> {
   const { from, to } = scope.filters;
   let query = supabase
@@ -1205,6 +1342,8 @@ async function buildSupportTable(scope: ExportScope): Promise<Dataset> {
     .from('support_questions')
     .select('id, user_id, space_id, question, ai_answer, ai_model, ai_resolved, ai_answered_at, escalated_at, escalation_note, teacher_answer, teacher_answered_at, status, context, attachments, created_at')
     .eq('course_id', scope.courseId)
+    // 教师在「使用帮助」里问的不是被试的数据（2026-10-05 起教师也能问）
+    .eq('asker_role', 'student')
     .order('created_at', { ascending: true })
     .limit(ROW_LIMIT + 1);
   if (from) query = query.gte('created_at', from);
@@ -1484,11 +1623,12 @@ export async function buildAllDatasets(scope: ExportScope): Promise<BuiltExport>
   const threads = await loadThreads(scope);
 
   const notes = buildNotesTable(scope, graph);
-  const [interactions, messages, feedbacks, interventions, events, revisions, supportQuestions, sessions] = await Promise.all([
+  const [interactions, messages, feedbacks, interventions, feedbackChecks, events, revisions, supportQuestions, sessions] = await Promise.all([
     buildInteractionsTable(scope, graph, threads),
     buildMessagesTable(scope, graph, threads),
     buildAiFeedbacksTable(scope, graph),
     buildInterventionsTable(scope, graph),
+    buildFeedbackChecksTable(scope, graph),
     buildEventsTable(scope, graph),
     buildRevisionsTable(scope, graph),
     buildSupportTable(scope),
@@ -1499,6 +1639,7 @@ export async function buildAllDatasets(scope: ExportScope): Promise<BuiltExport>
   const datasets: Record<DatasetKey, Dataset> = {
     notes, interactions, participants, messages,
     ai_feedbacks: feedbacks, ai_interventions: interventions,
+    feedback_checks: feedbackChecks,
     events, note_revisions: revisions,
     support_questions: supportQuestions,
     sessions,
@@ -1606,6 +1747,21 @@ export function buildReadme(scope: ExportScope, built: BuiltExport, generatedAt:
     '在他人笔记上建构(延伸/综合/质疑/证据/澄清/提问)**计为学生之间的互动**,',
     '与聊天消息一并收录在「互动总表」中。涉及 AI 的行以 `是否涉及AI = 是` 标记,可自行过滤。',
   );
+
+  if (selected.includes('feedback_checks')) {
+    lines.push(
+      '',
+      '## 关于「AI 反馈检查记录」',
+      '',
+      '- 2026-10-05 起才有。在那之前只有出了反馈的检查留下记录(见「AI 内嵌反馈」)。',
+      '- 一行一次检查。草稿太短、在冷却期内、对照组的检查不记:这些情况没有走到判断那一步。',
+      '- 参与者是被检查的那条笔记的作者;「教师批量」这一路由教师发起。',
+      '- 「由谁决定」:Jev 的模式是「陪跑」时决定都由大模型做,Jev 只记录;「由 Jev 决定」时大模型只写反馈正文。',
+      '- 「两边要不要是否一致」只在「打字时自动检查」里算。学生主动要的那一路大模型被要求一定给,教师批量又要求放宽,都不是在判断要不要。',
+      '- Jev 的概率是原始值,阈值另列两栏(教师的灵敏度设置会在基准上调),换阈值可以自己重算。',
+      '- 用 `反馈ID` 连接「AI 内嵌反馈」,用 `笔记ID` 连接「笔记总表」。',
+    );
+  }
 
   if (built.warnings.length > 0) {
     lines.push('', '## 数据质量提示', '', ...built.warnings.map((w) => `- ${w}`));

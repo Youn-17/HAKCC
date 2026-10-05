@@ -31,6 +31,6 @@ describe('note editor split layout', () => {
       startX: 500,
       currentX: 320,
       viewportWidth: 1600,
-    })).toBe(NOTE_AI_SPLIT_LAYOUT.minAiWidth);
+    })).toBe(380);
   });
 });

@@ -40,6 +40,21 @@ export const RELATION_PALETTE = {
 /** 提醒用的红：画布卡片上的「New」和热帖的火。陶红在白底上太弱，这里要一眼看到。 */
 export const SIGNAL_RED = '#D9423A';
 
+/**
+ * 「我的」卡片：自己写的笔记浅蓝底，几十张卡里一眼认出自己的（2026-10-05 用户定浅蓝底，不用边线）。
+ * 画布底色 #f5f7fb 本身偏灰蓝，这个蓝要比它明显深一档、偏蓝，否则贴上去分不出来。
+ * 不用灰：上面 stone 的意思是「无状态/未启用」，灰卡会被读成停用。
+ * 类名写成字面量放在这里，Tailwind 才扫得到。
+ */
+export const MINE_CARD = {
+  bg: '#E3ECFB',
+  border: '#B9CDF0',
+  bgClass: 'bg-[#E3ECFB]',
+  borderClass: 'border-[#B9CDF0]',
+  /** 名字旁的「我」 */
+  tagClass: 'bg-[#D2E0F8] text-[#1E3A8A]',
+} as const;
+
 /** 品牌导航蓝在深色模式下的对应色。导航蓝本身在深底上读不出来。 */
 export const BRAND_NAVY = '#000080';
 export const BRAND_NAVY_DARK = '#93AAFD';

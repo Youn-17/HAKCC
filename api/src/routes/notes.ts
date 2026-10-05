@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { loadKnowledgeTimeline } from '../services/knowledgeTimeline';
 import { supabase } from '../config/supabase';
 import { verifyJWT } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
@@ -399,118 +400,12 @@ async function expandNotes(
   });
 }
 
-// GET /api/spaces/:spaceId/notes
-/**
- * GET /spaces/:spaceId/timeline — 这个知识空间里发生过什么，按时间排。
- *
- * 不从 events 表拼：那张表记的是埋点（打开过、登录过），噪音大，
- * 而且没有标题、没有关系方向。时间线要回答的是「知识是怎么一步步长出来的」，
- * 所以直接从四张业务表取：观点发布、Build-on、AI 反馈、AI 对话开启。
- *
- * 一次返回全量而不分页：一个空间一学期也就几百条，前端按天分组
- * 需要完整数据才能画出节奏条。
- */
+// GET /api/spaces/:spaceId/timeline
+/** Knowledge progression: public ideas, real revisions and caller-owned AI activity. */
 router.get('/spaces/:spaceId/timeline', verifyJWT, async (req: Request, res: Response) => {
-  const spaceId = String(req.params.spaceId);
-  await ensureSpaceAccess(spaceId, req.user!);
-
-  const [notesRes, relsRes, feedbackRes, threadsRes] = await Promise.all([
-    supabase.from('notes')
-      .select('id, title, author_id, type, created_at, is_ai_generated')
-      .eq('space_id', spaceId).is('deleted_at', null)
-      .order('created_at', { ascending: true }).limit(2000),
-    supabase.from('relations')
-      .select('id, source_note_id, target_note_id, relation_type, creator_id, created_at, ai_suggested')
-      .eq('space_id', spaceId)
-      .order('created_at', { ascending: true }).limit(2000),
-    supabase.from('note_ai_feedbacks')
-      .select('id, note_id, user_id, trigger_type, status, created_at')
-      .eq('space_id', spaceId)
-      .order('created_at', { ascending: true }).limit(2000),
-    supabase.from('note_conversation_threads')
-      .select('id, note_id, created_by, target_type, created_at')
-      .eq('space_id', spaceId).eq('target_type', 'ai')
-      .order('created_at', { ascending: true }).limit(2000),
-  ]);
-  for (const r of [notesRes, relsRes, feedbackRes, threadsRes]) {
-    if (r.error) throw new ApiError(500, r.error.message);
-  }
-
-  const notes = notesRes.data ?? [];
-  const noteById = new Map(notes.map((n: any) => [n.id, n]));
-  const actorIds = new Set<string>();
-  for (const n of notes) if (n.author_id) actorIds.add(n.author_id);
-  for (const r of relsRes.data ?? []) if (r.creator_id) actorIds.add(r.creator_id);
-  for (const t of threadsRes.data ?? []) if (t.created_by) actorIds.add(t.created_by);
-
-  const { data: profiles } = actorIds.size
-    ? await supabase.from('profiles').select('id, full_name').in('id', [...actorIds])
-    : { data: [] as any[] };
-  const nameOf = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name as string]));
-
-  type Item = {
-    id: string;
-    kind: 'note' | 'build_on' | 'ai_feedback' | 'ai_chat';
-    at: string;
-    actorId: string | null;
-    actorName: string | null;
-    noteId: string | null;
-    noteTitle: string | null;
-    /** build_on 专用：被接的那条 */
-    targetNoteId?: string | null;
-    targetNoteTitle?: string | null;
-    targetActorId?: string | null;
-    targetActorName?: string | null;
-    relationType?: string | null;
-    /** ai_feedback 专用 */
-    triggerType?: string | null;
-    status?: string | null;
-    aiGenerated?: boolean;
-  };
-
-  const items: Item[] = [];
-  for (const n of notes) {
-    if (n.type === 'attachment' || n.type === 'drawing') continue;
-    items.push({
-      id: `note:${n.id}`, kind: 'note', at: n.created_at,
-      actorId: n.author_id ?? null, actorName: nameOf.get(n.author_id) ?? null,
-      noteId: n.id, noteTitle: n.title ?? null, aiGenerated: Boolean(n.is_ai_generated),
-    });
-  }
-  for (const r of relsRes.data ?? []) {
-    const src = noteById.get(r.source_note_id);
-    const dst = noteById.get(r.target_note_id);
-    if (!src || !dst) continue;
-    items.push({
-      id: `rel:${r.id}`, kind: 'build_on', at: r.created_at,
-      actorId: r.creator_id ?? src.author_id ?? null,
-      actorName: nameOf.get(r.creator_id ?? src.author_id) ?? null,
-      noteId: src.id, noteTitle: src.title ?? null,
-      targetNoteId: dst.id, targetNoteTitle: dst.title ?? null, targetActorId: dst.author_id ?? null,
-      targetActorName: nameOf.get(dst.author_id) ?? null,
-      relationType: r.relation_type ?? null,
-    });
-  }
-  for (const f of feedbackRes.data ?? []) {
-    const n = noteById.get(f.note_id);
-    items.push({
-      id: `fb:${f.id}`, kind: 'ai_feedback', at: f.created_at,
-      actorId: f.user_id ?? null, actorName: nameOf.get(f.user_id) ?? null,
-      noteId: f.note_id, noteTitle: n?.title ?? null,
-      triggerType: f.trigger_type ?? null, status: f.status ?? null,
-    });
-  }
-  for (const t of threadsRes.data ?? []) {
-    const n = noteById.get(t.note_id);
-    items.push({
-      id: `chat:${t.id}`, kind: 'ai_chat', at: t.created_at,
-      actorId: t.created_by ?? null, actorName: nameOf.get(t.created_by) ?? null,
-      noteId: t.note_id, noteTitle: n?.title ?? null,
-    });
-  }
-  items.sort((a, b) => a.at.localeCompare(b.at));
-
-  res.json({ items, generatedAt: new Date().toISOString() });
+  const scope = req.query.scope ?? 'space';
+  if (scope !== 'space' && scope !== 'course') throw new ApiError(400, 'Invalid timeline scope');
+  res.json(await loadKnowledgeTimeline(String(req.params.spaceId), req.user!, scope));
 });
 
 router.get('/spaces/:spaceId/notes', verifyJWT, async (req: Request, res: Response) => {

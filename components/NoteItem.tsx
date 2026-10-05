@@ -7,7 +7,7 @@ import {
 import { RiseAboveIcon, ViewIcon } from './icons/CustomIcons';
 import type { Language, Note } from '../types';
 import { RELATION_COLORS } from './relationColors';
-import { MORANDI } from './morandiPalette';
+import { MINE_CARD, MORANDI } from './morandiPalette';
 import UserAvatar from './UserAvatar';
 import NoteCornerBadges from './NoteCornerBadges';
 import {
@@ -34,6 +34,8 @@ interface NoteItemProps {
   isNew?: boolean;
   /** 空间里被 Build-on 最多的笔记（至少两次）：左上角一团火，值是次数；0 表示不是 */
   hotCount?: number;
+  /** 我自己写的：浅蓝底，名字旁一个「我」（isOwnNote） */
+  isMine?: boolean;
   className?: string;
   onMouseDown: (e: React.MouseEvent, note: Note) => void;
   onDoubleClick: (e: React.MouseEvent, note: Note) => void;
@@ -141,8 +143,8 @@ const NoteAvatar: React.FC<{ note: Note; size?: number }> = ({ note, size = 20 }
  * 姓名 15px —— 和标题同号但更粗：学生在几十张卡里找自己的笔记，
  * 认的就是这一行，比标题更需要一眼可读。
  */
-const NoteByline: React.FC<{ note: Note; nameColor?: string; avatarSize?: number; nameSize?: number; stampSize?: number }> = ({
-  note, nameColor, avatarSize = 24, nameSize = NOTE_FONT.author, stampSize = NOTE_FONT.meta,
+const NoteByline: React.FC<{ note: Note; nameColor?: string; avatarSize?: number; nameSize?: number; stampSize?: number; mineLabel?: string }> = ({
+  note, nameColor, avatarSize = 24, nameSize = NOTE_FONT.author, stampSize = NOTE_FONT.meta, mineLabel,
 }) => (
   // flex-wrap + 姓名的最小宽度：卡片够宽时姓名和时间同一行；
   // 窄卡上时间自动落到第二行，而不是把姓名截断成「李…」——
@@ -156,6 +158,10 @@ const NoteByline: React.FC<{ note: Note; nameColor?: string; avatarSize?: number
     >
       {note.author}
     </span>
+    {/* 不只靠底色：色弱的同学也认得出哪张是自己的 */}
+    {mineLabel && (
+      <span className={`flex-shrink-0 rounded px-1 text-[11px] font-semibold leading-4 ${MINE_CARD.tagClass}`}>{mineLabel}</span>
+    )}
     {note.date && (
       <span
         className="ml-auto flex-shrink-0 font-medium tabular-nums text-slate-700"
@@ -167,8 +173,11 @@ const NoteByline: React.FC<{ note: Note; nameColor?: string; avatarSize?: number
   </div>
 );
 
-const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMultiSelected, hasBuildOns, moveCounts, synthesisDepth = 1, isNew, hotCount, className = '', onMouseDown, onDoubleClick, onContextMenu, onResizeStart }) => {
+const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMultiSelected, hasBuildOns, moveCounts, synthesisDepth = 1, isNew, hotCount, isMine, className = '', onMouseDown, onDoubleClick, onContextMenu, onResizeStart }) => {
   const grip = <ResizeGrip note={note} onResizeStart={onResizeStart} visible={isSelected || isMultiSelected} />;
+  const mineLabel = isMine ? (lang === 'zh' ? '我' : 'Me') : undefined;
+  const cardBg = isMine ? MINE_CARD.bgClass : 'bg-white';
+  const restingBorder = isMine ? MINE_CARD.borderClass : 'border-gray-200/80';
   const badges = <NoteCornerBadges isNew={isNew} hotCount={hotCount} lang={lang} />;
   const builtOnLabel = lang === 'zh' ? '已有 Build-on' : 'Built on';
   const builtOnTitle = lang === 'zh'
@@ -203,8 +212,9 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         <div
             className={`absolute flex flex-col ${dragCursor(note)} group select-none ${className}
                 ${isMultiSelected ? 'ring-2 ring-orange-400 shadow-xl z-50' : isSelected ? 'ring-2 ring-blue-500 shadow-xl z-50' : 'shadow-md hover:shadow-lg z-20'}
-                bg-white rounded-lg border border-gray-200
+                ${cardBg} rounded-lg border ${isMine ? MINE_CARD.borderClass : 'border-gray-200'}
             `}
+            data-mine={isMine || undefined}
             style={{
                 transform: `translate(${note.x}px, ${note.y}px)`,
                 width: note.width || 200,
@@ -215,7 +225,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
             onContextMenu={(e) => onContextMenu(e, note)}
             title={note.title}
         >
-            <div className="h-full w-full overflow-hidden rounded-lg bg-white relative p-2">
+            <div className={`h-full w-full overflow-hidden rounded-lg ${cardBg} relative p-2`}>
                 <svg width="100%" height="100%" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet" className="pointer-events-none">
                     {note.drawingData.map((el: any) => {
                         const commonProps = { stroke: el.stroke, strokeWidth: 2, fill: el.fill };
@@ -332,17 +342,18 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         onDoubleClick={(e) => onDoubleClick(e, note)}
         onContextMenu={(e) => onContextMenu(e, note)}
         title={note.fileName || note.title}
+        data-mine={isMine || undefined}
       >
         <div className={`
-          flex min-w-[168px] max-w-[248px] flex-col rounded-lg border bg-white px-3 py-2 transition-all duration-200 motion-reduce:transition-none
-          ${isMultiSelected ? 'ring-2 ring-orange-400 shadow-lg border-orange-200' : isSelected ? 'ring-2 ring-blue-500 shadow-lg border-blue-200' : 'shadow-[0_1px_4px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:-translate-y-[1px] border-gray-200/80'}
+          flex min-w-[168px] max-w-[248px] flex-col rounded-lg border ${cardBg} px-3 py-2 transition-all duration-200 motion-reduce:transition-none
+          ${isMultiSelected ? 'ring-2 ring-orange-400 shadow-lg border-orange-200' : isSelected ? 'ring-2 ring-blue-500 shadow-lg border-blue-200' : `shadow-[0_1px_4px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:-translate-y-[1px] ${restingBorder}`}
         `}>
           <div className="flex items-center gap-2">
             <span className="flex-shrink-0">{getIcon()}</span>
             <span className="truncate text-[13px] font-medium text-slate-800">{note.title}</span>
           </div>
           <div className="mt-1.5">
-            <NoteByline note={note} avatarSize={20} nameSize={14} />
+            <NoteByline note={note} avatarSize={20} nameSize={14} mineLabel={mineLabel} />
           </div>
         </div>
       </div>
@@ -409,7 +420,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
       >
         {grip}
         {badges}
-        <div className="relative z-10 bg-white border border-purple-200 rounded-xl flex flex-col h-full overflow-hidden">
+        <div className={`relative z-10 ${cardBg} border border-purple-200 rounded-xl flex flex-col h-full overflow-hidden`} data-mine={isMine || undefined}>
            {/* Header — compact, canvas-native */}
            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-purple-100 px-3 py-1.5 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
@@ -439,7 +450,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
 
            {/* Footer */}
            <div className="px-3 py-1.5 border-t border-purple-50 bg-gray-50/50">
-              <NoteByline note={note} avatarSize={20} nameSize={14} />
+              <NoteByline note={note} avatarSize={20} nameSize={14} mineLabel={mineLabel} />
            </div>
         </div>
       </div>
@@ -492,10 +503,13 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
           <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border-2 border-white" />
         </span>
       )}
-      <div className={`
-        h-full rounded-lg overflow-hidden transition-all duration-200 motion-reduce:transition-none bg-white border
-        ${isMultiSelected ? 'ring-2 ring-orange-400 shadow-lg border-orange-200' : isSelected ? 'ring-2 ring-blue-500 shadow-lg border-blue-200' : 'shadow-[0_1px_4px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:-translate-y-[1px] border-gray-200/80'}
-      `}>
+      <div
+        className={`
+        h-full rounded-lg overflow-hidden transition-all duration-200 motion-reduce:transition-none ${cardBg} border
+        ${isMultiSelected ? 'ring-2 ring-orange-400 shadow-lg border-orange-200' : isSelected ? 'ring-2 ring-blue-500 shadow-lg border-blue-200' : `shadow-[0_1px_4px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:-translate-y-[1px] ${restingBorder}`}
+      `}
+        data-mine={isMine || undefined}
+      >
         <div className="flex" style={{ height: '4px' }}>
           {moveSegments.length > 0
             ? moveSegments.map(key => (
@@ -526,7 +540,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
             </span>
           )}
           <div className="mt-auto pt-1.5">
-            <NoteByline note={note} />
+            <NoteByline note={note} mineLabel={mineLabel} />
           </div>
           {(hasBuildOns || (moveCounts?.challenge ?? 0) > 0) && (
             <div className="flex items-center gap-1 mt-1">

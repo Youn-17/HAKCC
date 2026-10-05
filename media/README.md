@@ -18,6 +18,12 @@ The Note editor combines student writing, scaffolds, and contextual AI assistanc
 
 Teacher-side course configuration. No provider secret is displayed.
 
+### Public update panel
+
+![Public v0.3.0 update notes](../public/manual/ui-changelog.jpg)
+
+The update panel was recaptured with the local mock service on 6 October 2026. It shows the sanitized public release history. The workspace and assistant screenshots also reflect updated interface assets; the three looping GIFs retain their earlier baseline demonstrations.
+
 ## Animated demonstrations
 
 ### Build-on

@@ -246,6 +246,8 @@ const cardOf = (page, title) => page.getByText(title, { exact: true }).first();
 async function openCanvas(page) {
   await page.goto(canvasUrl());
   await page.getByText('AI 可能让人不愿意自己思考').first().waitFor();
+  // 问题栏后面的讨论主题是另一个请求，等它出来再拍（2026-10-05 起）
+  await page.locator('[data-view-topics]').first().waitFor({ timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(1600);
 }
 
@@ -303,6 +305,9 @@ SCENES.push(
     kind: 'shot',
     async run({ page, shot }) {
       await openCanvas(page);
+      // 静图拍主题条刚出来的样子：第一个主题完整，不拍滚到一半的
+      await page.addStyleTag({ content: '.topic-marquee { animation: none !important; }' });
+      await page.waitForTimeout(200);
       await shot('ui-canvas');
     },
   },
@@ -474,9 +479,22 @@ SCENES.push(
     kind: 'shot',
     async run({ page, shot }) {
       await openAssistant(page);
+      // 讨论速览默认收成一行，点开才有「生成速览」
+      await page.getByRole('button', { name: /讨论速览/ }).first().click();
       await page.getByRole('button', { name: '生成速览' }).first().click();
       await page.getByText('存在分歧的问题').first().waitFor({ timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(1200);
+      await page.waitForTimeout(800);
+      // 实际使用时卡片最高占屏幕 45%、里面自己滚；手册图里让它完整展开，范围、统计和四类内容都看得见
+      await page.getByText('存在分歧的问题').first().evaluate((el) => {
+        for (let n = el.parentElement; n; n = n.parentElement) {
+          if (getComputedStyle(n).overflowY === 'auto' && n.className.includes('max-h-')) {
+            n.style.maxHeight = 'none';
+            n.style.overflow = 'visible';
+            break;
+          }
+        }
+      });
+      await page.waitForTimeout(600);
       await shot('ui-workspace-ai');
     },
   },
@@ -487,14 +505,14 @@ SCENES.push(
     async run({ page, m, cam, typeHuman, sleep }) {
       await m.moveTo(700, 450, 1);
       await sleep(900);
-      await cam.focus({ x: 880, y: 520, width: 560, height: 380 }, { pad: 8 });
+      await cam.focus({ x: 720, y: 450, width: 720, height: 450 }, { pad: 8 });
       const input = page.getByPlaceholder(WS_INPUT);
       await m.clickEl(input);
       await typeHuman(page, '这一块画布上，哪些提问还没有人回应？', { fast: true });
       await sleep(400);
       await page.keyboard.press('Enter');
-      await cam.focus({ x: 880, y: 150, width: 560, height: 560 }, { pad: 8, dur: 1.0 });
-      await m.moveTo(760, 420, 700);
+      await cam.focus({ x: 720, y: 60, width: 720, height: 450 }, { pad: 8, dur: 1.0 });
+      await m.moveTo(1000, 330, 700);
       await page.getByText('从第一条开始').first().waitFor({ timeout: 30000 });
       cam.mark('done');
       await sleep(3600);
@@ -510,7 +528,7 @@ SCENES.push(
     async run({ page, m, cam, typeHuman, sleep }) {
       await m.moveTo(700, 450, 1);
       await sleep(800);
-      await cam.focus({ x: 880, y: 520, width: 560, height: 380 }, { pad: 8 });
+      await cam.focus({ x: 720, y: 450, width: 720, height: 450 }, { pad: 8 });
       await m.clickEl(page.getByPlaceholder(WS_INPUT));
       await typeHuman(page, '帮我画一张示意图，对比读完以后「自己回想」和「再读一遍」。', { fast: true });
       await sleep(400);
@@ -518,7 +536,7 @@ SCENES.push(
       // 画图的要求不经对话模型，直接交给绘图模型；等图的几秒里对话中放绘图进度
       const progress = page.locator('[role="status"][aria-label^="正在画"]');
       await progress.waitFor({ timeout: 10000 });
-      await m.moveTo(760, 420, 700);
+      await m.moveTo(1000, 330, 700);
       cam.mark('drawing');
       await cam.focus(progress, { pad: 30, dur: 1.0 });
       const img = page.locator('img[src$="retrieval-diagram.png"]').last();

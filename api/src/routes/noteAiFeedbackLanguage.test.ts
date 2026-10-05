@@ -168,7 +168,7 @@ describe('AI 响应语言', () => {
     h.state.triggerSettings = { response_language: 'en' };
     h.state.llmReply = reply('You state a clear conclusion. It lacks support. Can you add one example?', 'The evidence for this is');
     const { row, prompt } = await request(ZH_DRAFT);
-    expect(prompt).toContain(`${DIRECTIVE}: write "feedback" and "scaffold" in English`);
+    expect(prompt).toContain(`${DIRECTIVE}: write "feedback", "scaffold" and "title" in English`);
     expect(prompt).toContain('HARD LIMITS: 3 sentences max');
     expect(prompt).toContain('return ONLY this JSON object');
     expect(row.feedback_text).toBe('You state a clear conclusion. It lacks support. Can you add one example?');
@@ -179,7 +179,7 @@ describe('AI 响应语言', () => {
     h.state.triggerSettings = { response_language: 'zh' };
     h.state.llmReply = reply('你给出了清楚的结论。还缺一条依据。能补一个例子吗？', '支持这一点的依据是');
     const { prompt } = await request(EN_DRAFT);
-    expect(prompt).toContain(`${DIRECTIVE}: write "feedback" and "scaffold" in Simplified Chinese`);
+    expect(prompt).toContain(`${DIRECTIVE}: write "feedback", "scaffold" and "title" in Simplified Chinese`);
   });
 
   it('指定了 en 而模型给了中文话头：话头会插进学生的笔记，换成英文兜底', async () => {

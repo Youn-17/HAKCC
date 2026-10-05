@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { ApiClientError, support } from '../../services/apiClient';
 import RemixIcon from '../RemixIcon';
@@ -11,6 +11,8 @@ import {
   ballBounds,
   forgetCourse,
   hasOpenDialog,
+  inboxWaiting,
+  isHelpStaff,
   isEditableElement,
   markSeen,
   ratioFromTop,
@@ -30,7 +32,8 @@ import {
  * 使用帮助：贴在页面右边缘的小球，点开是右下角的对话窗（手机上是底部抽屉）。
  *
  * 挂在整个应用最外层而不是各个页面里：首页、画布、笔记页、阅读页都是同一个球，
- * 换页面时对话窗不关、写了一半的问题也不丢。只给学生：教师有「学生求助」收件箱。
+ * 换页面时对话窗不关、写了一半的问题也不丢。教师、管理员也有（2026-10-05 起）：
+ * 多一个「学生求助」页签，球上显示等回复的条数；问 AI 时按含教师端的手册答，答不了转平台管理员。
  *
  * 层级用 z-[110]：笔记页、阅读页、讨论室这几个整页是 z-[100]，球要在它们上面。
  * 对话框没法只靠层级让开：多数和整页同为 z-[100]；笔记页里的确认框虽然写的是 150，
@@ -45,11 +48,15 @@ const COPY = {
   zh: {
     label: '使用帮助',
     replies: (n: number) => `老师回复了 ${n} 条`,
+    adminReplies: (n: number) => `平台管理员回复了 ${n} 条`,
+    waiting: (n: number) => `${n} 条求助等你回复`,
     aria: (unseen: string | null) => `打开使用帮助${unseen ? `，${unseen}` : ''}。可以用上下方向键移动位置`,
   },
   en: {
     label: 'Help',
     replies: (n: number) => `${n} new ${n === 1 ? 'reply' : 'replies'} from your teacher`,
+    adminReplies: (n: number) => `${n} new ${n === 1 ? 'reply' : 'replies'} from the platform admin`,
+    waiting: (n: number) => `${n} help ${n === 1 ? 'request' : 'requests'} waiting for you`,
     aria: (unseen: string | null) => `Open help${unseen ? `, ${unseen}` : ''}. Arrow up or down moves it`,
   },
 };
@@ -158,6 +165,34 @@ function useUnseenReplies(courseId: string | null, open: boolean): [number, () =
   return [count, clear];
 }
 
+/**
+ * 教师、管理员：等回复的求助有几条。进页面几秒后查一次，之后每两分钟（页面在前台时）、
+ * 回到这个标签页时再查（至多半分钟一次）。回复了一条就立刻重查。
+ */
+function useInboxCount(enabled: boolean): [number, () => void] {
+  const [count, setCount] = useState(0);
+  const last = useRef(0);
+  const check = useCallback((force = false) => {
+    if (!force && Date.now() - last.current < 30_000) return;
+    last.current = Date.now();
+    support.inbox()
+      .then(r => setCount(inboxWaiting(r.counts)))
+      .catch(() => { /* 查不到就不显示，别打扰 */ });
+  }, []);
+  useEffect(() => {
+    setCount(0);
+    if (!enabled) return;
+    last.current = 0;
+    const first = window.setTimeout(() => check(), 2500);
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') check(); }, 120_000);
+    const onFocus = () => check();
+    window.addEventListener('focus', onFocus);
+    return () => { window.clearTimeout(first); window.clearInterval(timer); window.removeEventListener('focus', onFocus); };
+  }, [enabled, check]);
+  const refresh = useCallback(() => check(true), [check]);
+  return [count, refresh];
+}
+
 export default function HelpWidget({ lang }: { lang: HelpLang }) {
   const t = COPY[lang];
   const { user } = useAuth();
@@ -165,6 +200,9 @@ export default function HelpWidget({ lang }: { lang: HelpLang }) {
   const route = routeInfo(pathname);
   const page = useHelpPageContext();
   const enabled = shouldShowHelp(user?.role, pathname);
+  const staff = enabled && isHelpStaff(user?.role);
+  const navigate = useNavigate();
+  const [waiting, refreshInbox] = useInboxCount(staff);
 
   const viewport = useViewport();
   const compact = viewport.width < COMPACT_MAX_WIDTH;
@@ -220,6 +258,16 @@ export default function HelpWidget({ lang }: { lang: HelpLang }) {
     refocusBall.current = true;
     setOpen(false);
   }, []);
+
+  // 打开时重查一次：页签上的数要是现在的
+  useEffect(() => {
+    if (open && staff) refreshInbox();
+  }, [open, staff, refreshInbox]);
+
+  const openDesk = useCallback(() => {
+    setOpen(false);
+    navigate('/dashboard', { state: { dashboardTab: 'student-help' } });
+  }, [navigate]);
 
   const onSeen = useCallback((courseId: string) => {
     markSeen(courseId);
@@ -299,7 +347,10 @@ export default function HelpWidget({ lang }: { lang: HelpLang }) {
   const dragging = dragTop !== null;
   const out = peek || dragging;
   const ballHidden = open || dialogOpen || typingElsewhere;
-  const ariaLabel = t.aria(unseen > 0 ? t.replies(unseen) : null);
+  const repliesText = unseen > 0 ? (staff ? t.adminReplies(unseen) : t.replies(unseen)) : null;
+  const waitingText = staff && waiting > 0 ? t.waiting(waiting) : null;
+  const notice = waitingText ?? repliesText;
+  const ariaLabel = t.aria(notice);
 
   return (
     <>
@@ -320,7 +371,7 @@ export default function HelpWidget({ lang }: { lang: HelpLang }) {
             onPointerLeave={() => setPeek(false)}
             className={`whitespace-nowrap rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[0.75rem] font-semibold text-[#000080] shadow-[0_6px_18px_-10px_rgba(0,0,128,0.45)] transition-all duration-200 motion-reduce:transition-none dark:border-gray-700 dark:bg-gray-900 dark:text-[#93AAFD] ${out && !dragging && !ballHidden ? 'pointer-events-auto translate-x-0 opacity-100' : 'translate-x-3 opacity-0'}`}
           >
-            {unseen > 0 ? t.replies(unseen) : t.label}
+            {notice ?? t.label}
           </button>
         )}
         <button
@@ -346,7 +397,16 @@ export default function HelpWidget({ lang }: { lang: HelpLang }) {
             size={21}
             className={`transition-transform duration-200 motion-reduce:transition-none ${out ? 'translate-x-0' : '-translate-x-[0.6rem]'}`}
           />
-          {unseen > 0 && (
+          {waitingText ? (
+            <span
+              aria-hidden="true"
+              data-help-waiting={waiting}
+              className={`absolute -top-1 min-w-[1.125rem] rounded-full px-1 text-center text-[0.6875rem] font-bold leading-[1.125rem] text-white ring-2 ring-white transition-[left] duration-200 dark:ring-gray-950 ${out ? 'left-0' : '-left-0.5'}`}
+              style={solidStyle(MORANDI.rose)}
+            >
+              {waiting > 99 ? '99+' : waiting}
+            </span>
+          ) : unseen > 0 && (
             <span
               aria-hidden="true"
               className={`absolute top-1 size-2.5 rounded-full ring-2 ring-white transition-[left] duration-200 dark:ring-gray-950 ${out ? 'left-1' : 'left-0.5'}`}
@@ -369,6 +429,10 @@ export default function HelpWidget({ lang }: { lang: HelpLang }) {
               liftAboveFooter={surface === 'note-editor' && !compact}
               onMinimize={minimize}
               onSeen={onSeen}
+              staff={staff}
+              inboxCount={waiting}
+              onInboxChanged={refreshInbox}
+              onOpenDesk={openDesk}
             />
           </Suspense>
         </ErrorBoundary>

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Loader2, AlertCircle, ListTree } from 'lucide-react';
+import { Loader2, AlertCircle, ListTree, ChevronDown } from 'lucide-react';
 import { workspaceAgent as agentApi, type DiscussionDigest as Digest, type DigestScope } from '../services/apiClient';
 
 /**
@@ -24,11 +24,16 @@ interface Props {
   groupId?: string | null;
   lang: 'zh' | 'en';
   onLocateNote?: (noteId: string) => void;
+  /**
+   * 收成一行，点开才展开，展开后最高占屏幕的 45%、里面自己滚动。
+   * 放在 AI 助手面板里时用：它原来常开，空着也占一百多像素，生成出结果以后更能把对话区挤没。
+   */
+  collapsible?: boolean;
 }
 
 const T = {
   zh: {
-    title: '讨论速览', run: '生成速览', rerun: '重新生成',
+    title: '讨论速览', run: '生成速览', rerun: '重新生成', ready: '已生成', expand: '展开', collapse: '收起',
     hint: '列出这批笔记中已有的内容，便于先掌握全貌再参与讨论',
     scopeView: '当前 View', scopeGroup: '本组讨论', scopeSel: (n: number) => `选中的 ${n} 条`,
     loading: '正在读取这些笔记⋯⋯', fail: '未能生成速览',
@@ -39,7 +44,7 @@ const T = {
     boundary: '速览只呈现讨论中已有的内容，不代为得出结论 —— 那一步需要你们自己完成。',
   },
   en: {
-    title: 'Discussion overview', run: 'Generate', rerun: 'Regenerate',
+    title: 'Discussion overview', run: 'Generate', rerun: 'Regenerate', ready: 'Ready', expand: 'Expand', collapse: 'Collapse',
     hint: 'Lists what is in these notes so you can see the whole picture before joining in',
     scopeView: 'Current view', scopeGroup: 'My group', scopeSel: (n: number) => `${n} selected`,
     loading: 'Reading the notes…', fail: 'Could not generate',
@@ -52,9 +57,10 @@ const T = {
 };
 
 const DiscussionDigestPanel: React.FC<Props> = ({
-  courseId, spaceId, viewId, selectedNoteIds = [], groupId, lang, onLocateNote,
+  courseId, spaceId, viewId, selectedNoteIds = [], groupId, lang, onLocateNote, collapsible = false,
 }) => {
   const t = T[lang];
+  const [open, setOpen] = useState(!collapsible);
   const [scope, setScope] = useState<DigestScope>('view');
   const [digest, setDigest] = useState<Digest | null>(null);
   const [loading, setLoading] = useState(false);
@@ -101,11 +107,28 @@ const DiscussionDigestPanel: React.FC<Props> = ({
     );
 
   return (
-    <div className="border-b border-stone-200 px-4 py-3 dark:border-gray-800">
-      <div className="mb-2 flex items-center gap-2">
-        <ListTree size={15} className="text-[#000080] dark:text-blue-300" />
-        <span className="text-[0.8125rem] font-semibold text-stone-800 dark:text-gray-200">{t.title}</span>
-      </div>
+    <div className={`border-b border-stone-200 dark:border-gray-800 ${collapsible ? '' : 'px-4 py-3'}`}>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          aria-expanded={open}
+          title={open ? t.collapse : t.expand}
+          className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-stone-50 dark:hover:bg-gray-900"
+        >
+          <ListTree size={14} className="text-[#000080] dark:text-blue-300" />
+          <span className="text-[0.8125rem] font-semibold text-stone-800 dark:text-gray-200">{t.title}</span>
+          {digest && !open && <span className="text-[0.6875rem] text-stone-400 dark:text-gray-500">{t.ready}</span>}
+          <ChevronDown size={14} className={`ml-auto text-stone-400 transition-transform dark:text-gray-500 ${open ? 'rotate-180' : ''}`} />
+        </button>
+      ) : (
+        <div className="mb-2 flex items-center gap-2">
+          <ListTree size={15} className="text-[#000080] dark:text-blue-300" />
+          <span className="text-[0.8125rem] font-semibold text-stone-800 dark:text-gray-200">{t.title}</span>
+        </div>
+      )}
+      {open && (
+      <div className={collapsible ? 'max-h-[45vh] overflow-y-auto px-4 pb-3' : ''}>
       <p className="mb-2.5 text-[0.6875rem] leading-relaxed text-stone-500 dark:text-gray-400">{t.hint}</p>
 
       <div className="mb-2.5 flex flex-wrap gap-1.5">
@@ -222,6 +245,8 @@ const DiscussionDigestPanel: React.FC<Props> = ({
             {t.boundary}
           </p>
         </div>
+      )}
+      </div>
       )}
     </div>
   );

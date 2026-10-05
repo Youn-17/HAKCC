@@ -7,7 +7,7 @@
  * finding connections across the entire Knowledge Building community.
  *
  * Routes:
- *   GET  /workspace-agent/:courseId/conversations                  — list conversations
+ *   GET  /workspace-agent/:courseId/conversations                  — list conversations (?space_id= narrows to one space)
  *   POST /workspace-agent/:courseId/conversations                  — create conversation
  *   GET  /workspace-agent/:courseId/conversations/:convId/messages  — load messages
  *   POST /workspace-agent/:courseId/stream                         — agent loop streaming
@@ -51,8 +51,10 @@ import {
 } from '../services/aiFeatureModels';
 import { buildDiscussionDigest, collectDigestNotes, type DigestScope } from '../services/discussionDigest';
 import { detectDrawIntent } from '../services/drawIntent';
+import { lengthInstruction, lengthPlanMetadata, maxTokensFor, parseAnswerLength, planAnswerLength, thinkingLikely } from '../services/answerLength';
 import { streamDrawTurn } from '../services/drawTurn';
 import { detectQuestionLanguage, languageDirective } from '../services/finalAnswer';
+import { fetchSpaceBuildOnGraph, formatBuildOnSection } from '../services/buildOnContext';
 
 const router = Router();
 // 学生问一句，答案两三百字就够；8192 让模型有时写成小论文，流式要吐一分多钟。
@@ -215,6 +217,15 @@ async function fetchWorkspaceNotes(spaceId: string): Promise<WorkspaceNote[]> {
   }));
 }
 
+async function countWorkspaceNotes(spaceId: string): Promise<number> {
+  const { count } = await supabase
+    .from('notes')
+    .select('id', { count: 'exact', head: true })
+    .eq('space_id', spaceId)
+    .is('deleted_at', null);
+  return count ?? 0;
+}
+
 /**
  * Build a synthetic "workspace note" that summarizes the whole space.
  * This is fed into `buildAgentContext` as the note context so the agent
@@ -246,6 +257,8 @@ const WORKSPACE_IDENTITY = [
   'You are a Workspace Agent — a course-scoped AI assistant inside a Knowledge Building platform.',
   'Unlike the per-note agent, you can see ALL notes in the current workspace.',
   'Help users analyze participation patterns, find connections across notes, plan lessons, and understand the community knowledge landscape.',
+  'The Build-on links between notes are written out below, after the note list. Use them to answer who built on whom, which ideas are built on most, and which notes nobody has built on yet. Never say you cannot see Build-on relations; if the list says there are none, say there are none.',
+  'Notes are numbered in the list; to read one in full, or to see its own Build-on links, call read_note or get_note_context with its note_id.',
   'IMPORTANT: You can generate real downloadable Word (.docx) files using generate_summary_doc and export_notes tools.',
   'You can also generate data analysis charts (PNG images) and reports using analyze_engagement and compare_periods tools.',
   'When the user asks for a document, report, or analysis, ALWAYS use these tools — never say you cannot generate files.',
@@ -280,15 +293,21 @@ async function logWorkspaceAgentEvent(
 // ---------------------------------------------------------------------------
 
 router.get('/workspace-agent/:courseId/conversations', verifyJWT, async (req: Request, res: Response) => {
-  await requireCourseMembership(String(req.params.courseId), req);
-  const { data } = await supabase
+  const standing = await requireCourseMembership(String(req.params.courseId), req);
+  // 一门课里有共享空间和各组的空间；面板只接着聊眼前这个空间里的。
+  // 返回的只是自己的对话标题，不碰空间内容；但凡带了空间 id 就照老规矩先过空间授权，
+  // 免得这条路成了探别组空间在不在的口子
+  const spaceId = typeof req.query.space_id === 'string' ? req.query.space_id : '';
+  if (spaceId) await resolveAccessibleSpace(String(req.params.courseId), spaceId, standing, req);
+
+  let query = supabase
     .from('agent_conversations')
-    .select('id, title, agent_mode, provider_id, model, updated_at')
+    .select('id, title, agent_mode, provider_id, model, space_id, updated_at')
     .eq('user_id', req.user!.id)
     .eq('agent_type', 'workspace')
-    .eq('course_id', req.params.courseId)
-    .order('updated_at', { ascending: false })
-    .limit(20);
+    .eq('course_id', req.params.courseId);
+  if (spaceId) query = query.eq('space_id', spaceId);
+  const { data } = await query.order('updated_at', { ascending: false }).limit(30);
   res.json({ conversations: data ?? [] });
 });
 
@@ -324,21 +343,25 @@ router.post('/workspace-agent/:courseId/conversations', verifyJWT, async (req: R
 // ---------------------------------------------------------------------------
 
 router.get('/workspace-agent/:courseId/conversations/:convId/messages', verifyJWT, async (req: Request, res: Response) => {
+  await requireCourseMembership(String(req.params.courseId), req);
   const { data: conv } = await supabase
     .from('agent_conversations')
     .select('id')
     .eq('id', req.params.convId)
     .eq('user_id', req.user!.id)
+    .eq('agent_type', 'workspace')
+    .eq('course_id', req.params.courseId)
     .single();
   if (!conv) throw new ApiError(404, 'Conversation not found');
 
+  // 最近的 100 条，翻回正序：长对话要显示的是结尾，不是开头
   const { data } = await supabase
     .from('agent_messages')
     .select('id, role, content, tools_used, ai_metadata, created_at')
     .eq('conversation_id', req.params.convId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(100);
-  res.json({ messages: data ?? [] });
+  res.json({ messages: [...(data ?? [])].reverse() });
 });
 
 // ---------------------------------------------------------------------------
@@ -365,11 +388,12 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   const { courseId } = req.params;
   if (!courseId) throw new ApiError(400, 'courseId is required');
   const standing = await requireCourseMembership(String(courseId), req);
+  const turnStartedAt = Date.now();
 
   const {
     content, provider_id: requestedProviderId, model: requestedModel, space_id,
     history: clientHistory, conversation_id,
-    note_ids, attachments = [],
+    note_ids, attachments = [], answer_length, force_draw,
   } = req.body as {
     content?: string;
     provider_id?: string;
@@ -380,6 +404,10 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     /** 学生勾选的笔记。给了就只带这些，且带更全的正文——他是特意选的。 */
     note_ids?: string[];
     attachments?: Array<{ file_url: string; file_name: string; mime_type?: string; text?: string }>;
+    /** 简短 / 适中 / 详细（2026-10-05 起） */
+    answer_length?: unknown;
+    /** 输入框下面的「画图」按钮：不管怎么措辞都直接出图 */
+    force_draw?: boolean;
   };
 
   if (!content?.trim()) throw new ApiError(400, 'content is required');
@@ -450,8 +478,10 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     content: content.trim(),
   });
 
-  // 「画一张……」这类绘图指令：不经对话模型，直接出图（DMX 优先），前端放绘图动画
-  const drawIntent = attachments.length === 0 ? detectDrawIntent(content) : null;
+  // 「画一张……」这类绘图指令，或学生按了「画图」：不经对话模型，直接出图（DMX 优先），前端放绘图动画
+  const drawIntent = attachments.length === 0
+    ? (force_draw ? { prompt: content.trim() } : detectDrawIntent(content))
+    : null;
   if (drawIntent) {
     await streamDrawTurn(res, {
       courseId: String(courseId),
@@ -464,7 +494,14 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     return;
   }
 
-  const allNotes = await fetchWorkspaceNotes(space.id);
+  // 回答写多长：学生选的档位 + 问题深浅（Jev），和下面读笔记、关系同时进行
+  const lengthPlanPromise = planAnswerLength(content.trim(), parseAnswerLength(answer_length));
+
+  // 笔记、关系、总数互不依赖，一起发出去：库在首尔，每多一趟串行就多 100ms 以上
+  const [allNotes, totalNotes] = await Promise.all([
+    fetchWorkspaceNotes(space.id),
+    countWorkspaceNotes(space.id),
+  ]);
   // 勾了就只带勾的那几条。没勾等于「整个空间」，保持原样。
   const picked = Array.isArray(note_ids) && note_ids.length > 0
     ? allNotes.filter(n => note_ids.includes(n.id))
@@ -487,13 +524,15 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   // Build conversation history — prefer server-side messages when conversation exists
   let history: Array<{ role: 'user' | 'assistant'; content: string }>;
   if (conversation_id && convId === conversation_id) {
+    // 取**最近**的 40 条再翻回正序。以前是 ascending + limit(40)，拿到的是最早的 40 条：
+    // 对话一长（现在隔天回来接着聊是常态），模型看不到刚问的这句，只看到开头那一段
     const { data: serverMsgs } = await supabase
       .from('agent_messages')
       .select('role, content')
       .eq('conversation_id', convId)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(40);
-    history = (serverMsgs ?? [])
+    history = [...(serverMsgs ?? [])].reverse()
       .filter((m: any) => m.content?.trim())
       .map((m: any) => ({
         role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
@@ -546,12 +585,28 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     ? [
       isNarrowed
         ? `The learner selected ${workspaceNotes.length} note(s) to focus on. Answer with these as the primary context:`
-        : `This workspace contains ${workspaceNotes.length} note(s). Here is a summary:`,
+        : totalNotes > workspaceNotes.length
+          ? `This workspace contains ${totalNotes} notes. The ${workspaceNotes.length} most recently updated are listed here; use search_notes to look further back:`
+          : `This workspace contains ${workspaceNotes.length} note(s). Here is a summary:`,
       ...workspaceNotes.map(
         (n, i) => `${i + 1}. "${n.title}" (id: ${n.id}) — ${stripHtml(n.content).slice(0, perNote)}`,
       ),
     ].join('\n')
     : 'This workspace has no notes yet.';
+
+  // 笔记之间谁 Build-on 谁：提示词里原先只有标题和摘要，助手于是「看不到」关系。
+  // 查不出来（库慢、出错）就不写这一段，照常回答，别因此整轮失败。
+  const buildOnSection = workspaceNotes.length > 0
+    ? await fetchSpaceBuildOnGraph(space.id, new Map(allNotes.map(n => [n.id, n.title])))
+      .then(graph => formatBuildOnSection({
+        listed: workspaceNotes.map(n => ({ id: n.id, title: n.title })),
+        links: graph.links,
+        titles: graph.titles,
+        focusIds: isNarrowed ? new Set(workspaceNotes.map(n => n.id)) : undefined,
+        totalNotes: isNarrowed ? undefined : totalNotes,
+      }))
+      .catch((err: Error) => { console.error('[workspace-agent] build-on context failed:', err.message); return ''; })
+    : '';
 
   // 按提问语言写死回复语言。不写死的话，模型会先用英文推理一轮 ——
   // 而推理过程在界面上是显示出来的（「深度思考中…」），中文课堂里
@@ -562,12 +617,15 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     detectQuestionLanguage(typeof lastUserText === 'string' ? lastUserText : ''),
   );
 
+  const lengthPlan = await lengthPlanPromise;
   const workspaceSystemPrompt = [
     WORKSPACE_IDENTITY,
     langRule,
     agentContext.systemPrompt,
     noteListSection,
-  ].join('\n\n');
+    buildOnSection,
+    lengthInstruction(lengthPlan),
+  ].filter(Boolean).join('\n\n');
 
   // Set up SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -581,6 +639,10 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   const allToolCalls: Array<{ id: string; name: string }> = [];
   const allToolsUsed = new Set<string>();
   let agentIterations = 0;
+  let continuations = 0;
+  let truncated = false;
+  // 每一步的结果和用时，存进回答里：回看历史时也能看到「用了几步」
+  const toolSteps: Array<{ name: string; summary?: string; ms?: number }> = [];
 
   const keepaliveTimer = setInterval(() => {
     try { res.write(': keepalive\n\n'); } catch {}
@@ -676,7 +738,8 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         messages: loopMessages,
         tools,
         executeToolFn: (name, args) => agentRegistry.executeTool(name, args, toolContext),
-        maxTokens: WORKSPACE_MAX_TOKENS,
+        // 按目标字数留足余量；会先思考的模型（DeepSeek）思考也算在里面，再多留
+        maxTokens: Math.max(WORKSPACE_MAX_TOKENS, maxTokensFor(lengthPlan.target, thinkingLikely(cand.providerId, cand.model))),
         maxIterations: WORKSPACE_MAX_ITERATIONS,
       });
 
@@ -696,13 +759,16 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
               break;
             case 'tool_result': {
               const startedAt = toolStartedAt.get(event.toolName);
+              const ms = startedAt ? Date.now() - startedAt : undefined;
+              // 只推统计性摘要（几条、成没成），不复述内容 —— 内容归模型自己在回答里说
+              const summary = summarizeToolResult(event.toolName, event.result, 'zh');
+              toolSteps.push({ name: event.toolName, summary, ...(ms != null ? { ms } : {}) });
               res.write(`data: ${JSON.stringify({
                 toolStatus: 'used',
                 toolName: event.toolName,
                 toolNames: Array.from(allToolsUsed),
-                // 只推统计性摘要（几条、成没成），不复述内容 —— 内容归模型自己在回答里说
-                toolSummary: summarizeToolResult(event.toolName, event.result, 'zh'),
-                toolDurationMs: startedAt ? Date.now() - startedAt : undefined,
+                toolSummary: summary,
+                toolDurationMs: ms,
               })}\n\n`);
               break;
             }
@@ -713,6 +779,8 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
               break;
             case 'done':
               agentIterations = event.result.iterations;
+              continuations = event.result.continuations ?? 0;
+              truncated = event.result.truncated === true;
               break;
             case 'error':
               if (!emitted && ci < candidates.length - 1) {
@@ -745,6 +813,9 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         agent_mode: normalizedAgentMode,
         agent_loop: true,
         iterations: agentIterations,
+        answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
+        tool_steps: toolSteps,
+        elapsed_ms: Date.now() - turnStartedAt,
         provider_id: usedProvider,
         model: usedModel,
         requested_provider_id: provider_id,

@@ -61,7 +61,7 @@ vi.mock('../contexts/AuthContext', () => ({
 }));
 
 import Workspace from './Workspace';
-import { resetNoteSeenForTests } from './noteBadges';
+import { resetNoteSeenForTests, setSeenDwellForTests } from './noteBadges';
 
 // ── 假后端 ──────────────────────────────────────────────────────
 
@@ -93,6 +93,8 @@ function createBackend() {
       apiNote(DIALOGUE_ID, '和 AI 的一段对话', 4200, 200, { type: 'ai_dialogue' }),
     ] as any[],
     relations: [] as any[],
+    /** 问题栏后面滚动的讨论主题 */
+    viewTopics: [] as Array<{ label: string; noteIds: string[]; count: number }>,
     /**
      * 建过的 AI 线程。和真后端一样：第一次问 AI 时开线程，同一个人、同一条笔记、同一个模型只有一条；
      * 「新建对话」带 force_new：手头有还没问过话的空白对话就回它，否则新开一段；
@@ -247,6 +249,9 @@ function createBackend() {
       if (state.streamInsertGate) await state.streamInsertGate;
       return streamReply(streamMatch[1], body.content);
     }
+    if (method === 'GET' && /^\/spaces\/[^/]+\/view-topics$/.test(path)) {
+      return json({ topics: state.viewTopics, stale: false });
+    }
     const imageMatch = path.match(/^\/note-conversations\/([^/]+)\/image$/);
     if (method === 'POST' && imageMatch) {
       const userMessage = message(imageMatch[1], 'user', body.prompt);
@@ -260,7 +265,7 @@ function createBackend() {
     return json({
       notes: [], relations: [], spaces: [], notifications: [], scaffolds: [], views: [], cards: [],
       groups: [], rooms: [], shapes: [], configs: [], aiConfigs: [], conversations: [], messages: [],
-      feedbacks: [], members: [], items: [], courses: [], sessions: [], ok: true,
+      feedbacks: [], outcomes: [], members: [], items: [], courses: [], sessions: [], ok: true,
     });
   }
 
@@ -314,6 +319,8 @@ function createBackend() {
     const path = url.pathname.replace(/^\/api/, '');
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
     state.requests.push({ method, path, body });
+    // 带查询参数的完整地址也记一份（讨论主题按 view_id 取）
+    if (url.search) state.requests.push({ method, path: `${path}${url.search}`, body: null });
     return handle(method, path, body);
   });
 
@@ -399,7 +406,7 @@ async function startBuildOn(relationLabel: string) {
   // Build-on 草稿：左侧先显示原笔记，AI 助手收着（2026-09 课堂反馈：写着写着忘了在回应什么）
   const parentPanel = await waitFor(() => document.querySelector('aside[aria-label="你在回应的笔记"]'), '原笔记栏');
   expect(parentPanel.textContent).toContain('被接的观点');
-  expect(document.querySelector('textarea[placeholder^="向 AI 提问"]')).toBeNull();
+  expect(document.querySelector('textarea[aria-label="围绕这条 Note 提问…"]')).toBeNull();
 }
 
 async function writeNote(title: string, bodyHtml: string) {
@@ -413,13 +420,13 @@ async function writeNote(title: string, bodyHtml: string) {
 
 /** AI 助手收着（Build-on 草稿默认先显示原笔记）就先点顶栏的「AI 助手」 */
 async function openAiPanel() {
-  if (document.querySelector('textarea[placeholder^="向 AI 提问"]')) return;
+  if (document.querySelector('textarea[aria-label="围绕这条 Note 提问…"]')) return;
   await click(await waitFor(() => buttonWith('AI 助手'), '顶栏的 AI 助手按钮'));
 }
 
 async function askAi(question: string) {
   await openAiPanel();
-  const input = await waitFor(() => document.querySelector<HTMLTextAreaElement>('textarea[placeholder^="向 AI 提问"]'), 'AI 输入框');
+  const input = await waitFor(() => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="围绕这条 Note 提问…"]'), 'AI 输入框');
   await typeInto(input, question);
   const send = await waitFor(
     () => all<HTMLButtonElement>('button[aria-label="发送"]').find(b => !b.disabled),
@@ -899,7 +906,7 @@ describe('消息存进库、还没回传时面板重拉历史', () => {
     await openNote('被接的观点');
     let releaseImage!: () => void;
     backend.state.imageGate = new Promise<void>(r => { releaseImage = r; });
-    await typeInto(await waitFor(() => document.querySelector<HTMLTextAreaElement>('textarea[placeholder^="向 AI 提问"]'), 'AI 输入框'), PROMPT);
+    await typeInto(await waitFor(() => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="围绕这条 Note 提问…"]'), 'AI 输入框'), PROMPT);
     await click(await waitFor(() => all<HTMLButtonElement>('button[aria-label="让 AI 画一张配图"]').find(b => !b.disabled), '生图按钮'));
     await waitFor(() => backend.state.messages.some(m => m.senderKind === 'user'), '提问存进库');
     const threadId = backend.state.messages[0].threadId;
@@ -1005,7 +1012,7 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
     expect(editorBody()!.getAttribute('contenteditable')).toBe('false');
     expect(buttonWith('贡献')).toBeNull();
     expect(document.body.textContent).toContain('这是别人的笔记，只能阅读');
-    expect(document.querySelector('textarea[placeholder^="向 AI 提问"]')).not.toBeNull();
+    expect(document.querySelector('textarea[aria-label="围绕这条 Note 提问…"]')).not.toBeNull();
     // 不是 Build-on 草稿，也不是一条 Build-on：没有「原笔记」
     expect(parentPanel()).toBeNull();
     expect(buttonWith('原笔记')).toBeNull();
@@ -1024,7 +1031,7 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
     expect(panel.textContent).toContain('提问');
     expect(document.querySelector('[role="menuitem"]')).toBeNull();
     expect(document.body.textContent).toContain('正在 Build-on 已有想法');
-    expect(document.querySelector('textarea[placeholder^="向 AI 提问"]')).toBeNull();
+    expect(document.querySelector('textarea[aria-label="围绕这条 Note 提问…"]')).toBeNull();
     expect(editorBody()!.getAttribute('contenteditable')).toBe('true');
 
     // 收起、再从顶上的「原笔记」打开
@@ -1035,7 +1042,7 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
     // 打开 AI 助手时原笔记让位
     await click(buttonWith('AI 助手')!);
     expect(parentPanel()).toBeNull();
-    expect(document.querySelector('textarea[placeholder^="向 AI 提问"]')).not.toBeNull();
+    expect(document.querySelector('textarea[aria-label="围绕这条 Note 提问…"]')).not.toBeNull();
 
     await writeNote('我的追问', '<p>为什么会这样？</p>');
     await click(buttonWith('贡献')!);
@@ -1044,7 +1051,8 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
     expect(relationCreates()[0].body).toMatchObject({ target_note_id: PARENT_ID, relation_type: 'question' });
   });
 
-  it('我还没打开过的同学笔记标 New；双击打开就报给服务器，角标马上摘掉', async () => {
+  it('我还没打开过的同学笔记标 New；双击打开、停够时间才报给服务器，关掉后角标没了', async () => {
+    setSeenDwellForTests(80);
     backend.state.notes[1].seen_by_me = false;
     await mount();
     const farCard = () => noteCard('远处的观点')!.closest('.gsap-note-item')!;
@@ -1060,6 +1068,34 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
     // 同一条不再重复报
     await openNote('远处的观点');
     expect(backend.state.requests.filter(r => r.path === `/notes/${FAR_ID}/seen`)).toHaveLength(1);
+  });
+
+  it('单击选中、详情栏出来了都不算看过：New 留着，不报服务器（10-05 用户：一点就没了不行）', async () => {
+    setSeenDwellForTests(80);
+    backend.state.notes[1].seen_by_me = false;
+    await mount();
+    const card = noteCard('远处的观点')!;
+    await act(async () => {
+      card.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 }));
+      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 10, clientY: 10 }));
+    });
+    await waitFor(() => document.querySelector('[data-canvas-overlay]'), '详情栏');
+    // 旧规则是详情栏停 1.2 秒就算；现在停多久都不算
+    await settle(1500);
+    expect(backend.state.requests.some(r => r.path === `/notes/${FAR_ID}/seen`)).toBe(false);
+    expect(card.closest('.gsap-note-item')!.textContent).toContain('New');
+  });
+
+  it('双击打开又马上关掉：没看就不算，New 还在', async () => {
+    setSeenDwellForTests(600);
+    backend.state.notes[1].seen_by_me = false;
+    await mount();
+    await openNote('远处的观点');
+    await click(buttonWith('关闭')!);
+    await waitFor(() => !editorOpen(), '编辑器关闭');
+    await settle(900);
+    expect(backend.state.requests.some(r => r.path === `/notes/${FAR_ID}/seen`)).toBe(false);
+    expect(noteCard('远处的观点')!.closest('.gsap-note-item')!.textContent).toContain('New');
   });
 
   it('单击卡片后详情栏等过一次双击的间隔才出现：画布右边的卡片不会被它盖住、双击打不开', async () => {
@@ -1175,6 +1211,23 @@ describe('AI 助手的历史对话：新建、切换、删除；等回复时的�
   }
   const trashOf = (question: string) => rowFor(question)!.querySelector<HTMLButtonElement>('button[aria-label="删除这段对话"]')!;
   const confirmButton = () => all<HTMLButtonElement>('[data-ai-history] button').find(b => b.textContent?.trim() === '删除')!;
+
+  it('Note 探究建议可编辑；输入法确认和换行不触发提问', async () => {
+    await mount();
+    await openNote('被接的观点');
+    await openAiPanel();
+    await click(buttonWith('发现知识缺口')!);
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="围绕这条 Note 提问…"]')!;
+    expect(input.value).toContain('尚未解释清楚的观点');
+    expect(document.activeElement).toBe(input);
+    expect(streamThreads()).toEqual([]);
+    for (const options of [{ isComposing: true }, { keyCode: 229 }, { shiftKey: true }]) {
+      await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ...options })); });
+      expect(streamThreads()).toEqual([]);
+    }
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await waitFor(() => streamThreads().length === 1, '普通回车发送');
+  });
 
   it('「新建对话」开一段新的：面板清空，问话进新线程，历史里列出两段（各用第一句问话认）', async () => {
     const [first, second] = await twoConversations();
@@ -1417,5 +1470,142 @@ describe('AI 助手的历史对话：新建、切换、删除；等回复时的�
     await waitFor(() => panelText().includes(R1) && !aiBusy(), '回复说完');
     expect(typingDots()).toHaveLength(0);
     expect(busyMarks()).toHaveLength(0);
+  });
+});
+
+describe('我的笔记：自己写的浅蓝底；工具栏「我的笔记」一条一条跳过去（2026-10-05）', () => {
+  const MINE_OLD = '00000000-0000-4000-8000-0000000000b1';
+  const MINE_NEW = '00000000-0000-4000-8000-0000000000b2';
+  const AI_MINE = '00000000-0000-4000-8000-0000000000b3';
+  const card = (title: string) => noteCard(title)!.closest('.gsap-note-item') as HTMLElement;
+  const isMineCard = (title: string) => card(title).matches('[data-mine]') || Boolean(card(title).querySelector('[data-mine]'));
+  const hasMeTag = (title: string) => Array.from(card(title).querySelectorAll('span')).some(s => s.textContent === '我');
+  const canvasTransform = () => {
+    let el: HTMLElement | null = card('被接的观点').parentElement;
+    while (el && !el.style.transform.includes('scale(')) el = el.parentElement;
+    return el?.style.transform ?? '';
+  };
+  const mineButton = () => document.querySelector<HTMLButtonElement>('button[aria-label="我的笔记"]');
+  const bar = () => document.querySelector<HTMLElement>('[role="toolbar"][aria-label="我的笔记"]');
+
+  beforeEach(() => {
+    backend.state.notes.push(
+      apiNote(MINE_OLD, '我先写的一条', 300, 1800, { author_id: 'user-1', users: { name: '测试学生' }, created_at: '2026-09-21T08:00:00.000Z' }),
+      apiNote(MINE_NEW, '我后写的一条', 3000, 300, { author_id: 'user-1', users: { name: '测试学生' }, created_at: '2026-09-22T08:00:00.000Z' }),
+      apiNote(AI_MINE, '采纳后发布的反馈', 600, 600, { author_id: 'user-1', is_ai_generated: true, type: 'ai_dialogue' }),
+    );
+  });
+
+  it('自己写的卡片浅蓝底、名字旁有「我」；别人的、记在我名下但 AI 写的都不算', async () => {
+    await mount();
+    expect(isMineCard('我先写的一条')).toBe(true);
+    expect(hasMeTag('我先写的一条')).toBe(true);
+    expect(isMineCard('被接的观点')).toBe(false);
+    expect(hasMeTag('被接的观点')).toBe(false);
+    expect(isMineCard('采纳后发布的反馈')).toBe(false);
+  });
+
+  it('点「我的笔记」：别人的卡片变淡；从最新的一条开始，下一条、上一条把画布移过去；Esc 退出', async () => {
+    await mount();
+    const before = canvasTransform();
+    await click(mineButton()!);
+    const toolbar = await waitFor(() => bar(), '我的笔记细栏');
+    expect(toolbar.textContent).toContain('1 / 2');
+    expect(mineButton()!.getAttribute('aria-pressed')).toBe('true');
+    expect(card('被接的观点').className).toContain('opacity-30');
+    expect(card('采纳后发布的反馈').className).toContain('opacity-30');
+    expect(card('我后写的一条').className).not.toContain('opacity-30');
+    const atNewest = canvasTransform();
+    expect(atNewest).not.toBe(before);
+
+    await click(bar()!.querySelector('button[aria-label="下一条"]')!);
+    expect(bar()!.textContent).toContain('2 / 2');
+    const atOlder = canvasTransform();
+    expect(atOlder).not.toBe(atNewest);
+
+    // 到头了接着从第一条来
+    await click(bar()!.querySelector('button[aria-label="下一条"]')!);
+    expect(bar()!.textContent).toContain('1 / 2');
+    expect(canvasTransform()).toBe(atNewest);
+    await click(bar()!.querySelector('button[aria-label="上一条"]')!);
+    expect(bar()!.textContent).toContain('2 / 2');
+
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+    expect(bar()).toBeNull();
+    expect(card('被接的观点').className).not.toContain('opacity-30');
+  });
+
+  it('这个视图里一条自己的都没有：细栏照实说，别人的照样变淡', async () => {
+    backend.state.notes = backend.state.notes.filter(n => n.author_id !== 'user-1' || n.is_ai_generated);
+    await mount();
+    await click(mineButton()!);
+    const toolbar = await waitFor(() => bar(), '我的笔记细栏');
+    expect(toolbar.textContent).toContain('这个视图里还没有你写的笔记');
+    expect(toolbar.querySelector('button[aria-label="下一条"]')).toBeNull();
+  });
+});
+
+describe('笔记页 AI：回答长度（2026-10-05）', () => {
+  const streamBodies = () => backend.state.requests
+    .filter(r => r.method === 'POST' && /^\/note-conversations\/[^/]+\/ai\/(?:agent-)?stream$/.test(r.path))
+    .map(r => r.body);
+
+  it('输入框下面有「回答长度」；提问时带上学生选的档位（默认适中）', async () => {
+    localStorage.removeItem('hakcc-answer-length');
+    await mount();
+    await openNote('被接的观点');
+    await openAiPanel();
+    const select = await waitFor(() => document.querySelector<HTMLSelectElement>('select[aria-label="回答长度"]'), '回答长度');
+    expect(select.value).toBe('medium');
+
+    await act(async () => {
+      select.value = 'long';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await askAi('为什么检索练习有效？');
+    await waitFor(() => streamBodies().length > 0, '提问请求');
+    expect(streamBodies()[0].answer_length).toBe('long');
+  });
+
+  it('画图按钮配上了字，不再只是一个图标', async () => {
+    await mount();
+    await openNote('被接的观点');
+    await openAiPanel();
+    const button = await waitFor(() => document.querySelector<HTMLButtonElement>('button[aria-label="让 AI 画一张配图"]'), '画图按钮');
+    expect(button.textContent).toContain('画图');
+  });
+});
+
+describe('问题栏后面滚动的讨论主题（2026-10-05）', () => {
+  const ticker = () => document.querySelector<HTMLElement>('[data-view-topics]');
+  const card = (title: string) => noteCard(title)!.closest('.gsap-note-item') as HTMLElement;
+
+  it('没有主题：问题栏照旧，没有多出来的东西', async () => {
+    await mount();
+    await settle(20);
+    expect(ticker()).toBeNull();
+  });
+
+  it('有主题：直接接在问题后面，没有引导语；点一个主题，画布移过去，相关笔记亮起来', async () => {
+    backend.state.viewTopics = [
+      { label: '远处的争论', noteIds: [FAR_ID], count: 1 },
+      { label: '被接的观点', noteIds: [PARENT_ID], count: 1 },
+    ];
+    await mount();
+    const strip = await waitFor(() => ticker(), '讨论主题');
+    expect(strip.textContent).toContain('远处的争论');
+    expect(strip.textContent).toContain('· 1');
+    expect(strip.closest('div')!.parentElement!.textContent).not.toContain('大家在聊');
+    expect(backend.state.requests.some(r => /view-topics\?view_id=view-welcome/.test(r.path))).toBe(true);
+
+    let transformBefore = '';
+    let el: HTMLElement | null = card('远处的观点').parentElement;
+    while (el && !el.style.transform.includes('scale(')) el = el.parentElement;
+    transformBefore = el!.style.transform;
+
+    await click([...strip.querySelectorAll('button')].find(b => b.textContent?.includes('远处的争论'))!);
+    expect(card('远处的观点').className).toContain('ring-amber-400');
+    expect(card('被接的观点').className).not.toContain('ring-amber-400');
+    expect(el!.style.transform).not.toBe(transformBefore);
   });
 });

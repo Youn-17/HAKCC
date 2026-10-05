@@ -1,5 +1,8 @@
+@import './styles/workspaceViews.css';
+@import './styles/knowledgeExplorer.css';
 @import "tailwindcss";
 @import "./styles/remixicon/remixicon.css";
+@import "./styles/assistant.css";
 
 /* Enable class-based dark mode (ThemeContext toggles .dark on <html>) */
 @variant dark (&:where(.dark, .dark *));
@@ -133,27 +136,27 @@ body {
   overflow-x: hidden;
 }
 
-/* Hide scrollbar for horizontal scroll strips */
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* Sidebar: ultra-thin scrollbar, visible only on hover */
-.sidebar-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
-.sidebar-scroll:hover { scrollbar-color: rgba(0,0,0,0.15) transparent; }
-.sidebar-scroll::-webkit-scrollbar { width: 3px; }
-.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
-.sidebar-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
-.sidebar-scroll:hover::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
-
-/* 画布详情栏里的正文：单独一个、一直看得见的细滚动条，学生才知道还能往下读。
-   Chrome/Safari 设了 scrollbar-color 就不再认 ::-webkit-scrollbar，而且 macOS 上会退回自动隐藏，
-   所以标准属性只给不认 webkit 伪元素的浏览器（Firefox）。 */
-.reading-scroll::-webkit-scrollbar { width: 6px; }
-.reading-scroll::-webkit-scrollbar-track { background: transparent; }
-.reading-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-.reading-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+/* Quiet scrollbars across pages and nested panels; scrolling remains native. */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
+.is-scrolling::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active { background: #c4cddc; }
+.dark .is-scrolling::-webkit-scrollbar-thumb,
+.dark *::-webkit-scrollbar-thumb:hover,
+.dark *::-webkit-scrollbar-thumb:active { background: #536079; }
+*::-webkit-scrollbar-corner { background: transparent; }
 @supports not selector(::-webkit-scrollbar) {
-  .reading-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+  * { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .is-scrolling, *:active { scrollbar-color: #c4cddc transparent; }
+  .dark .is-scrolling, .dark *:active { scrollbar-color: #536079 transparent; }
+}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { scrollbar-width: none; }
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+  *::-webkit-scrollbar-thumb { background: ButtonText; }
 }
 
 /* AI 画图时的动画（DrawingProgress）：线稿一笔笔描出来又淡去，画笔轻轻晃 */
@@ -227,26 +230,14 @@ body {
   .ai-avatar-working { animation: none; }
 }
 
-/* Custom scrollbar for note lists */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+/* AI 的每一步（AgentProcess）：新的一步轻轻滑进来 */
+.agent-step-enter { animation: agent-step-in 220ms ease-out both; }
+@keyframes agent-step-in {
+  from { opacity: 0; transform: translateY(0.25rem); }
+  to { opacity: 1; transform: none; }
 }
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 3px;
-}
-
-.dark .custom-scrollbar::-webkit-scrollbar-track {
-  background: #1f2937;
-}
-
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #4b5563;
+@media (prefers-reduced-motion: reduce) {
+  .agent-step-enter { animation: none; }
 }
 
 /* Logged-in dashboard: compact royal-blue surface and React Bits-style motion polish */
@@ -682,3 +673,20 @@ blockquote[data-imported-from] cite {
 .md-chat strong { font-weight: 600; }
 /* 对话里画出来的图（「画一张……」） */
 .md-chat img { margin: 0.5rem 0; max-height: 20rem; width: auto; border-radius: 0.5rem; border: 1px solid #e4e4e7; }
+
+/* 问题栏后面滚动的讨论主题（ViewTopicTicker）：放不下才滚，鼠标放上、键盘聚焦时停住 */
+.topic-marquee { animation: topic-marquee var(--marquee-duration, 30s) linear infinite; }
+.topic-marquee:hover, .topic-marquee:focus-within { animation-play-state: paused; }
+@keyframes topic-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.topic-fade { animation: topic-fade 320ms ease-out both; }
+@keyframes topic-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topic-marquee { animation: none; }
+  .topic-fade { animation: none; }
+}

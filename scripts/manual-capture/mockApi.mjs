@@ -188,6 +188,17 @@ on('GET', /^\/spaces\/[^/]+\/notes$/, () => ({ notes: state.notes }));
 on('GET', /^\/spaces\/[^/]+\/relations$/, () => ({ relations: state.relations }));
 on('GET', /^\/spaces\/[^/]+\/shapes$/, () => ({ shapes: state.shapes }));
 on('GET', /^\/spaces\/[^/]+\/views$/, () => ({ views: [], cards: [] }));
+// 问题栏后面滚动的讨论主题（2026-10-05）：按演示笔记写的几条
+on('GET', /^\/spaces\/[^/]+\/view-topics$/, () => ({
+  topics: [
+    { label: '思考被外包了吗', noteIds: ['n-01', 'n-02', 'n-03', 'n-13'], count: 4 },
+    { label: '「自己思考」指什么', noteIds: ['n-04', 'n-06', 'n-07'], count: 3 },
+    { label: 'AI 懂不懂', noteIds: ['n-09', 'n-10', 'n-11'], count: 3 },
+    { label: '检索练习与先写后问', noteIds: ['n-05', 'n-07', 'n-08'], count: 3 },
+    { label: '理解能不能分程度', noteIds: ['n-12'], count: 1 },
+  ],
+  stale: false,
+}));
 on('GET', /^\/notes\/(?<id>[^/?]+)$/, ({ params }) => ({ note: state.notes.find(n => n.id === params.id) ?? state.notes[0] }));
 on('GET', /^\/notes\/(?<id>[^/]+)\/relations$/, ({ params }) => ({ relations: state.relations.filter(r => r.source_note_id === params.id || r.target_note_id === params.id) }));
 on('GET', /^\/notes\/[^/]+\/revisions$/, () => ({ revisions: [] }));

@@ -17,6 +17,7 @@ import { searchKnowledgeBase } from './knowledgeBase';
 import { writeMemory, type MemoryType } from './teacherMemoryService';
 import { generateImage } from './modelRouter';
 import { generateNoteImage } from './noteImage';
+import { describeSpaceGraph, fetchSpaceBuildOnGraph, isNoteId } from './buildOnContext';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -167,13 +168,44 @@ export class ToolRegistry {
 
 // ── read_note ──────────────────────────────────────────────────
 
-const executeReadNote: ToolExecutor = async (_args, context) => {
-  const { data, error } = await supabase
+/**
+ * 当前笔记的 id；模型也可以自己给一个 note_id（提示词里的笔记清单带着 id）。
+ * 知识空间助手没有「当前笔记」——它的 context.noteId 是空间 id，不是任何一条笔记，
+ * 所以 read_note / get_note_context 以前在那里一律读不到东西。
+ * 模型给的 id 先验格式（它会拼进查询），再限定在本空间里：不能借它读别的空间的笔记。
+ */
+function resolveTargetNote(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): { ok: true; noteId: string; explicit: boolean } | { ok: false; error: string } {
+  const requested = typeof args.note_id === 'string' ? args.note_id.trim() : '';
+  if (requested) {
+    if (!isNoteId(requested)) return { ok: false, error: 'note_id must be the id of a note from the note list' };
+    return { ok: true, noteId: requested, explicit: true };
+  }
+  return { ok: true, noteId: context.noteId, explicit: false };
+}
+
+const isWorkspaceContext = (context: ToolContext): boolean => context.noteId === context.spaceId;
+
+const executeReadNote: ToolExecutor = async (args, context) => {
+  const target = resolveTargetNote(args, context);
+  if (!target.ok) return { success: false, data: null, error: target.error };
+  if (!target.explicit && isWorkspaceContext(context)) {
+    return {
+      success: false,
+      data: null,
+      error: 'There is no single current note in the workspace. Call read_note with the note_id of a note from the note list.',
+    };
+  }
+
+  let query = supabase
     .from('notes')
     .select('id, title, content, author_id, space_id, created_at, updated_at')
-    .eq('id', context.noteId)
-    .is('deleted_at', null)
-    .single();
+    .eq('id', target.noteId)
+    .is('deleted_at', null);
+  if (target.explicit) query = query.eq('space_id', context.spaceId);
+  const { data, error } = await query.single();
 
   if (error || !data) {
     return { success: false, data: null, error: 'Note not found' };
@@ -283,20 +315,46 @@ const executeSearchNotes: ToolExecutor = async (args, context) => {
 
 // ── get_note_context ───────────────────────────────────────────
 
-const executeGetNoteContext: ToolExecutor = async (_args, context) => {
-  // Fetch build-on relations
-  const { data: relations } = await supabase
-    .from('relations')
-    .select('id, relation_type, source_note_id, target_note_id, created_at')
-    .or(`source_note_id.eq.${context.noteId},target_note_id.eq.${context.noteId}`)
-    .order('created_at', { ascending: false })
-    .limit(24);
+const executeGetNoteContext: ToolExecutor = async (args, context) => {
+  const target = resolveTargetNote(args, context);
+  if (!target.ok) return { success: false, data: null, error: target.error };
 
-  const relationRows = relations ?? [];
+  // 知识空间里没指定笔记：给整个空间的 Build-on 关系
+  if (!target.explicit && isWorkspaceContext(context)) {
+    const graph = await fetchSpaceBuildOnGraph(context.spaceId);
+    return { success: true, data: describeSpaceGraph(graph) };
+  }
+
+  let title = context.noteTitle;
+  let contentSummary = summarizeContent(context.noteContent, 900);
+  if (target.explicit) {
+    const { data: note } = await supabase
+      .from('notes')
+      .select('id, title, content')
+      .eq('id', target.noteId)
+      .eq('space_id', context.spaceId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!note) return { success: false, data: null, error: 'Note not found' };
+    title = (note.title as string) ?? 'Untitled Note';
+    contentSummary = summarizeContent(stripHtml((note.content as string) ?? ''), 900);
+  }
+
+  // Fetch build-on relations（source 是后写的、在 Build-on 的那条；outgoing = 它 Build-on 了谁）
+  const select = 'id, relation_type, source_note_id, target_note_id, created_at';
+  const [asSource, asTarget] = await Promise.all([
+    supabase.from('relations').select(select).eq('source_note_id', target.noteId)
+      .order('created_at', { ascending: false }).limit(24),
+    supabase.from('relations').select(select).eq('target_note_id', target.noteId)
+      .order('created_at', { ascending: false }).limit(24),
+  ]);
+  const relationRows = [...(asSource.data ?? []), ...(asTarget.data ?? [])]
+    .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, 24);
   const otherIds = Array.from(
     new Set(
       relationRows.map((r: any) =>
-        r.source_note_id === context.noteId
+        r.source_note_id === target.noteId
           ? r.target_note_id
           : r.source_note_id,
       ),
@@ -325,7 +383,7 @@ const executeGetNoteContext: ToolExecutor = async (_args, context) => {
     relatedSummaries = relationRows
       .map((r: any) => {
         const direction =
-          r.source_note_id === context.noteId ? 'outgoing' : 'incoming';
+          r.source_note_id === target.noteId ? 'outgoing' : 'incoming';
         const otherId =
           direction === 'outgoing' ? r.target_note_id : r.source_note_id;
         const other = noteMap.get(otherId);
@@ -343,9 +401,9 @@ const executeGetNoteContext: ToolExecutor = async (_args, context) => {
   return {
     success: true,
     data: {
-      noteId: context.noteId,
-      title: context.noteTitle,
-      contentSummary: summarizeContent(context.noteContent, 900),
+      noteId: target.noteId,
+      title,
+      contentSummary,
       spaceId: context.spaceId,
       courseId: context.courseId,
       buildOnRelations: relatedSummaries,
@@ -1450,8 +1508,13 @@ export function createDefaultRegistry(): ToolRegistry {
       function: {
         name: 'read_note',
         description:
-          "Read the current note's full content and metadata.",
-        parameters: { type: 'object', properties: {} },
+          "Read a note's full content and metadata. Without note_id it reads the current note; in the workspace assistant there is no current note, so pass the note_id of a note from the note list.",
+        parameters: {
+          type: 'object',
+          properties: {
+            note_id: { type: 'string', description: 'Id of a note in this space (the id shown in the note list). Optional in a note, needed in the workspace.' },
+          },
+        },
       },
     },
     executeReadNote,
@@ -1527,8 +1590,13 @@ export function createDefaultRegistry(): ToolRegistry {
       function: {
         name: 'get_note_context',
         description:
-          "Get the current note's title, content summary, and build-on relations.",
-        parameters: { type: 'object', properties: {} },
+          "Get a note's title, content summary, and Build-on relations (outgoing = this note builds on that one; incoming = that note builds on this one). Without note_id it uses the current note; in the workspace assistant, without note_id it returns every Build-on relation in the space.",
+        parameters: {
+          type: 'object',
+          properties: {
+            note_id: { type: 'string', description: 'Id of a note in this space (the id shown in the note list). Optional.' },
+          },
+        },
       },
     },
     executeGetNoteContext,

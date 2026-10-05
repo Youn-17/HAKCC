@@ -77,8 +77,8 @@ export const REFERENCES: Reference[] = [
       en: 'Sets out the twelve knowledge-building principles, centred on collective cognitive responsibility — members share responsibility for the state of public knowledge rather than leaving it to the teacher — and epistemic agency, students setting goals, judging progress and handling disagreement themselves. Everyone is a legitimate contributor.',
     },
     applied: {
-      zh: '三处直接落实：AI 反馈从不自动发布，进入公共画布必须由学生决定；采纳反馈后生成的对话笔记对同伴公开可见，因为私有对话不构成公共知识；观点图谱和讨论速览只做「定位」不做「综合」——更高一层的说法归学生写。',
-      en: 'Three direct consequences: AI feedback never auto-publishes, a student decides what enters the shared canvas; dialogue notes created by accepting feedback are visible to peers, since private dialogue is not public knowledge; the idea graph and discussion digest locate ideas but never synthesise them — that higher-level statement belongs to students.',
+      zh: '三处直接落实：学生决定是否采纳 AI 反馈，采纳后可以先修订原 Note；贡献时检查修订是否回应反馈，尚未回应时才可能生成对同伴可见的关联 Note；观点图谱和讨论速览只做「定位」不做「综合」——更高一层的说法归学生写。',
+      en: 'Three direct consequences: students decide whether to accept AI feedback and can first revise their original Note; contribution-time checks determine whether a peer-visible linked Note is still needed; the idea graph and discussion digest locate ideas but never synthesise them — that higher-level statement belongs to students.',
     },
   },
   {
@@ -93,8 +93,8 @@ export const REFERENCES: Reference[] = [
       en: 'Knowledge building differs from learning: learning changes an individual mind, knowledge building improves a community\'s public knowledge, producing ideas others can use, criticise and improve. Technology\'s role is to make ideas into manipulable objects.',
     },
     applied: {
-      zh: '笔记卡片可以被拖动、连接、引用、综合、被 AI 反馈——它是一个对象，不是一段提交的文本。研究导出把「学生产出」和「AI 产出」分开计数，因为衡量的是社区知识的改进，不是个人写了多少。',
-      en: 'A note card can be dragged, linked, cited, synthesised and given feedback — it is an object, not a submitted text. Research exports count student output and AI output separately because what is measured is improvement of community knowledge, not how much each person wrote.',
+      zh: '笔记卡片可以被拖动、连接、引用、综合、被 AI 反馈——它是一个对象，不是一段提交的文本。研究导出把「学生产出」和「AI 产出」分开计数，以支持核查贡献来源与共同体活动；计数本身不衡量知识质量。',
+      en: 'A note card can be dragged, linked, cited, synthesised and given feedback — it is an object, not a submitted text. Research exports count student output and AI output separately to support inspection of contribution provenance and community activity; counts alone do not measure knowledge quality.',
     },
   },
   {
@@ -669,15 +669,15 @@ export const PHILOSOPHY_SECTIONS: PhilosophySection[] = [
         how: [
           { zh: '一门课是一个知识社区，笔记放在共享画布上，而不是提交给教师。', en: 'A course is one knowledge community; notes live on a shared canvas rather than being handed to the teacher.' },
           { zh: '任何人可以在任何笔记上 Build-on，六种关系类型（延伸、澄清、提问、质疑、证据、综合）说明这次贡献如何推进原来的想法。', en: 'Anyone can build on any note; six relation types (extend, clarify, question, challenge, evidence, synthesise) say how the contribution moves the idea.' },
-          { zh: '研究导出把学生产出与 AI 产出分开计数——衡量的是社区知识的改进。', en: 'Research exports count student and AI output separately — what is measured is the improvement of community knowledge.' },
+          { zh: '研究导出把学生产出与 AI 产出分开计数——用于检查过程，不直接衡量知识质量。', en: 'Research exports count student and AI output separately — supporting process inspection without directly measuring knowledge quality.' },
         ],
         refs: ['scardamalia1994', 'scardamalia2006', 'bereiter2002'],
       },
       {
         claim: { zh: '集体认知责任与认知主体性', en: 'Collective cognitive responsibility and epistemic agency' },
         how: [
-          { zh: 'AI 反馈从不自动发布到画布；什么进入公共空间由学生决定。', en: 'AI feedback never publishes itself to the canvas; students decide what enters the shared space.' },
-          { zh: '采纳反馈后生成的对话笔记对同伴可见——私有对话不构成公共知识。', en: 'Dialogue notes created by accepting feedback are visible to peers — private dialogue is not public knowledge.' },
+          { zh: 'AI 反馈的采纳与原 Note 的贡献由学生决定；关联发布还受回应检查和权限约束。', en: 'Students decide on feedback acceptance and Note contribution; linked publication also follows uptake checks and permissions.' },
+          { zh: '采纳后先修订原 Note；贡献时检查是否回应反馈，未回应的采纳项可生成同伴可见的关联 Note。', en: 'Revise the original Note after acceptance; contribution-time checks can publish a peer-visible linked Note for an accepted item that remains unaddressed.' },
           { zh: 'View 允许把任何画布的卡片作为传送门放到别处，协作不受固定小组边界限制。', en: 'Views let any canvas\'s card be placed elsewhere as a portal, so collaboration is not bound by fixed groups.' },
           { zh: '教师端「参与公平性」面板检查责任是否集中在少数人身上。', en: 'The equity panel checks whether responsibility concentrates in a few people.' },
         ],

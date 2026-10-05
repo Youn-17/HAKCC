@@ -1,8 +1,12 @@
 /**
  * WorkspaceAgentPanel — Unified workspace AI panel.
  *
- * Merges the old GenAIPanel (history / usage) with the agent chat.
- * Two tabs: Chat (agent with tools + SSE streaming) and History.
+ * 一个面板：顶上一行（标题、新对话、历史对话、关闭），对话区占满中间，控制项（附件、
+ * 范围、模型）收在输入框下面的一排。以前顶上叠了标题、页签、用量条、控制条四层，
+ * 再加常开的「讨论速览」，对话区被挤得很小。
+ * 历史对话：后端一直在存，打开面板时读回这个空间里最近的一段，「历史」里能翻以前的；
+ * 以前这里只有一个页签列「AI 介入记录」，从来读不回对话。
+ * 默认宽度占屏幕的一半，拖宽拖窄会记住。
  * 平台怎么用的求助不在这里：它是全站右边缘的「使用帮助」小球（components/help），
  * 两个入口并存时学生分不清该去哪问。
  *
@@ -13,15 +17,32 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import RemixIcon from './RemixIcon';
-import AgentToolCallDisplay, { ToolCallInfo } from './AgentToolCallDisplay';
+import type { ToolCallInfo } from './AgentToolCallDisplay';
+import AgentProcess from './AgentProcess';
 import DiscussionDigestPanel from './DiscussionDigest';
-import { ai as aiApi, trackEvent, getAuthToken } from '../services/apiClient';
+import { ai as aiApi, getAuthToken, workspaceAgent as workspaceAgentApi } from '../services/apiClient';
+import type { AgentConversation } from '../services/apiClient';
 import { useDismissible } from '../hooks/useDismissible';
-import { notes as notesApi } from '../services/apiClient';
 import { uploadAttachment, MAX_ATTACHMENT_BYTES } from '../services/attachmentUpload';
 import MarkdownMessage from './chatMarkdown';
 import { modelOptionLabel } from './aiModelLabels';
 import DrawingProgress from './DrawingProgress';
+import AnswerLengthSelect from './AnswerLengthSelect';
+import AssistantWelcome from './AssistantWelcome';
+import { useChatPreferences, ChatPreferenceControls } from '../hooks/useChatPreferences';
+import { useGrowingTextarea } from '../hooks/useGrowingTextarea';
+import { getAnswerLength } from './answerLengthPref';
+import { formatThreadTime } from './noteChatHistory';
+import {
+  clampPanelWidth,
+  conversationLabel,
+  initialPanelWidth,
+  mergeConversations,
+  messagesFromApi,
+  pickConversationToRestore,
+  sortConversations,
+  upsertConversation,
+} from './workspaceAgentHistory';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,23 +80,13 @@ export interface WorkspaceAgentPanelProps {
   onPendingAttachmentTaken?: () => void;
 }
 
-type PanelTab = 'chat' | 'history';
-
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   tools?: ToolCallInfo[];
-}
-
-interface HistoryEntry {
-  id: string;
-  trigger_type: string;
-  provider_id: string;
-  model_full_name: string;
-  input_context_summary: string;
-  response_text: string;
-  created_at: string;
+  /** 这一轮从发出到答完用了多久（「用了 3 步 · 6 秒」） */
+  elapsedMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,11 +96,10 @@ interface HistoryEntry {
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const AUTH_TOKEN_KEY = 'hakcc-access-token';
 
-const PROVIDER_LABELS: Record<string, string> = {
-  openai: 'ChatGPT', anthropic: 'Claude', google: 'Gemini', deepseek: 'DeepSeek',
-  dmx: 'DMXAPI', dmxapi: 'DMXAPI', moonshot: 'Kimi', doubao: 'Doubao',
-  xai: 'Grok', baidu: 'Wenxin', alibaba: 'Qwen', zhipu: 'Zhipu', openrouter: 'OpenRouter',
-};
+/** 学生拖过的面板宽度记在浏览器里；没拖过就是屏幕的一半 */
+const WIDTH_KEY = 'hakcc-ws-agent-width';
+const readStoredWidth = (): string | null => { try { return localStorage.getItem(WIDTH_KEY); } catch { return null; } };
+const writeStoredWidth = (width: number) => { try { localStorage.setItem(WIDTH_KEY, String(width)); } catch { /* 隐私模式忽略 */ } };
 
 
 // 知识空间助手只有一种身份：模式选择连同 AgentMode / AGENT_MODES 一起删了。
@@ -134,7 +144,8 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
   pendingAttachment, onPendingAttachmentTaken,
 }) => {
   // -- Panel width (resizable) ------------------------------------------------
-  const [panelWidth, setPanelWidth] = useState(420);
+  // 默认占屏幕的一半：对话和画布各一半。以前固定 420px，AI 的回答（表格、长段落）挤在一条窄缝里
+  const [panelWidth, setPanelWidth] = useState(() => initialPanelWidth(window.innerWidth, readStoredWidth()));
   const isDragging = useRef(false);
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
@@ -142,13 +153,16 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
     isDragging.current = true;
     const startX = e.clientX;
     const startWidth = panelWidth;
+    let latest = startWidth;
     const onMove = (ev: MouseEvent) => {
       if (!isDragging.current) return;
       const delta = startX - ev.clientX;
-      setPanelWidth(Math.max(320, Math.min(800, startWidth + delta)));
+      latest = clampPanelWidth(startWidth + delta, window.innerWidth);
+      setPanelWidth(latest);
     };
     const onUp = () => {
       isDragging.current = false;
+      writeStoredWidth(latest);
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       document.body.style.cursor = '';
@@ -159,9 +173,6 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }, [panelWidth]);
-
-  // -- Tab state -------------------------------------------------------------
-  const [activeTab, setActiveTab] = useState<PanelTab>('chat');
 
   // -- Chat state ------------------------------------------------------------
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -180,16 +191,34 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const notePickerRef = useRef<HTMLDivElement>(null);
+  const { enterToSend, setEnterToSend, largeText, setLargeText } = useChatPreferences();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  useDismissible({ open: settingsOpen, onDismiss: () => setSettingsOpen(false), ref: settingsRef });
   const [activeTools, setActiveTools] = useState<ToolCallInfo[]>([]);
-  // 等待期间的秒表。推理模型可能十几二十秒才吐第一个字，光一个转圈学生分不清
-  // 「在想」和「卡死了」—— 看得见秒数在走，就知道系统还活着。
-  const [waitedSec, setWaitedSec] = useState(0);
+  // 这一轮开始的时刻：等待时 AgentProcess 显示已经等了几秒，答完记下总用时
+  const turnStartedAtRef = useRef(0);
   const [reasoningText, setReasoningText] = useState('');
   const [conversationId, setConversationId] = useState<string | null>(null);
 
   // -- History state ---------------------------------------------------------
-  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [conversations, setConversations] = useState<AgentConversation[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  /** 打开面板时正在读回上一段对话 */
+  const [restoring, setRestoring] = useState(false);
+  /** 在历史里点了、消息还在读的那一段 */
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const historyMenuRef = useRef<HTMLDivElement>(null);
+  const restoredKeyRef = useRef<string | null>(null);
+  const restoreRunRef = useRef(0);
+  // 异步回调里要看「现在」的状态，不能读闭包里的旧值
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const conversationIdRef = useRef<string | null>(null);
+  const streamingRef = useRef(false);
+  messagesRef.current = messages;
+  conversationIdRef.current = conversationId;
+  streamingRef.current = streaming;
 
 
   // -- Usage state -----------------------------------------------------------
@@ -199,6 +228,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  useGrowingTextarea(inputRef, input, isOpen || Boolean(embedded));
   const abortRef = useRef<AbortController | null>(null);
 
   // -- Derived values --------------------------------------------------------
@@ -217,14 +247,22 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
     const zh = lang === 'zh';
     return {
       title: zh ? '知识空间 AI 助手' : 'Knowledge Space AI',
-      tabChat: zh ? '对话' : 'Chat',
-      tabHistory: zh ? '历史' : 'History',
+      newChat: zh ? '新对话' : 'New chat',
+      history: zh ? '历史对话' : 'History',
+      historyEmpty: zh ? '还没有历史对话' : 'No earlier chats yet',
+      historyLoading: zh ? '正在读取…' : 'Loading…',
+      restoring: zh ? '正在打开上次的对话…' : 'Opening your last chat…',
+      opening: zh ? '正在打开这段对话…' : 'Opening this chat…',
+      openFailed: zh ? '没能打开这段对话，请稍后再试。' : 'Could not open that chat. Please try again.',
+      switchBlocked: zh ? '回答完才能切换' : 'Wait for the answer to finish',
       send: zh ? '发送' : 'Send',
+      draw: zh ? '画图' : 'Draw',
+      drawHint: zh ? '按输入框里的描述画一张图；还没写描述就先写好再点' : 'Draw a picture from what you typed; type a description first',
+      drawPrefix: zh ? '画一张：' : 'Draw a picture of ',
       thinking: zh ? '思考中…' : 'Thinking…',
       placeholder: zh ? '向 AI 助手提问关于工作台笔记的问题…' : 'Ask the AI agent about workspace notes…',
       provider: zh ? '服务商' : 'Provider',
       model: zh ? '模型' : 'Model',
-      mode: zh ? '模式' : 'Mode',
       wholeSpace: zh ? '整个空间' : 'Whole space',
       picked: zh ? '已选' : 'Selected',
       searchNotes: zh ? '搜索笔记…' : 'Search notes…',
@@ -239,25 +277,13 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
       defaultModel: zh ? '默认（老师为本课设定）' : 'Default (set by your teacher)',
       selectModel: zh ? '选择模型' : 'Select model',
       deepThinking: zh ? '深度思考中...' : 'Deep thinking...',
-      noHistory: zh ? '暂无历史对话' : 'No conversation history yet',
-      loadingText: zh ? '加载中...' : 'Loading...',
-      accept: zh ? '接受建议' : 'Accept',
-      dismiss: zh ? '忽略' : 'Dismiss',
-      accepted: zh ? '已接受' : 'Accepted',
-      dismissed: zh ? '已忽略' : 'Dismissed',
-      today: zh ? '今日' : 'Today',
-      remaining: zh ? '剩余' : 'left',
+      usageTip: (today: number, limit: number, left: number) => (zh
+        ? `今天已用 ${today} 次，共 ${limit} 次，还剩 ${left} 次`
+        : `${today} of ${limit} used today, ${left} left`),
     };
   }, [lang]);
 
   // -- Effects ---------------------------------------------------------------
-
-  useEffect(() => {
-    if (!streaming) { setWaitedSec(0); return; }
-    const started = Date.now();
-    const id = window.setInterval(() => setWaitedSec(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => window.clearInterval(id);
-  }, [streaming]);
 
   // 默认选「默认」：用老师在课程 AI 设置里给知识空间 AI 助手定的模型（后端按 'auto' 解析）。
   // 以前默认是库里排第一的那家配置的第一个模型，可能正好是最慢的 DMX。
@@ -287,7 +313,6 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
     setAttachments(prev => (prev.some(a => a.file_url === pendingAttachment.file_url)
       ? prev
       : [...prev, pendingAttachment].slice(-4)));
-    setActiveTab('chat');
     onPendingAttachmentTaken?.();
   }, [isOpen, pendingAttachment, onPendingAttachmentTaken]);
 
@@ -300,20 +325,87 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
     }
   }, [isOpen, courseId, messages.length]);
 
-  // Load history when tab switches to history
-  const loadHistory = useCallback(async () => {
-    setLoadingHistory(true);
-    try {
-      const { history } = await aiApi.history({ space_id: spaceId, limit: 50 });
-      setHistoryEntries(history);
-    } catch { /* silent */ } finally {
-      setLoadingHistory(false);
-    }
-  }, [spaceId]);
-
+  // 打开面板时读回这个空间里最近的一段对话。后端一直在存，以前这里一条都不读，
+  // 刷新页面、隔天再开都是一片空白。学生已经开始问了就不覆盖他眼前的。
   useEffect(() => {
-    if (activeTab === 'history') loadHistory();
-  }, [activeTab, loadHistory]);
+    if (!isOpen || !courseId) return;
+    const key = `${courseId}:${spaceId ?? ''}`;
+    if (restoredKeyRef.current === key) return;
+    if (restoredKeyRef.current !== null) {
+      // 换了空间：上一个空间的对话不带过来
+      setMessages([]);
+      setConversationId(null);
+      setConversations([]);
+    }
+    restoredKeyRef.current = key;
+    const run = ++restoreRunRef.current;
+    const stale = () => restoreRunRef.current !== run;
+    const occupied = () => messagesRef.current.length > 0 || streamingRef.current || conversationIdRef.current !== null;
+    setRestoring(true);
+    void (async () => {
+      try {
+        const { conversations: list } = await workspaceAgentApi.listConversations(courseId, spaceId);
+        if (stale()) return;
+        setConversations(sortConversations(list));
+        if (occupied()) return;
+        const latest = pickConversationToRestore(list, spaceId);
+        if (!latest) return;
+        const { messages: stored } = await workspaceAgentApi.loadMessages(courseId, latest.id);
+        if (stale() || occupied()) return;
+        setMessages(messagesFromApi(stored));
+        setConversationId(latest.id);
+      } catch {
+        // 读不回来也不影响提问；下次打开再试
+        if (!stale()) restoredKeyRef.current = null;
+      } finally {
+        if (!stale()) setRestoring(false);
+      }
+    })();
+  }, [isOpen, courseId, spaceId]);
+
+  useDismissible({ open: historyOpen, onDismiss: () => setHistoryOpen(false), ref: historyMenuRef });
+
+  /** 打开历史菜单时顺手刷新一遍列表（别的设备或别的标签页里聊过的也在） */
+  const toggleHistory = useCallback(() => {
+    setHistoryOpen((open) => {
+      if (!open) {
+        setHistoryLoading(true);
+        workspaceAgentApi.listConversations(courseId, spaceId)
+          .then(({ conversations: list }) => setConversations(prev => mergeConversations(prev, list)))
+          .catch(() => { /* 用已有的列表 */ })
+          .finally(() => setHistoryLoading(false));
+      }
+      return !open;
+    });
+  }, [courseId, spaceId]);
+
+  const openConversation = useCallback(async (conv: AgentConversation) => {
+    if (streaming || openingId) return;
+    if (conv.id === conversationId) { setHistoryOpen(false); return; }
+    setOpeningId(conv.id);
+    setError(null);
+    try {
+      const { messages: stored } = await workspaceAgentApi.loadMessages(courseId, conv.id);
+      setMessages(messagesFromApi(stored));
+      setConversationId(conv.id);
+      setHistoryOpen(false);
+    } catch {
+      setError(t.openFailed);
+    } finally {
+      setOpeningId(null);
+    }
+  }, [streaming, openingId, conversationId, courseId, t.openFailed]);
+
+  const startNewChat = useCallback(() => {
+    if (streaming) return;
+    setHistoryOpen(false);
+    if (messages.length > 0 || conversationId) {
+      setMessages([]);
+      setConversationId(null);
+      setError(null);
+    }
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, [streaming, messages.length, conversationId]);
 
   // -- Handlers --------------------------------------------------------------
 
@@ -350,7 +442,8 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
     }
   }, [spaceId, lang]);
 
-  const handleSend = useCallback(async () => {
+  /** draw：输入框下面的「画图」，不管怎么措辞都直接出图 */
+  const handleSend = useCallback(async (draw = false) => {
     const content = input.trim();
     if ((!content && attachments.length === 0) || streaming) return;
     if (!selectedProvider || !selectedModel) { setError(t.noProvider); return; }
@@ -364,6 +457,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
     setStreaming(true);
     setActiveTools([]);
     setReasoningText('');
+    turnStartedAtRef.current = Date.now();
 
     const tempAssistantId = `stream-${Date.now()}`;
     let streamedText = '';
@@ -386,6 +480,8 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
           attachments: turnAttachments,
           conversation_id: conversationId ?? undefined,
           history: messages.map((m) => ({ role: m.role, content: m.content })),
+          answer_length: getAnswerLength(),
+          ...(draw ? { force_draw: true } : {}),
         }),
         signal: controller.signal,
       });
@@ -400,7 +496,13 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
         if (event === '[DONE]') return;
         if (typeof event.error === 'string') { setDrawing(null); setError(event.error); return; }
         if (event.done === true && typeof event.conversationId === 'string') {
-          setConversationId(event.conversationId as string); return;
+          const id = event.conversationId as string;
+          setConversationId(id);
+          // 标题是这段对话的第一句话；已经在列表里的对话 upsert 会保留原标题
+          setConversations(prev => upsertConversation(prev, {
+            id, title: content.slice(0, 80), updated_at: new Date().toISOString(), space_id: spaceId ?? null,
+          }));
+          return;
         }
         if (event.drawing && typeof (event.drawing as { prompt?: unknown }).prompt === 'string') {
           setDrawing({ prompt: (event.drawing as { prompt: string }).prompt, startedAt: Date.now() });
@@ -454,14 +556,18 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
           const final = event.assistantMessage as Record<string, unknown>;
           setMessages((prev) => prev.map((m) =>
             m.id === tempAssistantId
-              ? { id: (final.id as string) ?? tempAssistantId, role: 'assistant' as const, content: (final.content as string) ?? streamedText, tools: collectedTools.length > 0 ? [...collectedTools] : undefined }
+              ? { id: (final.id as string) ?? tempAssistantId, role: 'assistant' as const, content: (final.content as string) ?? streamedText, tools: collectedTools.length > 0 ? [...collectedTools] : undefined, elapsedMs: Date.now() - turnStartedAtRef.current }
               : m,
           ));
         }
       });
 
+      // 这一轮答完：临时 id 换成正式的。智能体那条路不回传 assistantMessage，临时 id 以前一直留着，
+      // 「正在思考」那一行按「有没有 stream- 开头的消息」判断，于是从第二问起就再也不显示了。
       setMessages((prev) => prev.map((m) =>
-        m.id === tempAssistantId && collectedTools.length > 0 ? { ...m, tools: [...collectedTools] } : m,
+        m.id === tempAssistantId
+          ? { ...m, id: generateId(), elapsedMs: Date.now() - turnStartedAtRef.current, ...(collectedTools.length > 0 ? { tools: [...collectedTools] } : {}) }
+          : m,
       ));
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
@@ -478,15 +584,22 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
   }, [input, streaming, selectedProvider, selectedModel, courseId, spaceId, contextNoteIds, attachments, conversationId, t.noProvider, messages]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-  }, [handleSend]);
+    if (e.key === 'Enter' && enterToSend && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void handleSend(); }
+  }, [handleSend, enterToSend]);
 
   // -- Render ----------------------------------------------------------------
 
+  const emptyChat = messages.length === 0 && !streaming;
 
   return (
     <div
-      className={`${embedded
+      data-large-text={largeText}
+      data-ws-agent-panel
+      role="complementary"
+      aria-label={t.title}
+      aria-hidden={!embedded && !isOpen}
+      inert={!embedded && !isOpen}
+      className={`assistant-panel ${embedded
         ? 'relative w-full h-full flex flex-col bg-white dark:bg-gray-900'
         : `fixed inset-y-0 right-0 z-50 max-w-full bg-white dark:bg-gray-900 shadow-2xl shadow-black/10 border-l border-gray-200 dark:border-gray-800 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`
       }`}
@@ -496,330 +609,367 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
         className="absolute inset-y-0 left-0 w-1 cursor-col-resize hover:w-1.5 hover:bg-[#000080]/15 active:bg-[#000080]/25 transition-all z-10"
         onMouseDown={handleDragStart}
       />}
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-2.5">
-          <img src="/assets/ai-tutor-avatar.png" alt="" className="h-7 w-7 rounded-lg object-cover ring-1 ring-gray-200 dark:ring-gray-700" />
-          <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 tracking-tight">{t.title}</h2>
+
+      {/* ── Header：一行。标题、今日用量、新对话、历史对话、关闭 ───────────── */}
+      <div className="assistant-header relative z-20 flex shrink-0 items-center gap-2 border-b">
+        <span className="assistant-mark" aria-hidden="true"><RemixIcon name="chat-quote-line" size={18} /></span>
+        <div className="assistant-header-title">
+          <h2 className="truncate">{t.title}</h2>
+          <p className="truncate">{lang === 'zh' ? '连接观点 · 共同探究' : 'Connect ideas · Explore together'}</p>
         </div>
-        <div className="flex items-center gap-1">
-          {messages.length > 0 && (
-            <button type="button" onClick={() => { setMessages([]); setConversationId(null); setError(null); }}
-              className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              title={lang === 'zh' ? '新对话' : 'New chat'}>
-              <RemixIcon name="chat-new-line" size={16} />
-            </button>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {usageInfo && (
+            <span
+              title={t.usageTip(usageInfo.today, usageInfo.daily_limit, usageInfo.remaining)}
+              className={`mr-1 rounded-md px-1.5 py-0.5 text-[0.6875rem] tabular-nums ${
+                usageInfo.remaining <= 10
+                  ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'
+                  : 'text-gray-400 dark:text-gray-500'
+              }`}
+            >
+              {usageInfo.today}/{usageInfo.daily_limit}
+            </span>
           )}
+          <button
+            type="button"
+            onClick={startNewChat}
+            disabled={streaming}
+            title={streaming ? t.switchBlocked : t.newChat}
+            aria-label={t.newChat}
+            className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          >
+            <RemixIcon name="chat-new-line" size={15} />
+            <span className="assistant-header-action-label">{t.newChat}</span>
+          </button>
+          <div ref={historyMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={toggleHistory}
+              aria-expanded={historyOpen}
+              aria-label={t.history}
+              className={`inline-flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium transition-colors ${
+                historyOpen
+                  ? 'bg-[#000080]/[0.07] text-[#000080] dark:bg-blue-950/40 dark:text-blue-300'
+                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'
+              }`}
+            >
+              <RemixIcon name="history-line" size={15} />
+              <span className="assistant-header-action-label">{t.history}</span>
+            </button>
+            {historyOpen && (
+              <div
+                data-ws-agent-history
+                className="absolute right-0 top-full z-30 mt-1.5 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
+              >
+                <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2 text-[0.6875rem] font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                  <span>{t.history}</span>
+                  {historyLoading && <Loader2 size={12} className="animate-spin" aria-label={t.historyLoading} />}
+                </div>
+                <ul className="max-h-80 overflow-y-auto p-1">
+                  {conversations.length === 0 && !historyLoading && (
+                    <li className="px-3 py-4 text-center text-xs text-gray-400 dark:text-gray-500">{t.historyEmpty}</li>
+                  )}
+                  {conversations.map((c) => {
+                    const current = c.id === conversationId;
+                    return (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          data-conversation-id={c.id}
+                          aria-current={current ? 'true' : undefined}
+                          disabled={streaming || openingId !== null}
+                          title={streaming ? t.switchBlocked : undefined}
+                          onClick={() => void openConversation(c)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                            current
+                              ? 'bg-[#000080]/[0.07] font-semibold text-[#000080] dark:bg-blue-950/40 dark:text-blue-300'
+                              : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{conversationLabel(c, lang)}</span>
+                          {openingId === c.id
+                            ? <Loader2 size={12} className="shrink-0 animate-spin" />
+                            : <span className="shrink-0 text-[0.625rem] tabular-nums text-gray-400 dark:text-gray-500">{formatThreadTime(c.updated_at, lang)}</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
           {!embedded && <button type="button" onClick={onClose}
-            className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-            aria-label="Close">
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            aria-label={lang === 'zh' ? '关闭' : 'Close'}>
             <X size={18} />
           </button>}
         </div>
       </div>
 
-      {/* ── Tab bar ────────────────────────────────────────────── */}
-      <div className="flex border-b border-gray-200 dark:border-gray-800 shrink-0">
-        {([
-          { key: 'chat' as PanelTab, label: t.tabChat, icon: 'chat-3-line' },
-          { key: 'history' as PanelTab, label: t.tabHistory, icon: 'history-line' },
-        ]).map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`relative flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ${
-              activeTab === tab.key
-                ? 'text-[#000080] dark:text-[#93AAFD] border-b-2 border-[#000080] dark:border-[#4169E1]'
-                : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-            }`}
-          >
-            <RemixIcon name={tab.icon} size={14} />
-            {tab.label}
-          </button>
-        ))}
+      <div ref={notePickerRef} className="assistant-context-bar relative shrink-0">
+        <button
+          type="button"
+          onClick={() => setNotePickerOpen(v => !v)}
+          aria-expanded={notePickerOpen}
+          aria-label={lang === 'zh' ? '选择 Note' : 'Choose Notes'}
+          className="assistant-context-trigger"
+        >
+          <RemixIcon name="checkbox-multiple-line" size={13} />
+          <span className="assistant-context-label">{lang === 'zh' ? '选择 Note' : 'Choose Notes'}</span>
+          <span className="assistant-context-value">{contextNoteIds.size > 0 ? `${t.picked} ${contextNoteIds.size}` : t.wholeSpace}</span>
+          <RemixIcon name="arrow-down-s-line" size={14} />
+        </button>
+
+        {notePickerOpen && (
+          <div className="assistant-context-menu">
+            <div className="flex items-center gap-1.5 px-1 pb-2">
+              <input
+                value={noteQuery}
+                onChange={(e) => setNoteQuery(e.target.value)}
+                aria-label={t.searchNotes}
+                placeholder={t.searchNotes}
+                className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:border-[#000080] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              />
+              <button type="button" onClick={() => setContextNoteIds(new Set(spaceNotes.map(n => n.id)))}
+                className="shrink-0 rounded-lg px-2 py-1 text-[0.6875rem] font-semibold text-[#000080] hover:bg-[#000080]/[0.07] dark:text-blue-300">
+                {t.selectAll}
+              </button>
+              <button type="button" onClick={() => setContextNoteIds(new Set())}
+                className="shrink-0 rounded-lg px-2 py-1 text-[0.6875rem] text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+                {t.clearSel}
+              </button>
+            </div>
+            <p className="px-1 pb-1.5 text-[0.6875rem] leading-4 text-gray-400">{t.pickHint}</p>
+            <ul className="max-h-64 space-y-0.5 overflow-y-auto">
+              {spaceNotes
+                .filter(n => !noteQuery.trim() || (n.title ?? '').toLowerCase().includes(noteQuery.trim().toLowerCase()))
+                .map(n => {
+                  const on = contextNoteIds.has(n.id);
+                  return (
+                    <li key={n.id}>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setContextNoteIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(n.id)) next.delete(n.id); else next.add(n.id);
+                            return next;
+                          })}
+                          className="h-3.5 w-3.5 shrink-0 accent-[#000080]"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{n.title || (lang === 'zh' ? '（无标题）' : '(Untitled)')}</span>
+                        {n.author && <span className="shrink-0 text-[0.625rem] text-gray-400">{n.author}</span>}
+                      </label>
+                    </li>
+                  );
+                })}
+              {spaceNotes.length === 0 && (
+                <li className="px-2 py-3 text-center text-[0.6875rem] text-gray-400">{t.noNotes}</li>
+              )}
+            </ul>
+          </div>
+        )}
       </div>
 
-      {/* ── Usage bar (chat tab only) ──────────────────────────── */}
-      {usageInfo && activeTab === 'chat' && (
-        <div className="px-4 py-1.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2 text-[0.6875rem] text-gray-500 dark:text-gray-400 shrink-0">
-          <RemixIcon name="bar-chart-line" size={10} />
-          <span>{t.today}: {usageInfo.today}/{usageInfo.daily_limit}</span>
-          <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${usageInfo.remaining <= 10 ? 'bg-red-400' : 'bg-[#000080] dark:bg-[#4169E1]'}`}
-              style={{ width: `${Math.min(100, (usageInfo.today / usageInfo.daily_limit) * 100)}%` }}
-            />
-          </div>
-          <span>{usageInfo.remaining} {t.remaining}</span>
-        </div>
+
+      {/* 讨论速览：收成一行，点开才展开。在开始聊之前先看清这一批笔记里有什么 */}
+      {spaceId && (
+        <DiscussionDigestPanel
+          collapsible
+          courseId={courseId}
+          spaceId={spaceId}
+          viewId={viewId}
+          selectedNoteIds={selectedNoteIds}
+          groupId={groupId}
+          lang={lang === 'zh' ? 'zh' : 'en'}
+          onLocateNote={onLocateNote}
+        />
       )}
 
-      {/* ── Tab content ────────────────────────────────────────── */}
-
-      {/* Chat tab */}
-      {activeTab === 'chat' && (
-        <>
-          {/* 一行控制条：选模型、选上下文。以前是「厂商 / 模型 / 模式」三个下拉，
-              学生要先懂 DMXAPI 和 DeepSeek 的区别才选得动。现在合成一个。 */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-2.5 dark:border-gray-800 shrink-0">
-            <select
-              value={`${selectedProvider}::${selectedModel}`}
-              onChange={(e) => {
-                const [pid, mid] = e.target.value.split('::');
-                setSelectedProvider(pid); setSelectedModel(mid);
-              }}
-              disabled={providers.length === 0}
-              className="h-8 max-w-[15rem] flex-1 truncate rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700 outline-none transition-colors hover:border-gray-300 focus:border-[#000080] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-            >
-              {providers.length === 0 && <option value="::">{t.noProvider}</option>}
-              {providers.length > 0 && <option value="auto::auto">{t.defaultModel}</option>}
-              {providers.flatMap((p) =>
-                (p.enabledModels ?? []).map((m) => (
-                  <option key={`${p.providerId}::${m}`} value={`${p.providerId}::${m}`}>
-                    {modelOptionLabel(p.providerId, m, lang === 'zh' ? 'zh' : 'en')}
-                  </option>
-                )))}
-            </select>
-
-            <div ref={notePickerRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setNotePickerOpen(v => !v)}
-                aria-expanded={notePickerOpen}
-                className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
-                  contextNoteIds.size > 0
-                    ? 'border-[#000080]/30 bg-[#000080]/[0.06] text-[#000080] dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
-                }`}
-              >
-                <RemixIcon name="checkbox-multiple-line" size={13} />
-                {contextNoteIds.size > 0 ? `${t.picked} ${contextNoteIds.size}` : t.wholeSpace}
-              </button>
-
-              {notePickerOpen && (
-                <div className="absolute left-0 top-9 z-30 w-80 rounded-xl border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-                  <div className="flex items-center gap-1.5 px-1 pb-2">
-                    <input
-                      value={noteQuery}
-                      onChange={(e) => setNoteQuery(e.target.value)}
-                      placeholder={t.searchNotes}
-                      className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:border-[#000080] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                    />
-                    <button type="button" onClick={() => setContextNoteIds(new Set(spaceNotes.map(n => n.id)))}
-                      className="shrink-0 rounded-lg px-2 py-1 text-[0.6875rem] font-semibold text-[#000080] hover:bg-[#000080]/[0.07] dark:text-blue-300">
-                      {t.selectAll}
-                    </button>
-                    <button type="button" onClick={() => setContextNoteIds(new Set())}
-                      className="shrink-0 rounded-lg px-2 py-1 text-[0.6875rem] text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
-                      {t.clearSel}
-                    </button>
-                  </div>
-                  <p className="px-1 pb-1.5 text-[0.6875rem] leading-4 text-gray-400">{t.pickHint}</p>
-                  <ul className="max-h-64 space-y-0.5 overflow-y-auto">
-                    {spaceNotes
-                      .filter(n => !noteQuery.trim() || (n.title ?? '').toLowerCase().includes(noteQuery.trim().toLowerCase()))
-                      .map(n => {
-                        const on = contextNoteIds.has(n.id);
-                        return (
-                          <li key={n.id}>
-                            <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
-                              <input
-                                type="checkbox"
-                                checked={on}
-                                onChange={() => setContextNoteIds(prev => {
-                                  const next = new Set(prev);
-                                  if (next.has(n.id)) next.delete(n.id); else next.add(n.id);
-                                  return next;
-                                })}
-                                className="h-3.5 w-3.5 shrink-0 accent-[#000080]"
-                              />
-                              <span className="min-w-0 flex-1 truncate">{n.title || '（无标题）'}</span>
-                              {n.author && <span className="shrink-0 text-[0.625rem] text-gray-400">{n.author}</span>}
-                            </label>
-                          </li>
-                        );
-                      })}
-                    {spaceNotes.length === 0 && (
-                      <li className="px-2 py-3 text-center text-[0.6875rem] text-gray-400">{t.noNotes}</li>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </div>
+      {/* ── Messages：占满中间 ─────────────────────────────────── */}
+      <div
+        ref={scrollContainerRef}
+        aria-busy={streaming || restoring || openingId !== null}
+        className={`assistant-conversation min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain transition-opacity ${openingId ? 'opacity-60' : ''}`}
+      >
+        {openingId && (
+          <div role="status" className="flex items-center justify-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+            <Loader2 size={13} className="animate-spin" />
+            {t.opening}
           </div>
+        )}
 
-          {/* 讨论速览：在开始聊之前，先看清这一批笔记里有什么 */}
-          {spaceId && (
-            <DiscussionDigestPanel
-              courseId={courseId}
-              spaceId={spaceId}
-              viewId={viewId}
-              selectedNoteIds={selectedNoteIds}
-              groupId={groupId}
-              lang={lang === 'zh' ? 'zh' : 'en'}
-              onLocateNote={onLocateNote}
-            />
-          )}
-
-          {/* Messages */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-            {messages.length === 0 && !streaming && (
-              <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 dark:text-gray-500 space-y-3">
-                <img src="/assets/ai-tutor-avatar.png" alt="" className="h-12 w-12 rounded-2xl object-cover opacity-30" />
-                <p className="text-sm max-w-[240px] leading-relaxed">{t.placeholder}</p>
-              </div>
-            )}
-
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className="max-w-[85%] space-y-1.5">
-                  {msg.role === 'assistant' && msg.tools && msg.tools.length > 0 && (
-                    <AgentToolCallDisplay tools={msg.tools} lang={lang} compact />
-                  )}
-                  <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${
-                    msg.role === 'user'
-                      ? 'bg-[#000080] text-white rounded-br-md'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md'
-                  }`}>
-                    {msg.role === 'assistant'
-                      ? <MarkdownMessage content={msg.content} resolveUrl={url => `${BASE_URL}${url.slice(4)}`} />
-                      : msg.content}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {streaming && activeTools.length > 0 && (
-              <AgentToolCallDisplay tools={activeTools} lang={lang} compact />
-            )}
-
-            {streaming && reasoningText && (
-              <div className="bg-[#000080]/[0.04] dark:bg-blue-500/10 rounded-xl px-3.5 py-2.5 text-xs text-[#000080] dark:text-blue-300 italic border border-[#000080]/10 dark:border-blue-500/20">
-                <div className="flex items-center gap-1.5 mb-1 font-semibold not-italic">
-                  <RemixIcon name="brain-line" size={12} />
-                  {t.deepThinking}
-                </div>
-                <div className="line-clamp-3 opacity-70">{reasoningText}</div>
-              </div>
-            )}
-
-            {streaming && drawing && (
-              <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} />
-            )}
-
-            {streaming && !drawing && !messages.some((m) => m.id.startsWith('stream-')) && !reasoningText && activeTools.length === 0 && (
-              <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-                <Loader2 size={14} className="animate-spin" />
-                {t.thinking}
-                {waitedSec >= 3 && (
-                  <span className="font-mono tabular-nums opacity-70">{waitedSec}s</span>
-                )}
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Error banner */}
-          {error && (
-            <div className="mx-4 mb-2 px-3 py-2 rounded-md bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs flex items-start gap-2 shrink-0">
-              <RemixIcon name="error-warning-line" size={14} className="mt-0.5 shrink-0" />
-              <span className="flex-1">{error}</span>
-              <button type="button" onClick={() => setError(null)} className="shrink-0 text-red-400 hover:text-red-600 dark:hover:text-red-300">
-                <X size={12} />
-              </button>
-            </div>
-          )}
-
-          {/* Input area */}
-          <div className="border-t border-gray-200 dark:border-gray-800 px-4 py-3 shrink-0">
-            {attachments.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-2">
-                {attachments.map(a => (
-                  <span key={a.file_url} className="relative">
-                    {a.mime_type.startsWith('image/') ? (
-                      <img src={a.file_url} alt={a.file_name}
-                        className="h-12 w-12 rounded-lg border border-gray-200 object-cover dark:border-gray-600" />
-                    ) : (
-                      <span className="flex h-12 max-w-[9rem] items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2 text-[0.6875rem] font-medium text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-                        title={a.file_name}>
-                        <RemixIcon name="file-text-line" size={13} className="shrink-0" />
-                        <span className="truncate">{a.file_name}</span>
-                      </span>
-                    )}
-                    <button type="button" aria-label={`${t.removeAttach}: ${a.file_name}`}
-                      onClick={() => setAttachments(prev => prev.filter(x => x.file_url !== a.file_url))}
-                      className="absolute -right-1.5 -top-1.5 inline-flex h-4.5 w-4.5 items-center justify-center rounded-full bg-gray-900/80 p-0.5 text-white hover:bg-gray-900">
-                      <X size={10} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="flex items-end gap-2">
-              <input ref={fileInputRef} type="file" className="hidden"
-                accept="image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.json"
-                onChange={(e) => void handlePickFile(e)} />
-              <button type="button" onClick={() => fileInputRef.current?.click()}
-                disabled={!spaceId || uploading || streaming || attachments.length >= 4}
-                title={t.attach} aria-label={t.attach}
-                className="shrink-0 rounded-xl p-2.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-800">
-                {uploading ? <Loader2 size={16} className="animate-spin" /> : <RemixIcon name="attachment-2" size={16} />}
-              </button>
-              <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                placeholder={t.placeholder} disabled={streaming} rows={1}
-                className="flex-1 resize-none rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#000080] dark:focus:ring-blue-400 focus:border-transparent focus:bg-white dark:focus:bg-gray-800 disabled:opacity-50 max-h-32 transition-colors"
-                onInput={(e) => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 128)}px`; }}
-              />
-              <button type="button" onClick={handleSend} disabled={streaming || (!input.trim() && attachments.length === 0)}
-                className="shrink-0 p-2.5 rounded-xl bg-[#000080] text-white hover:bg-[#000060] active:scale-[0.95] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                aria-label={t.send}>
-                {streaming ? <Loader2 size={16} className="animate-spin" /> : <RemixIcon name="arrow-up-line" size={16} />}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* History tab */}
-      {activeTab === 'history' && (
-        <div className="flex-1 overflow-y-auto p-4">
-          {loadingHistory ? (
-            <div className="flex items-center justify-center gap-2 text-xs text-gray-400 mt-10">
-              <Loader2 size={12} className="animate-spin" />
-              {t.loadingText}
-            </div>
-          ) : historyEntries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500 text-center space-y-2">
-              <RemixIcon name="history-line" size={28} className="text-gray-300 dark:text-gray-600" />
-              <p className="text-xs">{t.noHistory}</p>
+        {emptyChat && !openingId && (
+          restoring ? (
+            <div role="status" className="flex h-full items-center justify-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+              <Loader2 size={13} className="animate-spin" />
+              {t.restoring}
             </div>
           ) : (
-            <div className="space-y-2">
-              {historyEntries.map((entry) => (
-                <div key={entry.id} className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-800/60 p-3.5 hover:shadow-sm transition-shadow">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[0.6875rem] font-semibold text-gray-600 dark:text-gray-400">
-                      {PROVIDER_LABELS[entry.provider_id] ?? entry.provider_id}
-                    </span>
-                    <span className="text-[0.6875rem] text-gray-400 dark:text-gray-500 ml-auto font-mono">
-                      {new Date(entry.created_at).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', {
-                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                  <div className="text-[0.6875rem] text-gray-500 dark:text-gray-400 mb-1.5 bg-gray-50 dark:bg-gray-700/40 rounded-md p-2 border border-gray-100 dark:border-gray-700">
-                    {entry.input_context_summary}
-                  </div>
-                  <div className="text-[0.6875rem] text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/40 rounded-md p-2">
-                    {entry.response_text}
-                  </div>
-                </div>
-              ))}
+            <div className="flex min-h-full flex-col">
+              <AssistantWelcome scope="space" lang={lang === 'zh' ? 'zh' : 'en'} disabled={providers.length === 0}
+                onChoose={prompt => { setInput(prompt); inputRef.current?.focus(); }} />
             </div>
-          )}
+          )
+        )}
+
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`min-w-0 space-y-1.5 ${msg.role === 'user' ? 'max-w-[80%]' : 'max-w-full'}`}>
+              {msg.role === 'assistant' && (
+                // 写回答的时候、写完以后：收成一行「用了 3 步 · 6 秒」，点开能看每一步
+                <AgentProcess
+                  steps={msg.id.startsWith('stream-') ? activeTools : msg.tools ?? []}
+                  phase={msg.id.startsWith('stream-') ? 'writing' : 'done'}
+                  elapsedMs={msg.elapsedMs}
+                  lang={lang === 'zh' ? 'zh' : 'en'}
+                />
+              )}
+              <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                msg.role === 'user'
+                  ? 'assistant-user-message'
+                  : 'assistant-response'
+              }`}>
+                {msg.role === 'assistant'
+                  ? <MarkdownMessage content={msg.content} resolveUrl={url => `${BASE_URL}${url.slice(4)}`} />
+                  : msg.content}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {streaming && drawing && (
+          <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} />
+        )}
+
+        {/* 还没开始写：一步步显示在做什么（2026-10-05 用户：等的时候别让学生觉得无聊）。
+            不显示模型的原始思考，只说「正在思考」 */}
+        {streaming && !drawing && !messages.some((m) => m.id.startsWith('stream-') && m.content) && (
+          <AgentProcess
+            steps={activeTools}
+            phase="waiting"
+            startedAt={turnStartedAtRef.current}
+            thinking={Boolean(reasoningText)}
+            lang={lang === 'zh' ? 'zh' : 'en'}
+          />
+        )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mx-4 mb-2 px-3 py-2 rounded-md bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs flex items-start gap-2 shrink-0">
+          <RemixIcon name="error-warning-line" size={14} className="mt-0.5 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button type="button" aria-label={lang === 'zh' ? '关闭错误提示' : 'Dismiss error'} onClick={() => setError(null)} className="shrink-0 text-red-400 hover:text-red-600 dark:hover:text-red-300">
+            <X size={12} />
+          </button>
         </div>
       )}
+
+      {/* ── 输入区：输入框在上，附件 / 范围 / 模型 / 发送收成下面一排 ───────── */}
+      <div className="assistant-footer shrink-0 border-t px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5">
+        {attachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {attachments.map(a => (
+              <span key={a.file_url} className="relative">
+                {a.mime_type.startsWith('image/') ? (
+                  <img src={a.file_url} alt={a.file_name}
+                    className="h-12 w-12 rounded-lg border border-gray-200 object-cover dark:border-gray-600" />
+                ) : (
+                  <span className="flex h-12 max-w-[9rem] items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2 text-[0.6875rem] font-medium text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                    title={a.file_name}>
+                    <RemixIcon name="file-text-line" size={13} className="shrink-0" />
+                    <span className="truncate">{a.file_name}</span>
+                  </span>
+                )}
+                <button type="button" aria-label={`${t.removeAttach}: ${a.file_name}`}
+                  onClick={() => setAttachments(prev => prev.filter(x => x.file_url !== a.file_url))}
+                  className="absolute -right-1.5 -top-1.5 inline-flex h-4.5 w-4.5 items-center justify-center rounded-full bg-gray-900/80 p-0.5 text-white hover:bg-gray-900">
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div ref={settingsRef} data-ai-composer className="assistant-composer relative">
+          <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+            aria-label={t.placeholder} placeholder={t.placeholder} disabled={streaming} rows={2}
+            className="assistant-input w-full resize-none bg-transparent outline-none disabled:opacity-50"
+          />
+          <div className={`assistant-options ${settingsOpen ? '' : 'hidden'}`}>
+            <p className="assistant-options-title">{lang === 'zh' ? '对话设置' : 'Chat settings'}</p>
+            <ChatPreferenceControls lang={lang} enterToSend={enterToSend} setEnterToSend={setEnterToSend} largeText={largeText} setLargeText={setLargeText} />
+
+          </div>
+          <div className="assistant-tools px-2.5 pb-2.5">
+            <input ref={fileInputRef} type="file" className="hidden"
+              accept="image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.json"
+              onChange={(e) => void handlePickFile(e)} />
+            <button type="button" onClick={() => fileInputRef.current?.click()}
+              disabled={!spaceId || uploading || streaming || attachments.length >= 4}
+              title={t.attach} aria-label={t.attach}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-200/70 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700">
+              {uploading ? <Loader2 size={15} className="animate-spin" /> : <RemixIcon name="attachment-2" size={15} />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                // 写了描述就直接画；还没写就先放个开头，学生接着写完再点
+                if (input.trim()) { void handleSend(true); return; }
+                setInput(t.drawPrefix);
+                inputRef.current?.focus();
+              }}
+              disabled={streaming || attachments.length > 0}
+              title={t.drawHint} aria-label={t.drawHint}
+              className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-[0.75rem] font-medium text-gray-500 transition-colors hover:bg-gray-200/70 hover:text-gray-800 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+            >
+              <RemixIcon name="image-line" size={15} />
+              <span className="assistant-tool-label">{t.draw}</span>
+            </button>
+            <div className="assistant-primary-controls">
+              <label className="assistant-model-control">
+                <select
+                aria-label={t.model}
+                title={selectedProvider === 'auto' ? t.defaultModel : modelOptionLabel(selectedProvider, selectedModel, lang === 'zh' ? 'zh' : 'en')}
+                  value={`${selectedProvider}::${selectedModel}`}
+                  onChange={(e) => {
+                    const [pid, mid] = e.target.value.split('::');
+                    setSelectedProvider(pid); setSelectedModel(mid);
+                  }}
+                  disabled={providers.length === 0}
+                  className="h-8 min-w-[7rem] max-w-full flex-1 truncate rounded-lg border border-transparent bg-transparent px-1.5 text-[0.6875rem] font-medium text-gray-500 outline-none transition-colors hover:bg-gray-200/70 focus:border-[#000080] dark:text-gray-400 dark:hover:bg-gray-700"
+                >
+                  {providers.length === 0 && <option value="::">{t.noProvider}</option>}
+                  {providers.length > 0 && <option value="auto::auto">{lang === 'zh' ? '默认 · 课程模型' : 'Default · Course model'}</option>}
+                  {providers.flatMap((p) =>
+                    (p.enabledModels ?? []).map((m) => (
+                      <option key={`${p.providerId}::${m}`} value={`${p.providerId}::${m}`}>
+                        {modelOptionLabel(p.providerId, m, lang === 'zh' ? 'zh' : 'en')}
+                      </option>
+                    )))}
+                </select>
+              </label>
+              <AnswerLengthSelect lang={lang === 'zh' ? 'zh' : 'en'} disabled={streaming} />
+            </div>
+            <button type="button" onClick={() => setSettingsOpen(open => !open)}
+              aria-expanded={settingsOpen} aria-label={lang === 'zh' ? '对话设置' : 'Chat settings'}
+              title={lang === 'zh' ? '对话设置' : 'Chat settings'}
+              className="assistant-settings-toggle">
+              <RemixIcon name="equalizer-line" size={17} />
+              <span className="assistant-settings-label">{lang === 'zh' ? '对话设置' : 'Settings'}</span>
+            </button>
+            <button type="button" onClick={() => void handleSend()} disabled={streaming || (!input.trim() && attachments.length === 0)}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#000080] text-white transition-all hover:bg-[#000060] active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={t.send}>
+              {streaming ? <Loader2 size={16} className="animate-spin" /> : <RemixIcon name="arrow-up-line" size={16} />}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

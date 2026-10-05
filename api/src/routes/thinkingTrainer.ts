@@ -17,8 +17,9 @@ import { supabase } from '../config/supabase';
 import { verifyJWT } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
 import { assertSafePublicUrl } from '../services/urlGuard';
-import { decryptProviderApiKey } from '../services/aiProviderConfig';
-import { getProviderEndpoint } from '../services/agentLoop';
+import { decryptProviderApiKey, withFastChatOptions } from '../services/aiProviderConfig';
+import { getProviderEndpoint, providerTemperature } from '../services/agentLoop';
+import { applyModelQuirks } from '../services/modelCatalog';
 import { isDmxProvider, pickModels, pickNativeModel, reportModelSuccess, reportModelFailure, reportProviderFailure, reportProviderSuccess, orderConfigsByHealth, classifyHttpFailure, routerStats, type TaskKind } from '../services/modelRouter';
 import rateLimit from 'express-rate-limit';
 import { rateLimitKey } from '../middleware/rateLimitKey';
@@ -178,6 +179,42 @@ function dmxCandidates(cfg: ProviderConfig, taskKind: TaskKind): string[] {
   return (pinned ? [pinned, ...tier.filter(m => m !== pinned)] : tier).slice(0, 3);
 }
 
+/** 低于这个预算的调用关掉思考，和 aiProviderConfig 的 DeepSeek 规则同一个数 */
+const SMALL_BUDGET_TOKENS = 1500;
+
+/**
+ * OpenAI 兼容的请求体，套上各家的怪脾气，和 support、turingTestAi 同一套。
+ *
+ * 2026-10-05 以前这里一样都没套：画布顶上的讨论主题（900 token）每次都生成失败——
+ * DeepSeek、智谱、DMX 的 GLM 和 DeepSeek 默认开思考，推理把 900 个 token 全用完，正文为空
+ * （HTTP 200、finish_reason=length，一条日志都不留）；Kimi 只收 temperature=1，直接 400。
+ * 预算小的调用（JSON 抽取、几句话的回复）关掉思考；预算大的照旧，不改原来的行为。
+ */
+export function openAiCompatibleBody(providerId: string, model: string, system: string, user: string, maxTokens: number, temperature: number): Record<string, unknown> {
+  let body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    temperature: providerTemperature(providerId, model, temperature),
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+  };
+  if (maxTokens < SMALL_BUDGET_TOKENS) {
+    body = withFastChatOptions(providerId, model, body);
+    // DMX 转发的 DeepSeek、GLM 不认 withFastChatOptions（那只按原厂判断），得显式关
+    if (isDmxProvider(providerId) && /deepseek|glm/i.test(model)) body = { ...body, thinking: { type: 'disabled' } };
+  }
+  return applyModelQuirks(model, body);
+}
+
+/** HTTP 200 却没有能用的正文：以前不留日志，看起来像「没人回答」 */
+function logEmptyAnswer(providerId: string, model: string, json: any): void {
+  const choice = json?.choices?.[0];
+  const reasoningTokens = json?.usage?.completion_tokens_details?.reasoning_tokens;
+  console.warn(`[thinkingTrainer] ${providerId}/${model} 返回 200 但没有可用的正文（finish=${choice?.finish_reason ?? '?'}${reasoningTokens != null ? `，推理用了 ${reasoningTokens} token` : ''}）`);
+}
+
 /** One JSON-oriented completion against a specific model. */
 async function callJsonOnce(cfg: ProviderConfig, model: string, system: string, user: string, maxTokens: number): Promise<{ parsed: Record<string, unknown> | null; status: number }> {
   const endpoint = cfg.endpointUrl?.trim() || getProviderEndpoint(cfg.providerId);
@@ -191,15 +228,7 @@ async function callJsonOnce(cfg: ProviderConfig, model: string, system: string, 
     body = { model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] };
   } else {
     headers['Authorization'] = `Bearer ${cfg.apiKey}`;
-    body = {
-      model,
-      max_tokens: maxTokens,
-      temperature: 0.8,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    };
+    body = openAiCompatibleBody(cfg.providerId, model, system, user, maxTokens, 0.8);
   }
   try {
     const controller = new AbortController();
@@ -216,7 +245,10 @@ async function callJsonOnce(cfg: ProviderConfig, model: string, system: string, 
       : (json?.choices?.[0]?.message?.content ?? '');
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
-    if (start === -1 || end <= start) return { parsed: null, status: 200 };
+    if (start === -1 || end <= start) {
+      logEmptyAnswer(cfg.providerId, model, json);
+      return { parsed: null, status: 200 };
+    }
     return { parsed: JSON.parse(text.slice(start, end + 1)), status: 200 };
   } catch (e) {
     const timedOut = e instanceof Error && e.name === 'AbortError';
@@ -291,10 +323,7 @@ async function callChatOnce(cfg: ProviderConfig, model: string, system: string, 
     body = { model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] };
   } else {
     headers['Authorization'] = `Bearer ${cfg.apiKey}`;
-    body = {
-      model, max_tokens: maxTokens, temperature: 0.85,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-    };
+    body = openAiCompatibleBody(cfg.providerId, model, system, user, maxTokens, 0.85);
   }
   try {
     const controller = new AbortController();
@@ -310,6 +339,7 @@ async function callChatOnce(cfg: ProviderConfig, model: string, system: string, 
       ? (json?.content?.[0]?.text ?? '')
       : (json?.choices?.[0]?.message?.content ?? '');
     const trimmed = String(text).trim();
+    if (!trimmed) logEmptyAnswer(cfg.providerId, model, json);
     return { text: trimmed || null, status: 200 };
   } catch {
     return { text: null, status: 408 };

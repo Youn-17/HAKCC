@@ -4,7 +4,13 @@
 
 [Visit the platform](https://ideaweave.tech/) · [简体中文](README.zh-CN.md) · [System guide](write/SYSTEM_OVERVIEW.en.md) · [Getting started](GETTING_STARTED.md) · [MIT License](LICENSE)
 
-Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Public package: **v0.2.0**.
+Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Public package: **v0.3.0**.
+
+## New in v0.3.0
+
+Explore idea branches in the knowledge map, inspect and replay construction timelines, revise the original Note before settling accepted feedback, and inspect AI tool steps. This release also adds answer-length preferences, source-linked discussion topics, optional Jev judgments, and teacher help routing.
+
+[Detailed changes, student/teacher workflows, configuration and upgrade notes](write/UPDATES_v0.3.0.en.md) · [中文补充说明](write/UPDATES_v0.3.0.md) · [Changelog](CHANGELOG.md)
 
 ## Mechanism at a glance
 
@@ -164,6 +170,6 @@ Original code, documentation, and HAKCC diagrams are available under the **[MIT 
 
 Use GitHub's **Cite this repository** action or [CITATION.cff](CITATION.cff):
 
-> He, Z. (2026). *HAKCC: Human–AI Knowledge Collaboration Commons* (v0.2.0) [Software and design documentation]. https://github.com/Youn-17/HAKCC
+> He, Z. (2026). *HAKCC: Human–AI Knowledge Collaboration Commons* (v0.3.0) [Software and design documentation]. https://github.com/Youn-17/HAKCC
 
 [Authorship and acknowledgments](AUTHORS.md) records the public author and AI-assisted documentation preparation. Versioned publication and fingerprints support attribution and traceability; they do not certify worldwide invention priority.

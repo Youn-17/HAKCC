@@ -16,10 +16,10 @@ export interface AgentToolCallDisplayProps {
   compact?: boolean;
 }
 
-const TOOL_META: Record<string, { icon: string; zh: string; en: string }> = {
+export const TOOL_META: Record<string, { icon: string; zh: string; en: string }> = {
   search_notes: { icon: 'search-line', zh: '搜索相关笔记', en: 'Search related notes' },
   read_note: { icon: 'file-text-line', zh: '读取笔记内容', en: 'Read note content' },
-  get_note_context: { icon: 'node-tree', zh: '获取笔记上下文', en: 'Get note context' },
+  get_note_context: { icon: 'node-tree', zh: '查看 Build-on 关系', en: 'Look up Build-on links' },
   analyze_argument: { icon: 'mind-map', zh: '分析论证结构', en: 'Analyze argument structure' },
   compare_notes: { icon: 'git-merge-line', zh: '对比笔记内容', en: 'Compare notes' },
   web_search: { icon: 'global-line', zh: '网络搜索', en: 'Web search' },
@@ -41,6 +41,11 @@ const TOOL_META: Record<string, { icon: string; zh: string; en: string }> = {
   save_teaching_insight: { icon: 'save-line', zh: '保存教学洞察', en: 'Save teaching insight' },
   generate_image: { icon: 'image-ai-line', zh: '生成配图', en: 'Generate image' },
   search_course_materials: { icon: 'book-2-line', zh: '检索课程材料', en: 'Search course materials' },
+  // 笔记页「自由提问」那条路：联网搜索、回答前先找相关内容
+  tavily_search: { icon: 'global-line', zh: '联网搜索', en: 'Web search' },
+  prepare_context: { icon: 'search-eye-line', zh: '查找相关内容', en: 'Look for related material' },
+  search_space_notes: { icon: 'search-line', zh: '搜索空间里的笔记', en: 'Search notes in this space' },
+  list_related_notes: { icon: 'links-line', zh: '找相关的笔记', en: 'Find related notes' },
 };
 
 const PIPELINE_STEPS = {

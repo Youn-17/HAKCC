@@ -1,5 +1,6 @@
 # HAKCC system overview
 
+Current feature and upgrade supplement: [English](UPDATES_v0.3.0.en.md) · [中文](UPDATES_v0.3.0.md).
 [Platform](https://ideaweave.tech/) · [Home](../README.md) · [Theory](THEORETICAL_FOUNDATIONS.en.md) · [中文](SYSTEM_OVERVIEW.md)
 
 HAKCC organizes a course's ideas, questions, evidence, and reflection into a shared knowledge space. Its basic object is the **Note**: a contribution that others can read, revise where permitted, connect, and build on. The design centers community inquiry and student responsibility for ideas.

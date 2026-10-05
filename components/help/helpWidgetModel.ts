@@ -48,12 +48,27 @@ export function routeInfo(pathname: string): HelpRoute {
   return { courseId: null, surface: 'other' };
 }
 
+/** 教师、管理员：球里多一个「学生求助」页签，问 AI 时按含教师端的手册答 */
+export function isHelpStaff(role: string | null | undefined): boolean {
+  return role === 'teacher' || role === 'admin';
+}
+
 /**
- * 教师和管理员有「学生求助」收件箱，用不着这个球。
- * 图灵测试页也不显示：那是匿名群聊实验，学生不该能转身去问另一个 AI「群里谁是 AI」，球本身也会分心。
+ * 学生、教师、管理员都挂。教师原来没有（他们有首页的「学生求助」收件箱），2026-10-05 用户要：
+ * 教师在哪个页面都能看到学生的求助，自己遇到技术问题也能问 AI。
+ * 图灵测试页不给学生显示：那是匿名群聊实验，学生不该能转身去问另一个 AI「群里谁是 AI」，球本身也会分心。
+ * 主持的老师不是被试，照常显示。
  */
 export function shouldShowHelp(role: string | null | undefined, pathname: string): boolean {
-  return role === 'student' && APP_PAGES.test(pathname) && routeInfo(pathname).surface !== 'turing-test';
+  if (role !== 'student' && !isHelpStaff(role)) return false;
+  if (!APP_PAGES.test(pathname)) return false;
+  return routeInfo(pathname).surface !== 'turing-test' || isHelpStaff(role);
+}
+
+/** 小球上的数：等我回复的学生求助，管理员再加上教师转来的 */
+export function inboxWaiting(counts: { student: number; teacher: number } | null | undefined): number {
+  if (!counts) return 0;
+  return Math.max(0, counts.student || 0) + Math.max(0, counts.teacher || 0);
 }
 
 // ── 球的位置 ───────────────────────────────────────────────────────
@@ -221,7 +236,23 @@ const QUICK: Record<'dashboard' | 'canvas' | 'note' | 'document' | 'room' | 'pho
   },
 };
 
-export function quickQuestions(surface: HelpSurface, lang: HelpLang, compact: boolean): string[] {
+/** 教师问的：每一条都在手册的「教师端」一章或前面的章节里有答案 */
+const QUICK_TEACHER: Record<'home' | 'course', QuickSet> = {
+  home: {
+    zh: ['怎么给 AI 反馈换一个模型？', '怎么关掉 AI 自动反馈？', '怎么导出研究数据？', '怎么邀请别的老师一起管课程？'],
+    en: ['How do I change the model for AI feedback?', 'How do I turn off automatic AI feedback?', 'How do I export research data?', 'How do I invite another teacher to co-manage a course?'],
+  },
+  course: {
+    zh: ['怎么给学生分组？', '怎么隐藏一条支架？', '怎么关掉 AI 自动反馈？', '怎么看全班的 Build-on 网络？'],
+    en: ['How do I put students into groups?', 'How do I hide a scaffold?', 'How do I turn off automatic AI feedback?', "How do I see the class's Build-on network?"],
+  },
+};
+
+export function quickQuestions(surface: HelpSurface, lang: HelpLang, compact: boolean, asker: 'student' | 'teacher' = 'student'): string[] {
+  if (asker === 'teacher') {
+    const home = surface === 'dashboard' || surface === 'ai-assistant' || surface === 'other';
+    return QUICK_TEACHER[home ? 'home' : 'course'][lang].slice(0, compact ? 3 : 4);
+  }
   let set: QuickSet;
   if (surface === 'dashboard' || surface === 'ai-assistant') set = QUICK.dashboard;
   else if (surface === 'note-editor') set = QUICK.note;

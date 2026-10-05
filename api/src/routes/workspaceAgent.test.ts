@@ -14,7 +14,10 @@ import { resolve } from 'node:path';
 
 const h = vi.hoisted(() => {
   type Space = { id: string; title: string; course_id: string; group_id: string | null };
-  type Note = { id: string; space_id: string; title: string; content: string; author_id: string; created_at: string };
+  type Note = { id: string; space_id: string; title: string; content: string; author_id: string; created_at: string; deleted_at?: string | null };
+  type Relation = { source_note_id: string; target_note_id: string; relation_type: string; space_id: string; created_at: string };
+  type Conversation = { id: string; user_id: string; space_id: string | null; course_id: string; agent_type?: string; title?: string; updated_at?: string };
+  type Message = { id?: string; conversation_id: string; role: string; content: string; created_at?: string };
 
   const SECRET = '第二组还没公开的草稿';
   const SPACES: Space[] = [
@@ -46,8 +49,11 @@ const h = vi.hoisted(() => {
       'teacher-joined': ['group-a'],
       'student-lone': [],
     } as Record<string, string[]>,
-    conversations: [] as { id: string; user_id: string; space_id: string | null; course_id: string }[],
-    messages: [] as { conversation_id: string; role: string; content: string }[],
+    notes: [] as Note[],
+    relations: [] as Relation[],
+    failRelations: false,
+    conversations: [] as Conversation[],
+    messages: [] as Message[],
     inserts: [] as { table: string; payload: unknown }[],
     updates: [] as { table: string; payload: unknown }[],
   };
@@ -57,9 +63,20 @@ const h = vi.hoisted(() => {
   const ok = (data: unknown) => ({ data, error: null });
   const missing = { data: null, error: { message: 'not found' } };
 
+  type Opts = { head: boolean; order: { col: string; asc: boolean } | null; limit: number | null; nulls: string[] };
+  const ordered = <T extends Record<string, any>>(rows: T[], opts: Opts): T[] => {
+    let out = [...rows];
+    if (opts.order) {
+      const { col, asc } = opts.order;
+      out.sort((a, b) => (String(a[col] ?? '') < String(b[col] ?? '') ? -1 : String(a[col] ?? '') > String(b[col] ?? '') ? 1 : 0) * (asc ? 1 : -1));
+    }
+    if (opts.limit != null) out = out.slice(0, opts.limit);
+    return out;
+  };
+
   const resultFor = (
     table: string, action: Action, payload: unknown, terminal: Terminal,
-    eq: Record<string, unknown>, inList: Record<string, unknown[]>,
+    eq: Record<string, unknown>, inList: Record<string, unknown[]>, opts: Opts,
   ) => {
     if (action === 'update') return ok(null);
     if (action === 'insert') {
@@ -72,20 +89,29 @@ const h = vi.hoisted(() => {
         if (eq.id) return inCourse.find(s => s.id === eq.id) ? ok(inCourse.find(s => s.id === eq.id)) : missing;
         return ok(inCourse);
       }
-      case 'notes':
-        if (eq.space_id) return ok(NOTES.filter(n => n.space_id === eq.space_id));
-        if (inList.space_id) return ok(NOTES.filter(n => inList.space_id.includes(n.space_id)).map(n => ({ space_id: n.space_id })));
-        return ok(NOTES);
+      case 'notes': {
+        const alive = (n: Note) => !opts.nulls.includes('deleted_at') || !n.deleted_at;
+        if (opts.head) return { data: null, count: state.notes.filter(n => n.space_id === eq.space_id && alive(n)).length, error: null };
+        if (inList.id) return ok(state.notes.filter(n => inList.id.includes(n.id) && (!eq.space_id || n.space_id === eq.space_id) && alive(n)));
+        if (eq.space_id) return ok(ordered(state.notes.filter(n => n.space_id === eq.space_id && alive(n)), opts));
+        if (inList.space_id) return ok(state.notes.filter(n => inList.space_id.includes(n.space_id)).map(n => ({ space_id: n.space_id })));
+        return ok(state.notes);
+      }
+      case 'relations':
+        return ok(ordered(state.relations.filter(r => !eq.space_id || r.space_id === eq.space_id), opts));
       case 'group_members':
         return ok((state.groupsOf[String(eq.user_id)] ?? []).map(group_id => ({ group_id })));
       case 'agent_conversations': {
-        const found = state.conversations.filter(c =>
-          (!eq.id || c.id === eq.id) && (!eq.user_id || c.user_id === eq.user_id));
+        const found = ordered(state.conversations.filter(c =>
+          (!eq.id || c.id === eq.id) && (!eq.user_id || c.user_id === eq.user_id)
+          && (!eq.course_id || c.course_id === eq.course_id)
+          && (!eq.space_id || c.space_id === eq.space_id)
+          && (!eq.agent_type || (c.agent_type ?? 'workspace') === eq.agent_type)), opts);
         if (terminal === 'many') return ok(found);
         return found[0] ? ok(found[0]) : (terminal === 'single' ? missing : ok(null));
       }
       case 'agent_messages':
-        return ok(state.messages.filter(m => m.conversation_id === eq.conversation_id));
+        return ok(ordered(state.messages.filter(m => m.conversation_id === eq.conversation_id), opts));
       case 'teacher_ai_configs':
         if (terminal === 'many') return ok([]);
         return ok({ api_key_encrypted: 'enc', endpoint_url: null, is_verified: true, enabled_models: ['deepseek-chat'] });
@@ -100,7 +126,10 @@ const h = vi.hoisted(() => {
     let payload: unknown;
     const eq: Record<string, unknown> = {};
     const inList: Record<string, unknown[]> = {};
-    const run = (terminal: Terminal) => Promise.resolve(resultFor(table, action, payload, terminal, eq, inList));
+    const opts: Opts = { head: false, order: null, limit: null, nulls: [] };
+    const run = (terminal: Terminal) => (table === 'relations' && state.failRelations
+      ? Promise.reject(new Error('relations down'))
+      : Promise.resolve(resultFor(table, action, payload, terminal, eq, inList, opts)));
     const write = (kind: Action, list: { table: string; payload: unknown }[]) => (p: unknown) => {
       action = kind;
       payload = p;
@@ -112,16 +141,21 @@ const h = vi.hoisted(() => {
       update: write('update', state.updates),
       eq: (col: string, value: unknown) => { eq[col] = value; return builder; },
       in: (col: string, values: unknown[]) => { inList[col] = values; return builder; },
+      select: (_cols?: string, o?: { head?: boolean }) => { opts.head = Boolean(o?.head); return builder; },
+      order: (col: string, o?: { ascending?: boolean }) => { opts.order = { col, asc: o?.ascending !== false }; return builder; },
+      limit: (n: number) => { opts.limit = n; return builder; },
+      is: (col: string, value: unknown) => { if (value === null) opts.nulls.push(col); return builder; },
       single: () => run('single'),
       maybeSingle: () => run('maybeSingle'),
       then: (onOk: (v: unknown) => unknown, onFail: (e: unknown) => unknown) => run('many').then(onOk, onFail),
     };
-    for (const m of ['select', 'is', 'not', 'neq', 'order', 'limit']) builder[m] = () => builder;
+    for (const m of ['not', 'neq']) builder[m] = () => builder;
     return builder;
   };
 
   return {
     state,
+    NOTES,
     SECRET,
     SPACES,
     from,
@@ -132,6 +166,11 @@ const h = vi.hoisted(() => {
     ensureGroupAccess: vi.fn(),
     getToolsForRole: vi.fn((_role: string) => [] as unknown[]),
     collectGroupNotesForDigest: vi.fn(async () => [{ id: 'n-a1' }]),
+    streamDrawTurn: vi.fn(async (res: { write: (s: string) => void; end: () => void }) => {
+      res.write('data: {"drawing":{}}\n\n');
+      res.write('data: [DONE]\n\n');
+      res.end();
+    }),
     runAgentLoopStream: vi.fn((_opts: { systemPrompt: string }) => (async function* () {
       yield { type: 'token', content: 'AI 的回复' };
       yield { type: 'done', result: { iterations: 1 } };
@@ -164,6 +203,7 @@ vi.mock('../services/aiProviderConfig', () => ({
   listCourseAiConfigs: async () => [{ providerId: 'deepseek' }],
 }));
 vi.mock('../services/agentLoop', () => ({ runAgentLoopStream: h.runAgentLoopStream }));
+vi.mock('../services/drawTurn', () => ({ streamDrawTurn: h.streamDrawTurn }));
 vi.mock('../services/agentContext', () => ({
   buildAgentContext: h.buildAgentContext,
   stripHtml: (value: string) => value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
@@ -234,6 +274,9 @@ async function groupAccess(groupId: string, user: { id: string }) {
 beforeEach(() => {
   h.state.user = { id: 'student-a', role: 'student' };
   h.state.spaces = [...h.SPACES];
+  h.state.notes = h.NOTES.map(n => ({ ...n }));
+  h.state.relations = [];
+  h.state.failRelations = false;
   h.state.conversations = [];
   h.state.messages = [];
   h.state.inserts.length = 0;
@@ -247,6 +290,7 @@ beforeEach(() => {
   h.collectGroupNotesForDigest.mockClear();
   h.runAgentLoopStream.mockClear();
   h.buildAgentContext.mockClear();
+  h.streamDrawTurn.mockClear();
 });
 
 async function call(method: 'GET' | 'POST', path: string, body?: unknown) {
@@ -417,5 +461,235 @@ describe('讨论速览的「本组」范围：只给本组成员和课程教职�
     const res = await digest('group-x');
     expect(res.status).toBe(404);
     expect(h.collectGroupNotesForDigest).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 助手「不能识别 Build-on 关系」的根子：它面对的是整个空间，当前笔记是一条合成的、id 就是空间 id 的笔记，
+ * 只认当前笔记的 get_note_context 永远查不到关系；系统提示里又只有每条笔记的标题和摘要。
+ */
+describe('助手认得出 Build-on 关系', () => {
+  const rel = (source: string, target: string, type: string, at: string, space = 'space-a') =>
+    ({ source_note_id: source, target_note_id: target, relation_type: type, space_id: space, created_at: at });
+  const addNotes = (spaceId: string, ids: string[]) => {
+    for (const id of ids) {
+      h.state.notes.push({ id, space_id: spaceId, title: id, content: `<p>${id} 的内容</p>`, author_id: 'someone', created_at: '2026-09-21T00:00:00Z' });
+    }
+  };
+  const ask = (extra: Record<string, unknown> = {}) =>
+    call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a', ...extra });
+
+  it('关系写进系统提示：谁 Build-on 谁（方向对）、被 Build-on 最多的、还没人理的', async () => {
+    addNotes('space-a', ['n-a3']);
+    h.state.relations = [
+      rel('n-a2', 'n-a1', 'extend', '2026-10-03T00:00:00Z'),
+      rel('n-a3', 'n-a1', 'challenge', '2026-10-04T00:00:00Z'),
+    ];
+    const res = await ask();
+
+    expect(res.status).toBe(200);
+    const prompt = promptSent();
+    expect(prompt).toContain('#3 "n-a3" builds on #1 "n-a1" (challenge)');
+    expect(prompt).toContain('#2 "n-a2" builds on #1 "n-a1" (extend)');
+    expect(prompt).not.toContain('#1 "n-a1" builds on');
+    expect(prompt).toContain('Built on most: #1 "n-a1" (2).');
+    expect(prompt).toContain('Listed notes nobody has built on yet: #2, #3.');
+    // 提示里说明了怎么用：不许说看不到关系，要读某条笔记就带 note_id
+    expect(prompt).toContain('Never say you cannot see Build-on relations');
+    expect(prompt).toContain('read_note or get_note_context with its note_id');
+  });
+
+  it('一条关系都没有：提示里明说没有，不让模型编', async () => {
+    const res = await ask();
+
+    expect(res.status).toBe(200);
+    expect(promptSent()).toContain('There are no Build-on links in this workspace yet');
+  });
+
+  it('别的空间的笔记、已删除的笔记，不进关系，也不泄露标题', async () => {
+    h.state.notes.push({ id: 'n-a-gone', space_id: 'space-a', title: '已经删掉的想法', content: '<p>x</p>', author_id: 'someone', created_at: '2026-09-21T00:00:00Z', deleted_at: '2026-10-01T00:00:00Z' });
+    h.state.relations = [
+      rel('n-a2', 'n-a1', 'extend', '2026-10-01T00:00:00Z'),
+      rel('n-a2', 'n-b1', 'evidence', '2026-10-02T00:00:00Z'),
+      rel('n-a2', 'n-a-gone', 'question', '2026-10-03T00:00:00Z'),
+    ];
+    const res = await ask();
+
+    expect(res.status).toBe(200);
+    const prompt = promptSent();
+    expect(prompt).toContain('#2 "n-a2" builds on #1 "n-a1" (extend)');
+    expect(prompt).not.toContain('n-b1');
+    expect(prompt).not.toContain(h.SECRET);
+    expect(prompt).not.toContain('已经删掉的想法');
+    expect(prompt).not.toContain('(evidence)');
+    expect(prompt).not.toContain('(question)');
+  });
+
+  it('清单只放最近更新的 30 条，提示里如实说空间一共有几条；碰到老笔记的关系写标题和 id', async () => {
+    addNotes('space-a', Array.from({ length: 35 }, (_, i) => `n-old-${i}`));
+    // 空间有 37 条，清单只放前 30：最后一条在清单之外
+    h.state.relations = [rel('n-a1', 'n-old-34', 'clarify', '2026-10-03T00:00:00Z')];
+    const res = await ask();
+
+    expect(res.status).toBe(200);
+    const prompt = promptSent();
+    expect(prompt).toContain('This workspace contains 37 notes. The 30 most recently updated are listed here');
+    expect(prompt).toContain('#1 "n-a1" builds on "n-old-34" (id: n-old-34) (clarify)');
+    expect(prompt).toContain('shows 30 of 37 notes');
+  });
+
+  it('学生勾选了笔记：只写碰到这几条的关系', async () => {
+    addNotes('space-a', ['n-a3']);
+    h.state.relations = [
+      rel('n-a2', 'n-a1', 'extend', '2026-10-03T00:00:00Z'),
+      rel('n-a3', 'n-a2', 'question', '2026-10-04T00:00:00Z'),
+    ];
+    const res = await ask({ note_ids: ['n-a1'] });
+
+    expect(res.status).toBe(200);
+    const prompt = promptSent();
+    expect(prompt).toContain('1 link(s) touching the selected notes');
+    expect(prompt).toContain('builds on #1 "n-a1" (extend)');
+    expect(prompt).not.toContain('(question)');
+  });
+
+  it('查关系出错：照常回答，只是提示里少了这一段', async () => {
+    h.state.failRelations = true;
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const res = await ask();
+    errorLog.mockRestore();
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('AI 的回复');
+    expect(promptSent()).not.toContain('Build-on relations in this workspace');
+    expect(promptSent()).toContain('第一组的想法一');
+  });
+});
+
+/**
+ * 历史「从来不保留」：后端一直在存（agent_conversations / agent_messages），面板没有读回来。
+ * 读回来以后隔天接着聊成了常态，对话会变长——服务端喂给模型的历史必须是最近的，而不是最早的。
+ */
+describe('对话历史：能读回来，长对话取最近的', () => {
+  const conv = (id: string, spaceId: string | null, updatedAt: string, over: Record<string, unknown> = {}) =>
+    ({ id, user_id: 'student-a', space_id: spaceId, course_id: 'course-1', title: `对话 ${id}`, updated_at: updatedAt, ...over });
+  const msg = (conversationId: string, i: number, role = i % 2 ? 'assistant' : 'user') =>
+    ({ id: `m${i}`, conversation_id: conversationId, role, content: `第 ${i} 句`, created_at: String(i).padStart(4, '0') });
+
+  it('列表：只列自己的、本课的；带 space_id 就只列那个空间的，新的在前', async () => {
+    h.state.conversations = [
+      conv('c1', 'space-a', '2026-10-03T00:00:00Z'),
+      conv('c2', 'space-a', '2026-10-04T00:00:00Z'),
+      conv('c3', 'space-shared', '2026-10-05T00:00:00Z'),
+      conv('c4', 'space-a', '2026-10-06T00:00:00Z', { user_id: 'student-b' }),
+      conv('c5', 'space-a', '2026-10-07T00:00:00Z', { course_id: 'course-2' }),
+      conv('c6', 'space-a', '2026-10-08T00:00:00Z', { agent_type: 'personal' }),
+    ];
+    const inSpace = await call('GET', '/workspace-agent/course-1/conversations?space_id=space-a');
+    const all = await call('GET', '/workspace-agent/course-1/conversations');
+
+    expect(inSpace.status).toBe(200);
+    expect(inSpace.body.conversations.map((c: { id: string }) => c.id)).toEqual(['c2', 'c1']);
+    expect(inSpace.body.conversations[0]).toMatchObject({ space_id: 'space-a', title: '对话 c2' });
+    expect(all.body.conversations.map((c: { id: string }) => c.id)).toEqual(['c3', 'c2', 'c1']);
+  });
+
+  it('列表带别组的空间 id：403，什么都不返回', async () => {
+    h.state.conversations = [conv('c1', 'space-b', '2026-10-03T00:00:00Z')];
+    const res = await call('GET', '/workspace-agent/course-1/conversations?space_id=space-b');
+
+    expect(res.status).toBe(403);
+    expect(res.text).not.toContain('c1');
+  });
+
+  it('读消息：长对话返回最近的 100 条，按旧到新排好', async () => {
+    h.state.conversations = [conv('c1', 'space-a', '2026-10-03T00:00:00Z')];
+    h.state.messages = Array.from({ length: 120 }, (_, i) => msg('c1', i + 1));
+    const res = await call('GET', '/workspace-agent/course-1/conversations/c1/messages');
+
+    expect(res.status).toBe(200);
+    const ids = res.body.messages.map((m: { id: string }) => m.id);
+    expect(ids).toHaveLength(100);
+    expect(ids[0]).toBe('m21');
+    expect(ids[99]).toBe('m120');
+  });
+
+  it('读消息：对话得是这门课里的 workspace 对话，别课的、个人对话的一律 404', async () => {
+    h.state.conversations = [
+      conv('other-course', 'space-a', '2026-10-03T00:00:00Z', { course_id: 'course-2' }),
+      conv('personal', 'space-a', '2026-10-03T00:00:00Z', { agent_type: 'personal' }),
+    ];
+    h.state.messages = [msg('other-course', 1), msg('personal', 1)];
+
+    for (const id of ['other-course', 'personal']) {
+      const res = await call('GET', `/workspace-agent/course-1/conversations/${id}/messages`);
+      expect(res.status).toBe(404);
+      expect(res.text).not.toContain('第 1 句');
+    }
+  });
+
+  it('读消息：不是这门课的成员，先 403，不查对话', async () => {
+    h.state.conversations = [conv('c1', 'space-a', '2026-10-03T00:00:00Z')];
+    h.state.messages = [msg('c1', 1)];
+    h.ensureCourseMember.mockRejectedValueOnce(new ApiError(403, 'Not a member of this course'));
+    const res = await call('GET', '/workspace-agent/course-1/conversations/c1/messages');
+
+    expect(res.status).toBe(403);
+    expect(res.text).not.toContain('第 1 句');
+  });
+
+  it('接着聊：喂给模型的服务端历史是最近的 40 条（旧到新），不是最早的 40 条', async () => {
+    h.state.conversations = [conv('c1', 'space-a', '2026-10-03T00:00:00Z')];
+    h.state.messages = Array.from({ length: 50 }, (_, i) => msg('c1', i + 1));
+    const res = await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a', conversation_id: 'c1' });
+
+    expect(res.status).toBe(200);
+    const history = (h.buildAgentContext.mock.calls[0][0] as unknown as { history: { content: string }[] }).history;
+    expect(history).toHaveLength(40);
+    expect(history[0].content).toBe('第 11 句');
+    expect(history[39].content).toBe('第 50 句');
+  });
+});
+
+/**
+ * 回答写多长（2026-10-05 用户：输出太多学生不想看，让学生选；不是硬限制，按问题难度调，要写完整）。
+ */
+describe('回答长度', () => {
+  const loopOpts = () => h.runAgentLoopStream.mock.calls[0][0] as unknown as { systemPrompt: string; maxTokens: number };
+  const savedReply = () => h.state.inserts.find(i => i.table === 'agent_messages' && i.payload.role === 'assistant')?.payload;
+
+  it('学生选「简短」：档位和目标字数写进提示词，记进这条回答', async () => {
+    const res = await call('POST', '/workspace-agent/course-1/stream', { ...ASK, content: '比较一下这两种观点的区别', answer_length: 'short' });
+
+    expect(res.status).toBe(200);
+    expect(loopOpts().systemPrompt).toContain('the student chose "brief"');
+    // 比较类问题判成深：简短档的 250 往长调到约 330
+    expect(loopOpts().systemPrompt).toContain('about 330 Chinese characters');
+    expect(savedReply()?.ai_metadata).toMatchObject({
+      answer_length: { preset: 'short', depth: 2, depth_source: 'heuristic', target: 330, chars: 'AI 的回复'.length },
+    });
+  });
+
+  it('没选：按适中；max_tokens 按目标留足余量，至少原来的 2048，会先思考的 DeepSeek 再多留', async () => {
+    await call('POST', '/workspace-agent/course-1/stream', ASK);
+    expect(loopOpts().systemPrompt).toContain('the student chose "medium"');
+    expect(loopOpts().maxTokens).toBeGreaterThanOrEqual(2048 + 4000);
+  });
+});
+
+describe('「画图」按钮', () => {
+  it('force_draw：不管怎么措辞都直接出图，不走对话模型', async () => {
+    const res = await call('POST', '/workspace-agent/course-1/stream', { ...ASK, content: '一棵知识之树，枝条上挂着同学们的想法', force_draw: true });
+
+    expect(res.status).toBe(200);
+    expect(h.streamDrawTurn).toHaveBeenCalledTimes(1);
+    expect((h.streamDrawTurn.mock.calls[0] as unknown[])[1]).toMatchObject({ prompt: '一棵知识之树，枝条上挂着同学们的想法' });
+    expect(h.runAgentLoopStream).not.toHaveBeenCalled();
+  });
+
+  it('没按按钮、也没说要画：照常对话', async () => {
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, content: '一棵知识之树' });
+    expect(h.streamDrawTurn).not.toHaveBeenCalled();
+    expect(h.runAgentLoopStream).toHaveBeenCalledTimes(1);
   });
 });

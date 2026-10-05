@@ -32,6 +32,16 @@ export interface ChangelogEntry {
 /** 最新的排最前面。加新版本就往数组头部插。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v0.3.0', date: '2026-10-06',
+    titleZh: '观点演进与 AI 协作更新', titleEn: 'Idea progression and AI collaboration',
+    items: [
+      { zh: '知识地图与构建时间线独立查看，支持按 Note、成员与小组追踪观点演进。', en: 'Explore the knowledge map and construction timeline separately, with Note, participant and group filters.' },
+      { zh: '采纳反馈后先改进原 Note；贡献时检查修订是否回应反馈，再决定是否生成关联 Note。', en: 'Improve the original Note after accepting feedback; contribution checks determine whether a linked Note is still needed.' },
+      { zh: 'AI 助手显示执行步骤，并提供回答长度与对话偏好设置。', en: 'AI assistants show execution steps and provide answer-length and conversation preferences.' },
+      { zh: '画布显示讨论主题；课程工具补充成员统计与反馈检查导出。', en: 'Canvas topics surface discussion strands; course tools add member counts and feedback-check exports.', for: 'teacher' },
+    ],
+  },
+  {
     version: 'v0.2.0',
     date: '2026-10-04',
     titleZh: 'HAKCC 开源版本',

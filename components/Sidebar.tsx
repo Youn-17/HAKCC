@@ -3,6 +3,7 @@ import { uiScale } from './uiScale';
 import RemixIcon from './RemixIcon';
 import { Language } from '../types';
 import { RELATION_COLORS } from './relationColors';
+import { MINE_CARD } from './morandiPalette';
 import { useDismissible } from '../hooks/useDismissible';
 
 interface SidebarProps {
@@ -21,6 +22,9 @@ interface SidebarProps {
   onOpenGroups?: () => void;
   onOpenIdeaGraph?: () => void;
   onOpenMembers?: () => void;
+  /** 「我的笔记」开着：按钮亮起 */
+  mineActive?: boolean;
+  onToggleMine?: () => void;
 }
 
 interface ToolDef {
@@ -90,6 +94,12 @@ const TOOL_DEFS: Record<string, ToolDef> = {
     descZh: '查阅知识社区内可用的认知支架',
     descEn: 'Browse the epistemic scaffolds available in this community.',
   },
+  mine: {
+    id: 'mine', iconName: 'user-search-line',
+    labelZh: '我的笔记', labelEn: 'My notes',
+    descZh: '只突出自己写的笔记，一条一条跳过去看',
+    descEn: 'Bring out the notes you wrote and jump to them one by one.',
+  },
   view: {
     id: 'view', iconName: 'layout-grid-line',
     labelZh: '视图', labelEn: 'Views',
@@ -137,7 +147,7 @@ const TOOL_DEFS: Record<string, ToolDef> = {
 const CREATE_TOOLS = ['note', 'drawing', 'attachment'];
 // 计算思维工具在「探究」面板里，侧栏不再单列
 const BUILD_TOOLS = ['inquiry', 'riseabove', 'scaffold'];
-const COMMUNITY_TOOLS = ['view', 'map', 'timeline', 'ideagraph', 'groups', 'members'];
+const COMMUNITY_TOOLS = ['mine', 'view', 'map', 'timeline', 'ideagraph', 'groups', 'members'];
 const OPEN_TOOLS = new Set(['note', 'drawing', 'attachment', 'inquiry', 'riseabove', 'scaffold', 'exit', 'view', 'map', 'timeline', 'ideagraph', 'groups', 'members']);
 
 const RELATION_ITEMS = [
@@ -156,6 +166,7 @@ const LINE_ITEMS: { zh: string; en: string; w: number; dash: string; opacity: nu
 ];
 
 const BADGE_ITEMS = [
+  { zh: '我写的', en: 'Mine',                   borderColor: MINE_CARD.border, bgColor: MINE_CARD.bg },
   { zh: '已有 Build-on', en: 'Built on',       borderColor: '#34d399', bgColor: '#ecfdf5' },
   { zh: '有潜力',        en: 'Promising',      borderColor: '#38bdf8', bgColor: '#f0f9ff' },
   { zh: '权威',          en: 'Authoritative',   borderColor: '#fbbf24', bgColor: '#fffbeb' },
@@ -165,6 +176,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   activeTool, onToolSelect, onToolOpen, onOpenAttachmentModal,
   isStaff, lang, width, onWidthChange,
   onOpenMap, onOpenTimeline, onOpenGroups, onOpenMembers, onOpenIdeaGraph,
+  mineActive, onToggleMine,
 }) => {
   const lbl = (zh: string, en: string) => lang === 'zh' ? zh : en;
   const expanded = width >= EXPAND_THRESHOLD;
@@ -212,6 +224,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const handleClick = (id: string) => {
     hideTooltip();
+    if (id === 'mine') { onToggleMine?.(); return; }
     if (id === 'attachment') { onToolOpen(id); onOpenAttachmentModal(); return; }
     if (communityHandlers[id]) { communityHandlers[id]!(); return; }
     if (OPEN_TOOLS.has(id)) { onToolOpen(id); return; }
@@ -221,7 +234,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   const renderToolButton = (id: string) => {
     const def = TOOL_DEFS[id];
     if (!def) return null;
-    const isActive = activeTool === id;
+    if (id === 'mine' && !onToggleMine) return null;
+    const isActive = id === 'mine' ? Boolean(mineActive) : activeTool === id;
 
     return (
       <div key={id} className="flex w-full shrink-0 justify-center">
@@ -236,6 +250,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             isActive ? SIDEBAR_ACTIVE : SIDEBAR_INACTIVE
           } ${expanded ? 'w-full gap-2 px-2.5' : 'w-11'}`}
           aria-label={lbl(def.labelZh, def.labelEn)}
+          aria-pressed={id === 'mine' ? Boolean(mineActive) : undefined}
           aria-describedby={tooltip?.label === lbl(def.labelZh, def.labelEn) && !expanded ? 'workspace-tool-tooltip' : undefined}
           title={expanded ? lbl(def.descZh, def.descEn) : undefined}
         >
@@ -286,7 +301,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-3 gap-[4px]" style={{ width: 36 }}>
+              <div className="grid grid-cols-2 gap-[4px]" style={{ width: 24 }}>
                 {BADGE_ITEMS.map((b, i) => (
                   <div key={i} className="flex justify-center">
                     <div

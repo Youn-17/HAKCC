@@ -2,6 +2,7 @@
  * 教师端几张截图用到的演示数据：概览、教学日志、AI 设置与触发设置、学生求助。
  */
 import * as W from './world.mjs';
+import { state } from './mockApi.mjs';
 
 const at = (date, hm) => `${date}T${hm}:00+08:00`;
 
@@ -54,7 +55,7 @@ export function handleTeacher(on) {
     native: { deepseek: [{ id: 'deepseek-flash', label: 'DeepSeek V4.1 Flash', fast: true }, { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' }] },
     tiers: { fast: ['deepseek-flash'], chat: ['deepseek-flash', 'deepseek-v4-pro'] },
   }));
-  on('GET', /^\/support\/questions$/, () => {
+  const helpQuestions = () => {
     const q = (id, who, question, status, ai, extra = {}) => ({
       id, courseId: W.COURSE_ID, spaceId: W.SPACE_ID, userId: `u-${id}`, userName: who, question, aiAnswer: ai, aiProvider: 'deepseek', aiModel: 'deepseek-flash',
       aiResolved: status === 'resolved' ? true : null, escalatedAt: status === 'escalated' ? W.ago(0, 3) : null, escalationNote: extra.note ?? null,
@@ -66,7 +67,24 @@ export function handleTeacher(on) {
       q('q2', '孙佳怡', '观点图谱显示还没有分组，但是我有小组', 'escalated', '观点图谱按小组计算。请确认老师已经把你分进小组。', { createdAt: W.ago(0, 6) }),
       q('q3', '吴浩然', '怎么把 AI 的回答放进笔记？', 'resolved', '在 AI 回复下面点「添加到 Note」，选一条支架说明你怎么用它，就会带着「AI 来源」标记插进笔记。', { createdAt: W.ago(1, 2) }),
     ];
+    return questions;
+  };
+  on('GET', /^\/support\/questions$/, () => {
+    const questions = helpQuestions();
     return { questions: questions.filter(x => x.status === 'escalated'), counts: { total: 3, waiting: 2, answered: 0, solvedByAi: 1 } };
+  });
+  // 教师端的「使用帮助」小球（2026-10-05）：等回复的学生求助
+  on('GET', /^\/support\/inbox$/, () => {
+    state.answeredHelp ??= [];
+    const student = helpQuestions()
+      .filter(x => x.status === 'escalated' && !state.answeredHelp.includes(x.id))
+      .map(x => ({ ...x, courseTitle: '人工智能与学习', askerRole: 'student' }));
+    return { student, teacher: [], counts: { student: student.length, teacher: 0 } };
+  });
+  on('POST', /^\/support\/questions\/(?<id>[^/]+)\/answer$/, ({ params, body }) => {
+    state.answeredHelp ??= [];
+    state.answeredHelp.push(params.id);
+    return { question: { id: params.id, status: 'teacher_answered', teacherAnswer: body.answer, teacherAnsweredAt: new Date().toISOString() } };
   });
   on('GET', /^\/dashboard\/courses\/[^/]+\/learner-profiles$/, () => ({ profiles: [] }));
   on('GET', /^\/dashboard\/courses\/[^/]+\/needs-attention$/, () => ({ items: [] }));

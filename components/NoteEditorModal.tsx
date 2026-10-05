@@ -104,9 +104,19 @@ import {
   wholeBlockOf,
 } from './noteEditorBlocks';
 import { BUILD_ON_MOVES, RELATION_COLORS } from './relationColors';
-import { markNoteSeen } from './noteBadges';
+import { useMarkSeenAfterDwell } from './noteBadges';
 import DrawingProgress from './DrawingProgress';
 import AiThinking, { AiThinkingDots } from './AiThinking';
+import AnswerLengthSelect from './AnswerLengthSelect';
+import AssistantAgentPicker from './AssistantAgentPicker';
+import AssistantWelcome from './AssistantWelcome';
+import { useChatPreferences, ChatPreferenceControls } from '../hooks/useChatPreferences';
+import { useGrowingTextarea } from '../hooks/useGrowingTextarea';
+import RemixIcon from './RemixIcon';
+import AgentProcess from './AgentProcess';
+import { applyToolEvent, stepsFromMetadata } from './agentProcessSteps';
+import type { ToolCallInfo } from './AgentToolCallDisplay';
+import { getAnswerLength } from './answerLengthPref';
 import { detectDrawIntent } from './drawIntent';
 import {
   formatThreadTime,
@@ -501,6 +511,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const [isLargeScreen, setIsLargeScreen] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
   );
+  const { enterToSend, setEnterToSend, largeText, setLargeText } = useChatPreferences();
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
   const [aiAttachments, setAiAttachments] = useState<Array<{ file_url: string; file_name: string; mime_type: string; text?: string; truncated?: boolean }>>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
@@ -524,6 +535,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const [selectedThread, setSelectedThread] = useState<NoteConversationThread | null>(null);
   const [messages, setMessages] = useState<NoteConversationMessage[]>([]);
   const [feedbacks, setFeedbacks] = useState<NoteAIFeedback[]>([]);
+  const [dismissedFeedbackIds, setDismissedFeedbackIds] = useState<Set<string>>(new Set());
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [teacherFeedbacks, setTeacherFeedbacks] = useState<NoteFeedbackApi[]>([]);
   const [teacherFeedbackExpanded, setTeacherFeedbackExpanded] = useState(false);
   const [selectedProviderId, setSelectedProviderId] = useState('');
@@ -562,12 +575,12 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [buildOnMenuOpen]);
-  // 打开别人的笔记算「打开过」，画布上它就不再标 New。手机端、时间线、通知点进来的都走这里
-  useEffect(() => {
-    if (!isOpen || !noteId) return;
-    const note = allNotes.find(item => item.id === noteId);
-    if (note) markNoteSeen(note, userId);
-  }, [isOpen, noteId, allNotes, userId]);
+  // 别人的笔记在这里开着、停够 3 秒才算看过，画布上它就不再标 New。手机端、时间线、通知点进来的都走这里
+  const seenTarget = useMemo(
+    () => (isOpen && noteId ? allNotes.find(item => item.id === noteId) ?? null : null),
+    [isOpen, noteId, allNotes],
+  );
+  useMarkSeenAfterDwell(seenTarget, userId);
   /**
    * 排版是**显示设置**，不写进正文 HTML。
    * 之前的行距按钮把选区包进带 line-height 的 span，正文里就多出一堆样式标签，
@@ -625,6 +638,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const editorRangeRef = useRef<Range | null>(null);
   const editorTextOffsetRef = useRef<number | null>(null);
   const aiInputRef = useRef<HTMLTextAreaElement>(null);
+  useGrowingTextarea(aiInputRef, aiInput, isOpen && aiOpen);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
@@ -701,6 +715,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     attachImage: lang === 'zh' ? '上传图片或文件' : 'Attach an image or file',
     showCanvas: lang === 'zh' ? '让 AI 看整块画布' : 'Show the AI the whole canvas',
     drawImage: lang === 'zh' ? '让 AI 画一张配图' : 'Ask the AI to draw an image',
+    drawShort: lang === 'zh' ? '画图' : 'Draw',
     saveNoteFirst: lang === 'zh'
       ? '这条笔记还没能保存，无法开始对话。请先点「贡献」保存后再试。'
       : 'This note could not be saved yet, so the conversation cannot start. Save it first and try again.',
@@ -717,7 +732,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     autoAiModel: lang === 'zh' ? '默认' : 'Default',
     aiProvider: lang === 'zh' ? 'Provider' : 'Provider',
     noAi: lang === 'zh' ? '教师尚未配置可用 GenAI' : 'No GenAI provider is configured yet',
-    aiPlaceholder: lang === 'zh' ? '向 AI 提问，让它帮你澄清、找证据缺口或改进当前 Idea...' : 'Ask AI to clarify, find gaps, or improve this idea...',
+    aiPlaceholder: lang === 'zh' ? '围绕这条 Note 提问…' : 'Ask about this Note…',
     quickAsk: lang === 'zh' ? '快捷协助' : 'Quick help',
     agentMode: lang === 'zh' ? '教学 Agent' : 'Teaching agent',
     webEvidence: lang === 'zh' ? '网页证据' : 'Web evidence',
@@ -810,10 +825,10 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     insertLink: lang === 'zh' ? '插入链接' : 'Insert link',
     linkPrompt: lang === 'zh' ? '请输入链接地址' : 'Enter URL',
     fileTooLarge: lang === 'zh' ? '文件过大，请选择 6MB 以内的文件。' : 'File is too large. Please choose a file under 6MB.',
-    noAgentMode: lang === 'zh' ? '自由提问' : 'Free ask',
+    noAgentMode: lang === 'zh' ? '默认 · 自由提问' : 'Default · Free inquiry',
     modeHint: lang === 'zh'
-      ? '可不指定；需要发现缺口、联网证据、连接 Note 或综合升华时再切换。'
-      : 'Optional; switch when you need gap finding, web evidence, Note links, or rise-above synthesis.',
+      ? '围绕当前 Note 自由提问，澄清想法或讨论下一步。'
+      : 'Ask freely about this Note, clarify ideas, or discuss your next step.',
   };
 
   // 教师在支架管理里隐藏的支架，写笔记时谁都不列：教职拿到的列表里带着它们（带 hidden 标记），
@@ -867,16 +882,28 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     ? encodePartnerModelValue(selectedProviderId, selectedModel)
     : '';
   const latestFeedback = feedbacks[0];
-  const visibleFeedbacks = showFeedbackHistory ? feedbacks : feedbacks.slice(0, 1);
+  const visibleFeedbacks = (showFeedbackHistory ? feedbacks : feedbacks.slice(0, 1)).filter(feedback => !dismissedFeedbackIds.has(feedback.id) && (showFeedbackHistory || feedback.status !== 'ignored'));
   /** 正在填写不同意理由的那条反馈；理由必须和状态同一次提交，不接受事后补填 */
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectTag, setRejectTag] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
-  /** 学生收起卡片即记为「看过但未处理」，不必为“不做什么”再点一个按钮 */
-  const dismissFeedback = (feedback: NoteAIFeedback) => {
+  // Closing a card is local UI state. Only its recipient can record an outcome.
+  const dismissFeedback = async (feedback: NoteAIFeedback) => {
     setRejectingId(null);
-    if (feedback.status === 'new') void updateFeedbackStatus(feedback, 'ignored');
+    setDismissedFeedbackIds(previous => new Set(previous).add(feedback.id));
+    setFeedbackError(null);
+    if (!noteId || feedback.status !== 'new' || feedback.userId !== userId) return;
+    const live = captureAiSession();
+    try {
+      const { feedback: updated } = await noteAiFeedback.respond(noteId, feedback.id, { status: 'ignored' });
+      if (live()) setFeedbacks(previous => previous.map(item => item.id === updated.id ? updated : item));
+    } catch (error) {
+      if (!live()) return;
+      // A removed/stale row can still be closed; it has no outcome left to update.
+      if (error instanceof ApiClientError && error.status === 404) return;
+      setFeedbackError(lang === 'zh' ? '反馈已收起，未处理状态未保存。可打开历史后重试。' : 'Feedback closed. Its status could not be saved; open history to retry.');
+    }
   };
   const agentModes = useMemo(() => getPartnerAgentModes(lang === 'zh' ? 'zh' : 'en'), [lang]);
 
@@ -900,6 +927,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     setRevisions([]);
     setMessages([]);
     setFeedbacks([]);
+    setDismissedFeedbackIds(new Set());
+    setFeedbackError(null);
+    setShowFeedbackHistory(false);
     setTeacherFeedbacks([]);
     setTeacherFeedbackExpanded(false);
     teacherFeedbackReadRef.current.clear();
@@ -2401,6 +2431,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
         use_web_search: useWebSearchForNextMessage,
         agent_mode: selectedAgentMode || undefined,
         attachments: turnAttachments,
+        answer_length: getAnswerLength(),
         // 选了具体模式才走智能体；「自由提问」直接打模型，省掉工具装载和 ReAct 循环
         // 但带了图必须走智能体那条：只有它会挂 image_url 并切到视觉模型。
       }, Boolean(selectedAgentMode) || turnAttachments.length > 0);
@@ -2428,6 +2459,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               streaming: true,
               toolStatus: event.toolStatus,
               toolNames: event.toolNames ?? [],
+              // 每一步的状态、结果、用时（AgentProcess）
+              toolSteps: applyToolEvent((existing?.aiMetadata?.toolSteps as ToolCallInfo[] | undefined) ?? [], event),
               use_web_search: useWebSearchForNextMessage,
               agent_mode: selectedAgentMode,
             };
@@ -2827,18 +2860,20 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     responseText?: string,
     rejection?: { tag: string; reason?: string },
   ) => {
-    if (!noteId) {
+    if (!noteId || feedback.userId !== userId) {
       closeAiInsertDialog();
       return;
     }
+    setFeedbackError(null);
+    const live = captureAiSession();
     try {
       const { feedback: updated } = await noteAiFeedback.respond(noteId, feedback.id, {
         status, response_text: responseText,
         rejection_tag: rejection?.tag, rejection_reason: rejection?.reason,
       });
-      setFeedbacks(prev => prev.map(item => item.id === updated.id ? updated : item));
+      if (live()) setFeedbacks(prev => prev.map(item => item.id === updated.id ? updated : item));
     } catch (error) {
-      setAiError(error instanceof Error ? error.message : 'Failed to update feedback');
+      if (live()) setFeedbackError(lang === 'zh' ? '反馈状态未保存，请刷新反馈后重试。' : 'Feedback status could not be saved. Refresh feedback and retry.');
     }
   };
 
@@ -3107,6 +3142,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
 
   const renderFeedback = (feedback: NoteAIFeedback) => {
     const handled = feedback.status !== 'new';
+    const canRespond = feedback.userId === userId;
     const label = TRIGGER_LABEL[feedback.triggerType];
     const isRejecting = rejectingId === feedback.id;
 
@@ -3139,10 +3175,20 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                 : (lang === 'zh' ? '未处理' : 'Not used')}
             </span>
           )}
+          <button type="button" onClick={() => void dismissFeedback(feedback)} aria-label={lang === 'zh' ? '收起' : 'Dismiss'} title={lang === 'zh' ? '收起反馈' : 'Close feedback'} className="ml-auto rounded-md p-1 text-gray-400 transition-colors hover:bg-white/70 hover:text-gray-600 dark:hover:text-gray-300">
+            <X size={14} />
+          </button>
         </div>
 
         <p className="text-sm leading-6 text-gray-800 dark:text-gray-100">{feedback.feedbackText}</p>
 
+        {feedback.status === 'accepted' && !feedback.publishedNoteId && (
+          <p className="mt-2 text-[0.6875rem] leading-5 text-gray-500 dark:text-gray-400">
+            {feedback.publicationReview?.state === 'addressed'
+              ? (lang === 'zh' ? '已在原 Note 中回应，无需另建笔记。' : 'Addressed in this Note; no additional note needed.')
+              : (lang === 'zh' ? '可先在原 Note 中回应；贡献时再判断是否需要关联笔记。' : 'Develop your response in this Note. Publication is reviewed when you contribute.')}
+          </p>
+        )}
         {feedback.publishedNoteId && (
           <p className="mt-2 flex items-center gap-1.5 text-[0.6875rem] font-medium text-gray-600 dark:text-gray-300">
             <MessageCircle size={12} />
@@ -3184,7 +3230,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               {lang === 'zh' ? '取消' : 'Cancel'}
             </button>
           </div>
-        ) : !handled && (
+        ) : !handled && canRespond && (
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => void updateFeedbackStatus(feedback, 'accepted')} className="inline-flex items-center gap-1 rounded-md bg-[#000080] px-2.5 py-1 text-xs font-semibold text-white transition-all hover:bg-[#000080]/90 active:scale-[0.97]">
               <Check size={13} />{t.accept}
@@ -3195,9 +3241,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             <button type="button" onClick={() => { setAiInput(feedback.feedbackText); setAiOpen(true); void updateFeedbackStatus(feedback, 'followed_up', feedback.feedbackText); }} className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
               <MessageCircle size={13} />{t.followUp}
             </button>
-            <button type="button" onClick={() => dismissFeedback(feedback)} aria-label={lang === 'zh' ? '收起' : 'Dismiss'} title={lang === 'zh' ? '收起（记为未处理）' : 'Dismiss'} className="ml-auto rounded-md px-2 py-1 text-xs text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300">
-              <X size={14} />
-            </button>
+
           </div>
         )}
 
@@ -3364,7 +3408,6 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       disabled: mode.id === 'evidence_broker' && !hasTavilyConfig,
     })),
   ];
-  const activeAgentModeOption = agentModeOptions.find(option => option.id === selectedAgentMode) ?? agentModeOptions[0];
 
   const historyThreads = visibleHistoryThreads(threads, {
     noteId,
@@ -3372,35 +3415,40 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     deletedIds: deletedThreadIdsRef.current,
   });
   const aiPanel = (
-    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl shadow-black/10 dark:border-gray-800 dark:bg-gray-900">
+    <aside data-large-text={largeText} aria-label={t.aiPartner} className="assistant-panel flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 dark:border-gray-800">
       {/* 标题、新建、历史、收起放在一行。原来标题、两个按钮、分隔线、「围绕当前 Note 讨论」叠了四层，
           占掉侧栏顶上一百多像素，真正的对话区反而挤在下面。历史列表做成浮在下面的菜单，不再把对话往下顶。 */}
       <div ref={historyMenuRef} className="relative shrink-0 border-b border-gray-100 dark:border-gray-800">
-        <div className="flex items-center gap-1.5 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[#000080]/15 bg-[#000080]/[0.06] text-[#000080] dark:border-blue-400/25 dark:bg-blue-950/40 dark:text-blue-300">
-            <Bot size={14} />
-          </span>
-          <h2 className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold tracking-tight text-gray-900 dark:text-gray-100" title={t.aroundThisNote}>{t.aiPartner}</h2>
+        <div className="assistant-header flex items-center gap-2">
+          <span className="assistant-mark" aria-hidden="true"><RemixIcon name="chat-quote-line" size={18} /></span>
+          <div className="assistant-header-title">
+            <h2 className="truncate" title={t.aroundThisNote}>{t.aiPartner}</h2>
+            <p className="truncate">{t.aroundThisNote}</p>
+          </div>
           <button
             type="button"
             onClick={() => void startNewAiThread()}
             disabled={!noteId || !concreteAiSelection || sending}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-[#000080] px-2 text-xs font-semibold text-white transition-all hover:bg-[#000060] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={t.newChat}
+            title={t.newChat}
+            className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
           >
-            <Plus size={13} />{t.newChat}
+            <RemixIcon name="chat-new-line" size={16} /><span className="assistant-header-action-label">{t.newChat}</span>
           </button>
           <button
             type="button"
             onClick={() => { setRecentThreadsOpen(value => !value); setConfirmDeleteId(null); }}
             aria-expanded={recentThreadsOpen}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            aria-label={t.chatHistory}
+            title={t.chatHistory}
+            className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
           >
-            <Clock size={13} />{t.chatHistory}{historyThreads.length > 0 && <span className="text-gray-400">· {historyThreads.length}</span>}
+            <RemixIcon name="history-line" size={16} /><span className="assistant-header-action-label">{t.chatHistory}{historyThreads.length > 0 && <span className="ml-1 tabular-nums text-gray-500">· {historyThreads.length}</span>}</span>
           </button>
           <button
             type="button"
             onClick={() => setAiOpen(false)}
-            className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800"
             aria-label={t.close}
           >
             <ChevronUp size={16} />
@@ -3482,6 +3530,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
         )}
       </div>
 
+      <AssistantAgentPicker lang={lang === 'zh' ? 'zh' : 'en'} value={selectedAgentMode}
+        options={agentModeOptions} onChange={setPartnerAgentMode} disabled={sending} />
       {aiError && (
         <div className="mx-4 mt-3 flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 p-2 text-xs leading-5 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />{aiError}
@@ -3495,30 +3545,25 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
           const el = event.currentTarget;
           aiPinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
         }}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-3"
+        className="assistant-conversation min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
-        <div className="space-y-3">
+        <div className="flex min-h-full flex-col gap-4">
           {messages.length === 0 && (threadLoading ? (
             <div role="status" className="flex items-center justify-center gap-2.5 py-10 text-[0.75rem] text-gray-500 dark:text-gray-400">
               <AiThinkingDots />{t.openingChat}
             </div>
           ) : (
-            <div className="py-6 text-center">
-              <p className="mb-1 text-[0.6875rem] text-gray-400 dark:text-gray-500">{t.aroundThisNote}</p>
-              <p className="text-[0.75rem] leading-5 text-gray-400 dark:text-gray-500">{t.aiPlaceholder}</p>
-            </div>
+            <AssistantWelcome scope="note" lang={lang === 'zh' ? 'zh' : 'en'} disabled={!canChatWithAI}
+              onChoose={prompt => { setAiInput(prompt); aiInputRef.current?.focus(); }} />
           ))}
           {messages.map((message, index) => {
             const isAssistant = message.senderKind === 'assistant';
             const reasoningStatus = message.aiMetadata?.reasoningStatus ?? message.aiMetadata?.reasoning_status;
-            const toolStatus = message.aiMetadata?.toolStatus ?? message.aiMetadata?.tool_status;
-            const rawToolNames = message.aiMetadata?.toolNames ?? message.aiMetadata?.toolsUsed ?? message.aiMetadata?.tools_used;
-            const toolNames = Array.isArray(rawToolNames) ? rawToolNames.map(String) : [];
 
             if (!isAssistant) {
               return (
                 <div key={message.id} className="flex justify-end">
-                  <div className="min-w-0 max-w-[85%] rounded-xl bg-[#000080]/[0.06] px-3.5 py-2.5 text-[0.8125rem] leading-6 text-gray-800 dark:bg-blue-950/40 dark:text-gray-100">
+                  <div className="assistant-user-message min-w-0 max-w-[85%] px-3.5 py-2.5 text-[0.8125rem] leading-6">
                     <MarkdownMessage content={message.content} isMine={false} />
                   </div>
                 </div>
@@ -3529,13 +3574,13 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             const startsRun = !previous || previous.senderKind !== message.senderKind;
             const isStreaming = message.id.startsWith('stream-');
             const settled = Boolean(message.content.trim()) && !isStreaming;
+            const processSteps = isStreaming
+              ? ((message.aiMetadata?.toolSteps as ToolCallInfo[] | undefined) ?? [])
+              : stepsFromMetadata(message.aiMetadata);
             // 流式回复的临时消息，字还没出来：显示「正在思考 / 读取 / 组织回答」的动效，不是一个空气泡加小转圈
             const waitingForText = isStreaming && !message.content.trim();
             // 这一轮已经结束（出错中断）却留下的空临时消息：不画，免得动效一直转下去
             if (waitingForText && !sending) return null;
-            const waitingLabel = toolStatus === 'running'
-              ? t.toolRunningLabel
-              : reasoningStatus === 'answering' ? t.answeringLabel : t.thinkingLabel;
 
             return (
               <div key={message.id} className="flex items-start gap-2">
@@ -3547,16 +3592,23 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                   } ${waitingForText ? 'ai-avatar-working' : ''}`}
                   aria-hidden={!startsRun}
                 >
-                  <Bot size={13} />
+                  <RemixIcon name="chat-quote-line" size={13} />
                 </span>
                 <div
                   className="min-w-0 flex-1"
                   onMouseUp={() => handleAssistantSelection(message)}
                   onKeyUp={() => handleAssistantSelection(message)}
                 >
-                  <div className="rounded-xl bg-gray-100 px-3.5 py-2.5 text-[0.8125rem] leading-6 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+                  <div className="assistant-response px-3.5 py-3 text-[0.8125rem] leading-6">
                     {waitingForText ? (
-                      <AiThinking label={waitingLabel} startedAt={aiTurnStartedAtRef.current} lang={lang} />
+                      // 还没开始写：一步步显示在做什么（2026-10-05 用户：等的时候别让学生觉得无聊）
+                      <AgentProcess
+                        steps={processSteps}
+                        phase="waiting"
+                        startedAt={aiTurnStartedAtRef.current}
+                        thinking={reasoningStatus === 'thinking'}
+                        lang={lang === 'zh' ? 'zh' : 'en'}
+                      />
                     ) : (
                       <>
                         {/* 字一出来，「思考中 / 正在组织回答」的小标签就不用了：流出来的字本身就在说它在写 */}
@@ -3565,14 +3617,13 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                             {reasoningStatus === 'thinking' ? t.thinking : reasoningStatus === 'answering' ? t.answering : t.thoughtDone}
                           </div>
                         )}
-                        {typeof toolStatus === 'string' && (
-                          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">
-                            {toolStatus === 'running' && <Loader2 size={11} className="animate-spin" />}
-                            <Sparkles size={11} />
-                            {toolStatus === 'running' ? t.toolRunning : t.toolUsed}
-                            {toolNames.length > 0 && <span className="text-emerald-500">({toolNames.length})</span>}
-                          </div>
-                        )}
+                        {/* 用了哪几步：收成一行「用了 3 步 · 6 秒」，点开看每一步。以前写完就没了，现在回看也在 */}
+                        <AgentProcess
+                          steps={processSteps}
+                          phase={isStreaming ? 'writing' : 'done'}
+                          elapsedMs={typeof message.aiMetadata?.elapsed_ms === 'number' ? message.aiMetadata.elapsed_ms : undefined}
+                          lang={lang === 'zh' ? 'zh' : 'en'}
+                        />
                         <MarkdownMessage content={message.content} isMine={false} />
                         {isStreaming && <div className="mt-1.5"><AiThinkingDots /></div>}
                       </>
@@ -3625,10 +3676,10 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             !messages.some(message => message.id.startsWith('stream-')) && (
               <div className="flex items-start gap-2">
                 <span className="ai-avatar-working mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[#000080]/15 bg-[#000080]/[0.06] text-[#000080] dark:border-blue-400/25 dark:bg-blue-950/40 dark:text-blue-300" aria-hidden="true">
-                  <Bot size={13} />
+                  <RemixIcon name="chat-quote-line" size={13} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="rounded-xl bg-gray-100 px-3.5 py-2.5 dark:bg-gray-800">
+                  <div className="assistant-response px-3.5 py-3">
                     <AiThinking label={t.thinkingLabel} startedAt={aiTurnStartedAtRef.current} lang={lang} />
                   </div>
                 </div>
@@ -3639,70 +3690,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
         </div>
       </div>
 
-      <div className="border-t border-gray-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-gray-800">
-        <div className="rounded-xl border border-gray-200 bg-white transition-colors focus-within:border-[#000080]/40 dark:border-gray-700 dark:bg-gray-800">
-          <div ref={composerMenuRef} className="relative flex items-center gap-2 px-2.5 pt-2.5">
-            <label className="min-w-0">
-              <span className="sr-only">{t.agentMode}</span>
-              <select
-                value={selectedAgentMode}
-                onChange={event => setPartnerAgentMode(event.target.value as PartnerAgentModeSelection)}
-                className="h-7 max-w-[11rem] truncate rounded-lg border border-gray-200 bg-white px-2 text-[0.75rem] font-semibold text-gray-700 outline-none transition-colors hover:border-gray-300 focus:border-[#000080] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-              >
-                {agentModeOptions.map(option => (
-                  <option key={option.id || 'free'} value={option.id} disabled={option.disabled}>
-                    {option.disabled ? `${option.label} · ${t.tavilyMissing}` : option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={() => void refinePrompt()}
-              disabled={!aiInput.trim() || refiningPrompt || sending || !canChatWithAI}
-              className="ml-auto inline-flex h-7 items-center gap-1 rounded-lg border border-[#000080]/20 bg-[#000080]/[0.05] px-2 text-[0.75rem] font-semibold text-[#000080] transition-colors hover:bg-[#000080]/10 disabled:cursor-not-allowed disabled:opacity-40 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300"
-              title={t.refinePrompt}
-            >
-              {refiningPrompt ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
-              {refiningPrompt ? t.refining : t.refinePrompt}
-            </button>
-            {promptBeforeRefine !== null && (
-              <button
-                type="button"
-                onClick={undoRefinePrompt}
-                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700"
-                title={t.undoRefine}
-                aria-label={t.undoRefine}
-              >
-                <Undo2 size={15} />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setComposerMenuOpen(value => !value)}
-              className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700"
-              aria-label={t.modeHint}
-              aria-expanded={composerMenuOpen}
-            >
-              <MoreHorizontal size={16} />
-            </button>
-            {composerMenuOpen && (
-              <div className="absolute right-2.5 top-11 z-20 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                <p className="text-[0.75rem] font-semibold text-gray-800 dark:text-gray-100">{activeAgentModeOption.label}</p>
-                <p className="mt-1 text-[0.6875rem] leading-5 text-gray-500 dark:text-gray-400">{activeAgentModeOption.description}</p>
-                {(selectedProviderId === 'auto' || selectedProviderId === 'deepseek' || selectedProviderId === 'dmx' || selectedProviderId === 'dmxapi') && (
-                  <p className="mt-2 border-t border-gray-100 pt-2 text-[0.6875rem] leading-5 text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                    {selectedProviderId === 'auto'
-                      ? t.autoModelHint(concreteAiSelection
-                        ? formatPartnerModelLabel(concreteAiSelection.providerId, concreteAiSelection.model, lang)
-                        : '—')
-                      : t.fastModelHint}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
+      <div className="assistant-footer border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-gray-800">
+        <div ref={composerMenuRef} data-ai-composer className="assistant-composer assistant-composer-refinable relative">
           {aiAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2 px-2.5 pt-2.5">
               {aiAttachments.map(attachment => (
@@ -3740,89 +3729,135 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             </div>
           )}
 
+          <div className="assistant-input-region relative">
+            <div className="assistant-refine-actions">
+              <button
+                type="button"
+                onClick={() => void refinePrompt()}
+                disabled={!aiInput.trim() || refiningPrompt || sending || !canChatWithAI}
+                className="ml-auto inline-flex h-7 items-center gap-1 rounded-lg border border-[#000080]/20 bg-[#000080]/[0.05] px-2 text-[0.75rem] font-semibold text-[#000080] transition-colors hover:bg-[#000080]/10 disabled:cursor-not-allowed disabled:opacity-40 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300"
+                title={t.refinePrompt}
+              >
+                {refiningPrompt ? <Loader2 size={13} className="animate-spin" /> : <RemixIcon name="edit-2-line" size={13} />}
+                {refiningPrompt ? t.refining : t.refinePrompt}
+              </button>
+              {promptBeforeRefine !== null && (
+                <button
+                  type="button"
+                  onClick={undoRefinePrompt}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700"
+                  title={t.undoRefine}
+                  aria-label={t.undoRefine}
+                >
+                  <Undo2 size={15} />
+                </button>
+              )}
+            </div>
           <textarea
+            rows={1}
             ref={aiInputRef}
             value={aiInput}
             onChange={event => setAiInput(event.target.value)}
-            onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendAiMessage(); } }}
+            onKeyDown={event => { if (event.key === 'Enter' && enterToSend && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void sendAiMessage(); } }}
+            aria-label={t.aiPlaceholder}
             placeholder={t.aiPlaceholder}
-            className="max-h-40 min-h-[4.25rem] w-full resize-none bg-transparent px-3.5 py-2.5 text-[0.8125rem] leading-6 text-gray-800 outline-none placeholder:text-gray-400 dark:text-gray-200 dark:placeholder:text-gray-500"
+            className="assistant-input w-full resize-none bg-transparent outline-none"
           />
 
-          <div className="flex items-center gap-2 px-2.5 pb-2.5">
-            {aiLoading ? (
-              <span className="inline-flex items-center gap-1.5 text-[0.75rem] text-gray-400"><Loader2 size={13} className="animate-spin" />Loading AI</span>
-            ) : !canChatWithAI ? (
-              <span className="min-w-0 text-[0.75rem] leading-5 text-gray-500 dark:text-gray-400">{aiRateLimited ? t.rateLimited : t.noAi}</span>
-            ) : (
-              <label className="inline-flex min-w-0 items-center gap-1">
-                <Sparkles size={13} className="shrink-0 text-[#000080] dark:text-blue-300" />
-                <span className="sr-only">{t.aiModel}</span>
-                <select
-                  value={selectedModelValue}
-                  onChange={event => {
-                    const next = decodePartnerModelValue(event.target.value);
-                    setSelectedProviderId(next.providerId);
-                    setSelectedModel(next.model);
-                  }}
-                  title={selectedPartnerTitle}
-                  className="h-7 min-w-0 max-w-[14rem] truncate rounded-lg border border-transparent bg-transparent pr-1 text-[0.75rem] font-semibold text-gray-600 outline-none transition-colors hover:border-gray-200 focus-visible:border-gray-300 sm:max-w-[18rem] dark:text-gray-300 dark:hover:border-gray-600"
-                >
-                  {partnerModelOptions.map(option => (
-                    <option key={option.value} value={option.value} title={partnerModelTitle(option.providerId, option.model, lang)}>
-                      {option.providerId === 'auto'
-                        ? (defaultPartnerOption ? `${option.label} · ${defaultPartnerOption.label}` : option.label)
-                        : option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <input
-              ref={aiFileInputRef}
-              type="file"
-              accept="image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.json"
-              className="hidden"
-              onChange={event => void handleAiImagePick(event)}
-            />
+          </div>
+
+          <div className={`assistant-options ${composerMenuOpen ? '' : 'hidden'}`}>
+            <p className="assistant-options-title">{lang === 'zh' ? '对话设置' : 'Chat settings'}</p>
+            <ChatPreferenceControls lang={lang} enterToSend={enterToSend} setEnterToSend={setEnterToSend} largeText={largeText} setLargeText={setLargeText} />
+
+          </div>
+          <div className="assistant-tools px-2.5 pb-2.5">
+              <input
+                ref={aiFileInputRef}
+                type="file"
+                accept="image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.json"
+                className="hidden"
+                onChange={event => void handleAiImagePick(event)}
+              />
+
+            <button
+              type="button"
+              onClick={() => aiFileInputRef.current?.click()}
+              disabled={!spaceId || uploadingAttachment || sending || aiAttachments.length >= 4}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700"
+              title={t.attachImage}
+              aria-label={t.attachImage}
+            >
+              {uploadingAttachment ? <Loader2 size={16} className="animate-spin" /> : <RemixIcon name="attachment-2" size={16} />}
+            </button>
+
             <button
               type="button"
               onClick={() => void generateImageDirect()}
               disabled={sending || !canChatWithAI}
-              className="ml-auto rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700"
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap h-9 rounded-lg px-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700"
               title={t.drawImage}
               aria-label={t.drawImage}
             >
-              <ImageIcon size={16} />
+              <RemixIcon name="image-line" size={16} className="shrink-0" />
+              <span className="assistant-tool-label hidden text-[0.75rem] font-medium sm:inline">{t.drawShort}</span>
             </button>
             <button
               type="button"
               onClick={() => void sendCanvasToAi()}
               disabled={!spaceId || uploadingAttachment || sending || allNotes.length === 0 || aiAttachments.length >= 4}
-              className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700"
               title={t.showCanvas}
               aria-label={t.showCanvas}
             >
-              <LayoutGrid size={16} />
+              <RemixIcon name="layout-grid-line" size={16} />
             </button>
-            <button
-              type="button"
-              onClick={() => aiFileInputRef.current?.click()}
-              disabled={!spaceId || uploadingAttachment || sending || aiAttachments.length >= 4}
-              className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700"
-              title={t.attachImage}
-              aria-label={t.attachImage}
-            >
-              {uploadingAttachment ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
+
+            <div className="assistant-primary-controls">
+                {aiLoading ? (
+                  <span className="inline-flex items-center gap-1.5 text-[0.75rem] text-gray-400"><Loader2 size={13} className="animate-spin" />Loading AI</span>
+                ) : !canChatWithAI ? (
+                  <span className="min-w-0 text-[0.75rem] leading-5 text-gray-500 dark:text-gray-400">{aiRateLimited ? t.rateLimited : t.noAi}</span>
+                ) : (
+                  <label className="assistant-model-control inline-flex min-w-0 items-center gap-1">
+                    <span className="sr-only">{t.aiModel}</span>
+                    <select
+                      value={selectedModelValue}
+                      onChange={event => {
+                        const next = decodePartnerModelValue(event.target.value);
+                        setSelectedProviderId(next.providerId);
+                        setSelectedModel(next.model);
+                      }}
+                      title={selectedPartnerTitle}
+                      className="h-8 w-full min-w-0 max-w-full truncate rounded-lg border border-transparent bg-transparent pr-1 text-[0.75rem] font-semibold text-gray-600 outline-none transition-colors hover:border-gray-200 focus-visible:border-gray-300 dark:text-gray-300 dark:hover:border-gray-600"
+                    >
+                      {partnerModelOptions.map(option => (
+                        <option key={option.value} value={option.value} title={partnerModelTitle(option.providerId, option.model, lang)}>
+                          {option.providerId === 'auto'
+                            ? (defaultPartnerOption ? `${option.label} · ${defaultPartnerOption.label === 'DeepSeek Flash' ? 'Flash' : defaultPartnerOption.label}` : option.label)
+                            : option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              <AnswerLengthSelect lang={lang === 'zh' ? 'zh' : 'en'} disabled={sending} />
+            </div>
+            <button type="button" onClick={() => setComposerMenuOpen(open => !open)}
+              aria-expanded={composerMenuOpen} aria-label={lang === 'zh' ? '对话设置' : 'Chat settings'}
+              title={lang === 'zh' ? '对话设置' : 'Chat settings'}
+              className="assistant-settings-toggle">
+              <RemixIcon name="equalizer-line" size={17} />
+              <span className="assistant-settings-label">{lang === 'zh' ? '对话设置' : 'Settings'}</span>
             </button>
             <button
               type="button"
               onClick={() => void sendAiMessage()}
               disabled={sending || (!aiInput.trim() && aiAttachments.length === 0) || !canChatWithAI}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#000080] text-white transition-all hover:bg-[#000060] active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#000080] text-white transition-all hover:bg-[#000060] active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
               aria-label={t.send}
             >
-              {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              {sending ? <Loader2 size={16} className="animate-spin" /> : <RemixIcon name="arrow-up-line" size={16} />}
             </button>
           </div>
         </div>
@@ -3926,7 +3961,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const sidePanel = showParentPanel ? parentPanel : (aiOpen ? aiPanel : null);
 
   return (
-    <div className="fixed inset-0 z-[100] flex bg-white dark:bg-gray-950 font-sans">
+    <div className="note-editor-shell fixed inset-0 z-[100] flex bg-white dark:bg-gray-950 font-sans">
       <div className="flex h-full w-full items-stretch gap-0">
       {sidePanel && isLargeScreen && (
         <div
@@ -3958,7 +3993,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
         </div>
       )}
       <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
-        <div className="flex select-none flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 px-4 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] backdrop-blur-sm">
+        <div className="note-workspace-header flex select-none flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 px-4 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] backdrop-blur-sm">
           <div className="flex shrink-0 items-center gap-2">
             <FileText size={15} className="text-[#000080]" />
             {isBuildOn && move && (
@@ -4049,7 +4084,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
         )}
 
 
-        <div className={`grid min-h-0 flex-1 grid-cols-1 bg-white dark:bg-gray-950 ${readOnlyNote ? '' : 'sm:grid-cols-[276px_minmax(0,1fr)]'}`}>
+        <div className={`grid min-h-0 flex-1 grid-cols-1 bg-white dark:bg-gray-950 ${readOnlyNote ? '' : 'sm:grid-cols-[210px_minmax(0,1fr)] xl:grid-cols-[230px_minmax(0,1fr)]'}`}>
           {/* 只读时没有东西可插，支架栏收起 */}
           <aside className={`hidden min-h-0 overflow-y-auto border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 p-3 ${readOnlyNote ? '' : 'sm:block'}`}>
             {isRiseAbove ? (
@@ -4257,7 +4292,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                 </div>
                 {renderTeacherFeedbackSection()}
                 {/* 自动反馈是给作者改自己笔记用的，别人的笔记上不显示 */}
-                <section className={`${readOnlyNote ? 'hidden ' : ''}border-t border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-4`}>
+                <section className={`${readOnlyNote ? 'hidden ' : ''}border-t border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 px-4 py-2.5 max-h-[28vh] overflow-y-auto`}>
                   <div className={`flex flex-wrap items-center justify-between gap-2 ${visibleFeedbacks.length > 0 ? 'mb-2.5' : ''}`}>
                     <div>
                       <div className="flex items-center gap-1.5 text-sm font-bold text-gray-800 dark:text-gray-200"><Sparkles size={15} className="text-amber-500" />{t.autoFeedback}</div>
@@ -4275,13 +4310,14 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                       >
                         <Sparkles size={13} />{lang === 'zh' ? '请求反馈' : 'Ask AI'}
                       </button>
-                      {feedbacks.length > 1 && (
-                        <button type="button" onClick={() => setShowFeedbackHistory(value => !value)} className="inline-flex items-center gap-1 rounded-sm border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                      {feedbacks.length > 0 && (
+                        <button type="button" onClick={() => { if (!showFeedbackHistory) setDismissedFeedbackIds(new Set()); setShowFeedbackHistory(value => !value); }} className="inline-flex items-center gap-1 rounded-sm border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                           <History size={13} />{t.history}
                         </button>
                       )}
                     </div>
                   </div>
+                  {feedbackError && <p role="status" className="mb-2 text-xs text-amber-700 dark:text-amber-300">{feedbackError}</p>}
                   {visibleFeedbacks.length > 0 && (
                     <div className="space-y-2">{visibleFeedbacks.map(renderFeedback)}</div>
                   )}
@@ -4405,7 +4441,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
           </main>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+        <div className="note-workspace-footer flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-4 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
           <div className="hidden min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex">
             <span className="shrink-0 text-xs font-semibold text-gray-600 dark:text-gray-400">{t.keywords}</span>
             {keywords.map(keyword => (

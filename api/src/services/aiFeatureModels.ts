@@ -39,6 +39,7 @@ export type AiFeatureId =
   | 'note_image'
   | 'workspace_agent'
   | 'discussion_digest'
+  | 'view_topics'
   | 'doc_ai'
   | 'riseabove_room'
   | 'turing_test'
@@ -187,6 +188,16 @@ export const AI_FEATURES: readonly AiFeatureDef[] = [
     desc: {
       zh: '助手侧栏里的「讨论速览」：按当前 View、本组或选中的笔记列出有哪些观点和问题，只列不下结论。',
       en: 'Lists the ideas and questions in a view, a group or a selection, without drawing conclusions.',
+    },
+  },
+  {
+    id: 'view_topics', group: 'space', who: 'both', kind: 'chat', dmxTier: 'fast',
+    realtime: false, selectable: true, failover: true, preferFastModel: true,
+    order: REALTIME_PROVIDER_ORDER,
+    label: { zh: '画布顶上的讨论主题', en: 'Discussion topics above the canvas' },
+    desc: {
+      zh: '画布顶部问题后面滚动显示的「这个视图在聊什么」：按视图里的笔记总结 3 到 6 个主题，笔记有变化时最快 3 分钟更新一次。只写在讨论什么，不下结论。',
+      en: 'The rolling topics after the question above the canvas: 3 to 6 topics from the notes in the view, refreshed at most every 3 minutes as notes change. It says what is being discussed and draws no conclusions.',
     },
   },
   {

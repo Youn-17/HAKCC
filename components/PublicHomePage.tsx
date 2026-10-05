@@ -2008,26 +2008,6 @@ export default function PublicHomePage() {
           html { scroll-behavior: smooth; }
         }
 
-        /* Custom scrollbar for webkit browsers */
-        ::-webkit-scrollbar {
-          width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: rgba(156, 163, 175, 0.5);
-          border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgba(156, 163, 175, 0.7);
-        }
-        .dark ::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.2);
-        }
-        .dark ::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.3);
-        }
       `}</style>
 
       <div className="min-h-screen font-dm bg-white dark:bg-[#05064D] text-gray-900 dark:text-white">

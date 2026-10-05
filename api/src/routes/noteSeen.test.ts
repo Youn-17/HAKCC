@@ -51,6 +51,7 @@ const h = vi.hoisted(() => {
   const state = {
     user: { id: 'student-b', role: 'student' } as { id: string; role: string },
     failViews: false,
+    legacyRevisionTime: false,
   };
 
   const from = (table: string) => {
@@ -65,10 +66,12 @@ const h = vi.hoisted(() => {
       if (table === 'spaces' && columns.includes('courses')) {
         out.courses = { instructor_id: db.courses.find(c => c.id === r.course_id)?.instructor_id ?? null };
       }
+      if (table === 'note_revisions' && columns.includes('edited_at:created_at')) out.edited_at = r.created_at;
       return out;
     };
     const execute = (): { data: Row[] | null; error: { message: string } | null } => {
       if (table === 'note_views' && state.failViews) return { data: null, error: { message: 'relation does not exist' } };
+      if (table === 'note_revisions' && state.legacyRevisionTime && columns.includes(' edited_at, ')) return { data: null, error: { message: 'column note_revisions.edited_at does not exist' } };
       if (op === 'upsert') {
         const existing = rows().find(r => r.note_id === upsertRow.note_id && r.viewer_id === upsertRow.viewer_id);
         if (existing && !ignoreDuplicates) Object.assign(existing, upsertRow);
@@ -94,7 +97,7 @@ const h = vi.hoisted(() => {
         return builder;
       },
       is: (col: string, value: unknown) => { filters.push(r => (r[col] ?? null) === value); return builder; },
-      in: (col: string, values: unknown[]) => { filters.push(r => values.includes(r[col])); return builder; },
+      in: (col: string, values: unknown[]) => { filters.push(r => values.includes(col.startsWith('notes.') ? db.notes.find(n => n.id === r.note_id)?.[col.slice(6)] : r[col])); return builder; },
       order: () => builder,
       range: () => builder,
       limit: () => builder,
@@ -117,6 +120,7 @@ const h = vi.hoisted(() => {
     Object.assign(db, seed());
     state.user = { id: 'student-b', role: 'student' };
     state.failViews = false;
+    state.legacyRevisionTime = false;
   };
 
   return { db, state, from, reset };
@@ -170,6 +174,59 @@ beforeEach(() => {
 const as = (id: string, role = 'student') => { h.state.user = { id, role }; };
 const markSeen = (id: string) => fetch(`${base}/notes/${id}/seen`, { method: 'POST' });
 const viewsOf = (noteId: string) => h.db.note_views.filter(r => r.note_id === noteId);
+
+describe('knowledge progression endpoint', () => {
+  it('preserves group isolation before reading history', async () => {
+    as('student-b');
+    const response=await fetch(`${base}/spaces/space-a/timeline`);
+    expect(response.status).toBe(403);
+  });
+  it('aggregates only enterable course spaces and keeps research controls course scoped', async () => {
+    h.db.notes.push({id:'private-a',space_id:'space-a',author_id:'student-a',title:'仅组内',content:'',created_at:'2026-09-29T00:00:00Z',deleted_at:null});
+    as('student-b');
+    const student=await (await fetch(`${base}/spaces/space-shared/timeline?scope=course`)).json();
+    expect(student.context.spaces.map((s:{id:string})=>s.id)).toEqual(['space-shared']);
+    expect(student.structure.notes.some((n:{id:string})=>n.id==='private-a')).toBe(false);
+    expect(student.context.canExport).toBe(false);
+    as('student-b','teacher');
+    const participant=await (await fetch(`${base}/spaces/space-shared/timeline?scope=course`)).json();
+    expect(participant.context.canExport).toBe(false);
+    expect(participant.structure.notes.some((n:{id:string})=>n.id==='private-a')).toBe(false);
+    as('owner-1','teacher');
+    const staff=await (await fetch(`${base}/spaces/space-shared/timeline?scope=course`)).json();
+    expect(staff.structure.notes.find((n:{id:string})=>n.id==='private-a')).toMatchObject({spaceId:'space-a',groupId:'group-a'});
+    expect(staff.context.canExport).toBe(true);
+    expect(staff.context.participants.find((p:{id:string})=>p.id==='student-a').code).toMatch(/^P-/);
+    expect((await fetch(`${base}/spaces/space-shared/timeline?scope=all`)).status).toBe(400);
+  });
+  it('includes real saved revisions and only own private AI activity', async () => {
+    as('student-b');
+    const note=h.db.notes.find(n=>n.id==='note-new')!;
+    note.content='<p>加入证据后的解释</p>';
+    h.db.note_revisions=[{id:'revision-1',note_id:'note-new',title:'原先的观点',content:'<p>原先的解释</p>',editor_id:'student-a',revision_number:1,edited_at:'2026-09-29T10:00:00Z'}];
+    h.db.note_ai_feedbacks=[
+      {id:'mine',note_id:'note-new',space_id:'space-shared',user_id:'student-b',created_at:'2026-09-29T11:00:00Z'},
+      {id:'private-peer',note_id:'note-new',space_id:'space-shared',user_id:'student-a',created_at:'2026-09-29T11:00:00Z'},
+    ];
+    const response=await fetch(`${base}/spaces/space-shared/timeline`);
+    expect(response.status).toBe(200);
+    const history=await response.json();
+    expect(history.items.find((i:{id:string})=>i.id==='revision:revision-1')).toMatchObject({kind:'revision',at:'2026-09-29T10:00:00Z',beforeExcerpt:'原先的解释',excerpt:'加入证据后的解释'});
+    expect(history.items.filter((i:{kind:string})=>i.kind==='ai_feedback').map((i:{id:string})=>i.id)).toEqual(['fb:mine']);
+    expect(history.structure.notes.some((n:{id:string})=>n.id==='note-deleted')).toBe(false);
+    expect(history.coverage).toMatchObject({truncated:false,privateAiScope:'self'});
+  });
+  it('returns real revision timestamps with the legacy production schema', async () => {
+    as('student-b');
+    h.state.legacyRevisionTime = true;
+    h.db.note_revisions = [{id:'legacy-1',note_id:'note-new',title:'原先的观点',content:'<p>最初解释</p>',editor_id:'student-a',revision_number:1,created_at:'2026-09-29T10:00:00Z'}];
+    const response = await fetch(`${base}/spaces/space-shared/timeline?scope=course`);
+    expect(response.status).toBe(200);
+    const history = await response.json();
+    expect(history.items.find((i:{id:string})=>i.id==='revision:legacy-1')).toMatchObject({at:'2026-09-29T10:00:00Z',actorId:'student-a',beforeExcerpt:'最初解释'});
+    expect(history.coverage.revisionTimestampField).toBe('created_at');
+  });
+});
 const listNotes = async (spaceId = 'space-shared') => {
   const res = await fetch(`${base}/spaces/${spaceId}/notes`);
   expect(res.status).toBe(200);

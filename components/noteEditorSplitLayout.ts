@@ -1,8 +1,8 @@
 export const NOTE_AI_SPLIT_LAYOUT = {
-  defaultAiWidth: 560,
-  minAiWidth: 420,
-  maxAiWidth: 760,
-  minNoteWidth: 620,
+  defaultAiWidth: 390,
+  minAiWidth: 320,
+  maxAiWidth: 680,
+  minNoteWidth: 650,
   viewportPadding: 16,
   dividerWidth: 8,
 } as const;

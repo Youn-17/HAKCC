@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import RemixIcon from '../RemixIcon';
 import { courses as coursesApi } from '../../services/apiClient';
 import HelpChat from './HelpChat';
+import HelpInbox from './HelpInbox';
 import type { HelpPageContext } from './helpContext';
 import {
   pickCourse,
@@ -29,31 +30,57 @@ export interface HelpPanelProps {
   onMinimize: () => void;
   /** 在这门课的窗口里看过了：小球上的「老师回复」提示据此清掉 */
   onSeen: (courseId: string) => void;
+  /** 教师、管理员：多一个「学生求助」页签，问 AI 时按含教师端的手册答 */
+  staff?: boolean;
+  /** 等回复的求助有几条（页签上显示） */
+  inboxCount?: number;
+  /** 回复了一条，小球上的数要重查 */
+  onInboxChanged?: () => void;
+  /** 去首页的「学生求助」页 */
+  onOpenDesk?: () => void;
 }
 
 const COPY = {
   zh: {
     title: '使用帮助',
     hint: '平台操作问题，按使用手册回答',
+    staffHint: '学生的求助，和你自己的平台操作问题',
+    tabs: '使用帮助的两个页签',
+    inboxTab: (n: number) => (n > 0 ? `学生求助 · ${n}` : '学生求助'),
+    askTab: '问 AI',
     minimize: '收起使用帮助',
     course: '提问的课程',
     noCourse: '加入课程以后就能在这里提问。在首页侧栏「发现课程」里输入老师给的验证码加入。',
+    staffNoCourse: '有了课程以后就能在这里问 AI：回答用课程里配置的 AI。在「我的课程」里新建一门。',
     loadFailed: '课程列表没能加载，稍后再试。',
   },
   en: {
     title: 'Help',
     hint: 'How-to questions, answered from the user manual',
+    staffHint: 'Student help requests, and your own how-to questions',
+    tabs: 'Help sections',
+    inboxTab: (n: number) => (n > 0 ? `Student help · ${n}` : 'Student help'),
+    askTab: 'Ask the AI',
     minimize: 'Minimise help',
     course: 'Course',
     noCourse: 'Join a course first, then ask here. Use Discover in the home sidebar with the code your teacher gave you.',
+    staffNoCourse: 'Once you have a course you can ask the AI here; it answers with the AI configured for that course. Create one under My courses.',
     loadFailed: 'Could not load your courses. Try again later.',
   },
 };
 
 const HelpPanel: React.FC<HelpPanelProps> = ({
   open, lang, compact, routeCourseId, surface, page, liftAboveFooter, onMinimize, onSeen,
+  staff = false, inboxCount = 0, onInboxChanged, onOpenDesk,
 }) => {
   const t = COPY[lang];
+  const [tab, setTab] = useState<'inbox' | 'ask'>('ask');
+  const pickedTab = useRef(false);
+  // 有等回复的，打开时先落在「学生求助」；自己点过页签就按自己的来
+  useEffect(() => {
+    if (staff && open && !pickedTab.current && inboxCount > 0) setTab('inbox');
+  }, [staff, open, inboxCount]);
+  const showInbox = staff && tab === 'inbox';
   const [courses, setCourses] = useState<Array<{ id: string; title: string }> | null>(null);
   const [coursesFailed, setCoursesFailed] = useState(false);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -96,7 +123,7 @@ const HelpPanel: React.FC<HelpPanelProps> = ({
   const pageContext = useMemo<Record<string, unknown>>(() => {
     const samePage = !page.courseId || page.courseId === courseId;
     return {
-      role: 'student',
+      role: staff ? 'teacher' : 'student',
       courseId,
       surface,
       spaceId: samePage ? page.spaceId ?? null : null,
@@ -106,7 +133,7 @@ const HelpPanel: React.FC<HelpPanelProps> = ({
       // 研究导出的「提问时面板」读的是 panel.activeTab
       panel: { activeTab: surface, entry: 'help-widget' },
     };
-  }, [courseId, surface, page]);
+  }, [courseId, surface, page, staff]);
 
   const showPicker = !routeCourseId && (courses?.length ?? 0) > 1;
 
@@ -141,7 +168,7 @@ const HelpPanel: React.FC<HelpPanelProps> = ({
           </span>
           <div className="min-w-0 flex-1">
             <h2 id="help-widget-title" className="text-[0.9375rem] font-bold leading-tight tracking-tight">{t.title}</h2>
-            <p className="mt-0.5 truncate text-[0.75rem] text-zinc-500 dark:text-gray-400">{t.hint}</p>
+            <p className="mt-0.5 truncate text-[0.75rem] text-zinc-500 dark:text-gray-400">{staff ? t.staffHint : t.hint}</p>
           </div>
           <button
             type="button"
@@ -154,6 +181,51 @@ const HelpPanel: React.FC<HelpPanelProps> = ({
           </button>
         </header>
 
+        {staff && (
+          <div role="tablist" aria-label={t.tabs} className="flex shrink-0 gap-1 border-b border-zinc-200 px-3 py-2 dark:border-gray-800">
+            {(['inbox', 'ask'] as const).map(id => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`help-tab-${id}`}
+                aria-selected={tab === id}
+                aria-controls={`help-panel-${id}`}
+                onClick={() => { pickedTab.current = true; setTab(id); }}
+                className={`h-10 flex-1 rounded-lg text-[0.8125rem] font-semibold transition-colors duration-200 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000080] sm:h-9 ${tab === id
+                  ? 'bg-[#000080] text-white dark:bg-[#4169E1]'
+                  : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}
+              >
+                {id === 'inbox' ? t.inboxTab(inboxCount) : t.askTab}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {staff && (
+          <div
+            id="help-panel-inbox"
+            role="tabpanel"
+            aria-labelledby="help-tab-inbox"
+            hidden={!showInbox}
+            className={showInbox ? 'flex min-h-0 flex-1 flex-col' : undefined}
+          >
+            <HelpInbox
+              lang={lang}
+              active={open && showInbox}
+              onChanged={() => onInboxChanged?.()}
+              onOpenDesk={() => onOpenDesk?.()}
+            />
+          </div>
+        )}
+
+        <div
+          id={staff ? 'help-panel-ask' : undefined}
+          role={staff ? 'tabpanel' : undefined}
+          aria-labelledby={staff ? 'help-tab-ask' : undefined}
+          hidden={showInbox}
+          className={showInbox ? undefined : 'flex min-h-0 flex-1 flex-col'}
+        >
         {showPicker && (
           <div className="flex shrink-0 items-center gap-3 border-b border-zinc-100 px-4 py-2 dark:border-gray-800">
             <label htmlFor="help-widget-course" className="shrink-0 text-[0.75rem] text-zinc-500 dark:text-gray-400">{t.course}</label>
@@ -178,7 +250,8 @@ const HelpPanel: React.FC<HelpPanelProps> = ({
             spaceId={(pageContext.spaceId as string | null) ?? null}
             pageContext={pageContext}
             refreshKey={refreshKey}
-            autoFocus={open && !compact}
+            autoFocus={open && !compact && !showInbox}
+            asker={staff ? 'teacher' : 'student'}
           />
         ) : courses === null ? (
           <div aria-hidden="true" className="flex-1 space-y-3 bg-zinc-50 p-4 dark:bg-gray-950">
@@ -189,10 +262,11 @@ const HelpPanel: React.FC<HelpPanelProps> = ({
           <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-zinc-50 p-8 text-center dark:bg-gray-950">
             <RemixIcon name="book-open-line" size={28} className="text-zinc-300 dark:text-gray-600" />
             <p className="max-w-[18rem] text-sm leading-relaxed text-zinc-500 dark:text-gray-400">
-              {coursesFailed ? t.loadFailed : t.noCourse}
+              {coursesFailed ? t.loadFailed : staff ? t.staffNoCourse : t.noCourse}
             </p>
           </div>
         )}
+        </div>
       </section>
     </div>
   );

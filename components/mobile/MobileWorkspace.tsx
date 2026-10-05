@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import MobileTabBar, { type MobileTab } from './MobileTabBar';
 import MobileNotesList from './MobileNotesList';
@@ -10,7 +10,7 @@ import RemixIcon from '../RemixIcon';
 import { useReportHelpContext } from '../help/helpContext';
 import { useSpaceData, apiNoteToNote } from '../../hooks/useSpaceData';
 import { useAuth } from '../../contexts/AuthContext';
-import { courses as coursesApi, notes as notesApi, relations as relationsApi, scaffolds as scaffoldsApi, trackEvent, workspaceAgent as workspaceAgentApi } from '../../services/apiClient';
+import { courses as coursesApi, notes as notesApi, noteAiFeedback, relations as relationsApi, scaffolds as scaffoldsApi, trackEvent, workspaceAgent as workspaceAgentApi } from '../../services/apiClient';
 import type { RelationType, Space } from '../../services/apiClient';
 import { apiRelationToEdge } from '../../hooks/useSpaceData';
 import { placeNewNote } from '../notePlacement';
@@ -22,6 +22,8 @@ interface MobileWorkspaceProps {
   lang: Language;
   setLang: (lang: Language) => void;
 }
+const BuildOnNetwork = lazy(() => import('../BuildOnNetwork'));
+const SpaceTimeline = lazy(() => import('../SpaceTimeline'));
 
 const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLang }) => {
   const params = useParams<{ courseId: string }>();
@@ -32,6 +34,9 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
   const courseTitle = (location.state as any)?.courseTitle || '';
 
   const [activeTab, setActiveTab] = useState<MobileTab>('notes');
+  const [explorerFocus,setExplorerFocus]=useState<string|null>(null);
+  const [explorerSpace,setExplorerSpace]=useState<string|null>(null);
+  const [explorerMode, setExplorerMode] = useState<'map' | 'timeline' | null>(null);
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [currentSpace, setCurrentSpace] = useState<Space | null>(null);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
@@ -193,6 +198,14 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
 
   const handleNoteSave = useCallback(async (title: string, content: string) => {
     if (!spaceId) return;
+    const reviewFeedback = async (id: string) => {
+      try {
+        const result = await noteAiFeedback.finalize(id);
+        if (result.outcomes.some(row => row.publishedNoteId)) refetchSpace();
+      } catch {
+        window.alert(lang === 'zh' ? '笔记已保存，反馈发布判断暂未完成；下次贡献时会重试。' : 'Note saved. Feedback review is pending and will retry on your next contribution.');
+      }
+    };
     if (buildOn) {
       // 问 AI 时草稿已经落过库（或正在落）：那时的正文是旧的，建好后还要再存一次
       const persistedEarlier = Boolean(buildOnNoteId || buildOnPersistRef.current);
@@ -201,8 +214,12 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
       if (persistedEarlier) {
         try {
           await notesApi.update(id, { title, content });
+          await reviewFeedback(id);
           setNotes(prev => prev.map(n => n.id === id ? { ...n, title, content } : n));
-        } catch {}
+        } catch {
+          window.alert(lang === 'zh' ? '笔记保存失败，请重试。' : 'Note could not be saved. Please try again.');
+          return;
+        }
       }
       handleNoteClose();
       return;
@@ -210,11 +227,15 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
     if (!editingNote) return;
     try {
       await notesApi.update(editingNote.id, { title, content });
+      if (editingNote.authorId === user?.id) await reviewFeedback(editingNote.id);
       setNotes(prev => prev.map(n => n.id === editingNote.id ? { ...n, title, content } : n));
-    } catch {}
+    } catch {
+      window.alert(lang === 'zh' ? '笔记保存失败，请重试。' : 'Note could not be saved. Please try again.');
+      return;
+    }
     setEditingNote(null);
     setIsCreatingNew(false);
-  }, [editingNote, spaceId, setNotes, buildOn, buildOnNoteId, persistBuildOn, handleNoteClose]);
+  }, [editingNote, spaceId, setNotes, buildOn, buildOnNoteId, persistBuildOn, handleNoteClose, user?.id, refetchSpace, lang]);
 
   const handleExitCourse = useCallback(() => {
     navigate('/dashboard');
@@ -232,6 +253,14 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
       </div>
     );
   }
+
+  const openTimelineNote=async(id:string,targetSpace?:string)=>{
+    try {
+      const {note}=await notesApi.get(id);
+      if(targetSpace&&targetSpace!==spaceId&&courseId){const {spaces}=await coursesApi.listSpaces(courseId);const target=spaces.find(s=>s.id===targetSpace);if(!target)throw new Error('Space unavailable');setCurrentSpace(target);setSpaceId(targetSpace);}
+      setExplorerMode(null);setExplorerFocus(null);setExplorerSpace(null);setEditingNote(apiNoteToNote(note,user?.name));
+    }catch{window.alert(lang==='zh'?'暂时无法打开这条 Note，请重试。':'Could not open this Note. Please retry.');}
+  };
 
   return (
     <div className="flex flex-col h-[100dvh] bg-gray-50">
@@ -265,7 +294,9 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
           />
         )}
         {activeTab === 'agent' && (
-          <div className="h-full">
+          // 底部标签栏是 fixed 的，不占 main 的高度；其他几个页签都自己留了 pb-20。
+          // AI 页没留，输入框和发送按钮整个压在标签栏底下，手机上点不到
+          <div className="h-full pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))]">
             <WorkspaceAgentPanel
               isOpen={true}
               onClose={() => setActiveTab('notes')}
@@ -274,6 +305,7 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
               userRole={userRole}
               lang={lang}
               aiConfigs={wsAgentConfigs}
+              spaceNotes={notes.filter(note => note.type !== 'attachment' && note.type !== 'drawing').map(note => ({ id: note.id, title: note.title, author: note.author }))}
               embedded
             />
           </div>
@@ -283,8 +315,8 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
             lang={lang}
             courseTitle={courseTitle}
             noteCount={notes.length}
-            onOpenMap={() => {}}
-            onOpenTimeline={() => {}}
+            onOpenMap={() => {setExplorerFocus(null);setExplorerSpace(null);setExplorerMode('map');}}
+            onOpenTimeline={() => {setExplorerFocus(null);setExplorerSpace(null);setExplorerMode('timeline');}}
             onOpenGroups={() => {}}
             onOpenMembers={() => {}}
           />
@@ -331,6 +363,10 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
       )}
 
       <MobileTabBar active={activeTab} onChange={setActiveTab} lang={lang} />
+      {explorerMode && spaceId && <Suspense fallback={<div className="fixed inset-0 z-[130] grid place-items-center bg-white dark:bg-gray-950">{lang === 'zh' ? '正在打开…' : 'Opening…'}</div>}>
+        {explorerMode==='map'?<BuildOnNetwork spaceId={explorerSpace??spaceId} notes={notes} edges={edges} currentUserId={user?.id} lang={lang==='zh'?'zh':'en'} initialNoteId={explorerFocus} onClose={()=>{setExplorerMode(null);setExplorerFocus(null);setExplorerSpace(null);}} onShowTimeline={id=>{setExplorerFocus(id);setExplorerMode('timeline');}} onLocateNote={id=>openTimelineNote(id,explorerSpace??spaceId)}/>:<SpaceTimeline spaceId={spaceId} currentUserId={user?.id} lang={lang==='zh'?'zh':'en'} initialNoteId={explorerFocus} onClose={()=>{setExplorerMode(null);setExplorerFocus(null);}} onShowNetwork={(id,sid)=>{setExplorerSpace(sid??spaceId);setExplorerFocus(id);setExplorerMode('map');}} onLocateNote={openTimelineNote}/>}
+
+      </Suspense>}
     </div>
   );
 };

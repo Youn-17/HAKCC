@@ -1,3 +1,4 @@
+import { getCourseMemberCounts } from '../services/courseMemberCounts';
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT, requireRole } from '../middleware/auth';
@@ -284,14 +285,15 @@ router.get('/courses/:courseId/stats', verifyJWT, async (req: Request, res: Resp
   await ensureCourseMember(String(courseId), req.user!);
 
   const [
-    { count: studentCount },
+    memberCounts,
     { count: spaceCount },
     noteCountResult,
   ] = await Promise.all([
-    supabase
-      .from('course_members')
-      .select('user_id', { count: 'exact', head: true })
-      .eq('course_id', courseId),
+    supabase.from('courses').select('id, instructor_id').eq('id', courseId).single()
+      .then(({ data, error }) => {
+        if (error || !data) throw new ApiError(500, 'Could not read course membership');
+        return getCourseMemberCounts([data]);
+      }),
     supabase
       .from('spaces')
       .select('id', { count: 'exact', head: true })
@@ -314,7 +316,8 @@ router.get('/courses/:courseId/stats', verifyJWT, async (req: Request, res: Resp
   ]);
 
   res.json({
-    studentCount: studentCount ?? 0,
+    studentCount: memberCounts.get(String(courseId))?.studentCount ?? 0,
+    teacherCount: memberCounts.get(String(courseId))?.teacherCount ?? 1,
     spaceCount: spaceCount ?? 0,
     noteCount: noteCountResult.count ?? 0,
   });

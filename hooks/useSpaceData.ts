@@ -46,6 +46,7 @@ export function apiNoteToNote(apiNote: ApiNote, authorName?: string): Note {
     author: resolvedAuthor,
     authorId: raw.author_id,
     authorAvatar: resolvedAvatar,
+    isAiGenerated: Boolean(raw.is_ai_generated),
     date: new Date(raw.created_at).toLocaleString(),
     createdAt: raw.created_at,
     x: raw.x,

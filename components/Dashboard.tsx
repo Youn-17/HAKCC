@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { UserRole, Course, Language } from '../types';
 import {
   Search, Bell, ChevronDown, BookOpen, Users, FileText, Plus, X,
@@ -286,7 +286,7 @@ const CourseCard: React.FC<{ course: Course; role: UserRole; onClick: () => void
         <div>
           {showStats ? (
             <div className="flex items-center gap-3 text-[0.6875rem] mb-1.5 text-gray-500 dark:text-gray-400">
-              <span className="flex items-center gap-1"><RemixIcon name="team-line" size={12} /> {course.studentCount}</span>
+              <span className="flex items-center gap-1"><RemixIcon name="user-star-line" size={12} /> {course.teacherCount ?? 1} {lang === 'zh' ? '教师' : 'teachers'} · {course.studentCount} {lang === 'zh' ? '学生' : 'students'}</span>
               <span className="flex items-center gap-1"><RemixIcon name="file-list-3-line" size={12} /> {course.noteCount}</span>
             </div>
           ) : (
@@ -780,6 +780,8 @@ export const TriggerSettingsPanel: React.FC<{ lang: Language; courseId: string; 
     title: 'AI 触发设置',
     desc: '控制学生写笔记时 AI 自动反馈的行为。',
     autoFeedback: '自动反馈（编辑时）',
+    viewTopics: '画布顶上滚动显示讨论主题',
+    viewTopicsHint: '问题后面滚动显示这个视图在讨论哪几个主题，由 AI 按笔记总结，笔记有变化时最快 3 分钟更新一次。实验的对照组看不到。',
     enabledTriggers: '启用的触发类型',
     cooldown: '冷却时间（秒）',
     sensitivity: '灵敏度',
@@ -799,6 +801,8 @@ export const TriggerSettingsPanel: React.FC<{ lang: Language; courseId: string; 
     title: 'AI Trigger Settings',
     desc: 'Control how the AI gives automatic feedback while students write.',
     autoFeedback: 'Auto-feedback (while editing)',
+    viewTopics: 'Rolling discussion topics above the canvas',
+    viewTopicsHint: 'After the question, the topics being discussed in the view roll past, summarised by the AI from the notes and refreshed at most every 3 minutes as notes change. The control group does not see them.',
     enabledTriggers: 'Enabled trigger types',
     cooldown: 'Cooldown (seconds)',
     sensitivity: 'Sensitivity',
@@ -854,6 +858,22 @@ export const TriggerSettingsPanel: React.FC<{ lang: Language; courseId: string; 
               className="text-stone-600 transition-colors hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
             >
               {settings.auto_feedback_enabled ? <ToggleRight size={28} className="text-emerald-500"/> : <ToggleLeft size={28}/>}
+            </button>
+          </div>
+
+          {/* Toggle: rolling discussion topics above the canvas */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <span className="text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.viewTopics}</span>
+              <p className="mt-0.5 text-xs leading-relaxed text-stone-500 dark:text-stone-400">{lbl.viewTopicsHint}</p>
+            </div>
+            <button
+              onClick={() => save({ view_topics_enabled: settings.view_topics_enabled === false })}
+              aria-pressed={settings.view_topics_enabled !== false}
+              aria-label={lbl.viewTopics}
+              className="shrink-0 text-stone-600 transition-colors hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
+            >
+              {settings.view_topics_enabled !== false ? <ToggleRight size={28} className="text-emerald-500"/> : <ToggleLeft size={28}/>}
             </button>
           </div>
 
@@ -1595,6 +1615,7 @@ function mapApiCourse(c: ApiCourse & { users?: { name: string }; profiles?: { fu
     instructor: instructorName,
     instructor_id: c.instructor_id ?? (c as unknown as Record<string, string>)['teacher_id'],
     studentCount: 0,
+    teacherCount: 1,
     noteCount: 0,
     progress: 0,
     tags: c.tags ?? [],
@@ -1619,6 +1640,7 @@ function mapDashboardCourse(c: DashboardCourseSummary): Course {
     instructor: cleanInstructorName(c.instructorName) ?? DEFAULT_INSTRUCTOR_NAME,
     instructor_id: c.instructorId,
     studentCount: c.studentCount,
+    teacherCount: c.teacherCount,
     noteCount: c.noteCount,
     progress: 0,
     tags: c.tags ?? [],
@@ -1672,6 +1694,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
   const [searchQuery, setSearchQuery] = useState('');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTabId | 'profile'>('overview');
+  // 使用帮助小球里点「打开学生求助页」：从任何页面回到首页，直接落在这一栏
+  const location = useLocation();
+  useEffect(() => {
+    const target = (location.state as { dashboardTab?: string } | null)?.dashboardTab;
+    if (target === 'student-help' && (currentRole === 'teacher' || currentRole === 'admin')) setActiveTab('student-help');
+  }, [location.state, currentRole]);
   // 概览三张图的真实数据。以前用的是组件里写死的默认值，谁看都一样。
   const { pulse, loading: pulseLoading } = useActivityPulse();
   const [lang3, setLang3] = useState<Lang3>(() => readPublicLanguage());
@@ -2028,6 +2056,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
       id: course.id,
       title: course.title,
       studentCount: course.studentCount,
+      teacherCount: course.teacherCount,
       noteCount: course.noteCount,
       hasAi: course.hasAi,
       unreadFeedbackCount: course.unreadFeedbackCount,
@@ -2049,6 +2078,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
       instructor: course.instructor,
       createDate: course.createDate,
       studentCount: course.studentCount,
+      teacherCount: course.teacherCount,
       noteCount: course.noteCount,
       progress: course.progress,
       tags: course.tags,
@@ -2768,7 +2798,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
                       titleClassName="text-base font-semibold text-stone-900 dark:text-stone-100"
                     />
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-stone-500 dark:text-stone-400">
-                      <span className="flex items-center gap-1.5"><Users size={12} className="text-stone-600 dark:text-stone-300" /> {course.studentCount}</span>
+                      <span className="flex items-center gap-1.5"><Users size={12} className="text-stone-600 dark:text-stone-300" /> {course.teacherCount ?? 1} {lang === 'zh' ? '教师' : 'teachers'} · {course.studentCount} {lang === 'zh' ? '学生' : 'students'}</span>
                       <span className="flex items-center gap-1.5"><FileText size={12} className="text-amber-700 dark:text-amber-300" /> {course.noteCount}</span>
                       <span className="flex items-center gap-1.5"><Clock size={12} /> {course.createDate}</span>
                       {course.verification_code && (
@@ -3098,7 +3128,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
                       </td>
                       <td className="px-4 py-3">
                         <div className="space-y-1.5">
-                          <div className="flex items-center gap-2 text-xs font-medium text-stone-500 dark:text-stone-400"><Users size={12} className="text-stone-400 dark:text-stone-500" /> {course.student_count} {lang === 'zh' ? '学生' : 'students'}</div>
+                          <div className="flex items-center gap-2 text-xs font-medium text-stone-500 dark:text-stone-400"><Users size={12} className="text-stone-400 dark:text-stone-500" /> {course.teacher_count ?? 1} {lang === 'zh' ? '教师' : 'teachers'} · {course.student_count} {lang === 'zh' ? '学生' : 'students'}</div>
                           <div className="flex items-center gap-2 text-xs font-medium text-stone-500 dark:text-stone-400"><CheckCircle size={12} className="text-amber-600 dark:text-amber-300" /> {course.note_count} {lang === 'zh' ? '笔记' : 'notes'}</div>
                         </div>
                       </td>

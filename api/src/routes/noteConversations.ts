@@ -34,7 +34,10 @@ import {
   shouldUseWebEvidenceForAgentMode,
   type ConversationAgentMode,
 } from '../services/noteAgentCatalog';
-import { runAgentLoopStream, type AgentStreamEvent } from '../services/agentLoop';
+import { CONTINUE_PROMPT, MAX_CONTINUATIONS, runAgentLoopStream, type AgentStreamEvent } from '../services/agentLoop';
+import { lengthInstruction, lengthPlanMetadata, parseAnswerLength, planAnswerLength, thinkingLikely } from '../services/answerLength';
+import { summarizeToolResult } from '../services/toolResultSummary';
+import { detectQuestionLanguage } from '../services/finalAnswer';
 import { buildAgentContext, updateProfileAfterInteraction } from '../services/agentContext';
 import { createDefaultRegistry } from '../services/agentTools';
 import { embedNote } from '../services/embeddingService';
@@ -792,7 +795,8 @@ router.post('/note-conversations/:threadId/ai', verifyJWT, async (req: Request, 
 
 router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Request, res: Response) => {
   const { thread } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
-  const { content, provider_id, model, scaffold_id, scaffold_step_id, attachments = [], use_web_search = false, agent_mode } = req.body as {
+  const turnStartedAt = Date.now();
+  const { content, provider_id, model, scaffold_id, scaffold_step_id, attachments = [], use_web_search = false, agent_mode, answer_length } = req.body as {
     content?: string;
     provider_id?: string;
     model?: string;
@@ -801,6 +805,7 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
     attachments?: Attachment[];
     use_web_search?: boolean;
     agent_mode?: unknown;
+    answer_length?: unknown;
   };
   if (!content?.trim()) throw new ApiError(400, 'content is required');
   if (!provider_id || !model) throw new ApiError(400, 'provider_id and model are required');
@@ -812,6 +817,10 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
   const partner = await resolvePartnerModel(thread.course_id, provider_id, model);
   const resolvedProviderId = partner.providerId;
   const resolvedModel = partner.model;
+  // 回答写多长：学生选的档位 + 问题深浅（Jev），和下面读笔记、检索同时进行
+  const lengthPlanPromise = planAnswerLength(content.trim(), parseAnswerLength(answer_length), {
+    thinking: thinkingLikely(resolvedProviderId, resolvedModel),
+  });
 
   const { data: userMessage, error: userMessageError } = await supabase
     .from('note_conversation_messages')
@@ -906,20 +915,31 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
   const historyWithDocs = appendAttachmentContext(history, attachments);
   let toolPreparation: ConversationToolPreparation = { messages: historyWithDocs, toolCalls: [] };
   const toolsUsed = new Set<string>();
+  // 这一轮做了哪几步，存进回答里：回看时也能看到「用了几步」（AgentProcess）
+  const toolSteps: Array<{ name: string; summary?: string; ms?: number }> = [];
   const keepaliveTimer = setInterval(() => {
     try { res.write(': keepalive\n\n'); } catch {}
   }, 15_000);
   try {
     if (shouldUseWebSearch) {
       res.write(`data: ${JSON.stringify({ toolStatus: 'running', toolNames: ['tavily_search'] })}\n\n`);
+      const searchStarted = Date.now();
       const webResults = await getCourseTavilyResults(thread.course_id, content, 3).catch(() => []);
       if (webResults.length > 0) {
         toolsUsed.add('tavily_search');
         systemContent = [...baseSystemSections, formatTavilyResultsForPrompt(webResults)].join('\n\n');
       }
+      const zhQuestion = detectQuestionLanguage(content) === 'zh';
+      const searchSummary = webResults.length > 0
+        ? (zhQuestion ? `找到 ${webResults.length} 条网页结果` : `${webResults.length} web results`)
+        : (zhQuestion ? '没有找到网页结果' : 'no web results');
+      toolSteps.push({ name: 'tavily_search', summary: searchSummary, ms: Date.now() - searchStarted });
       res.write(`data: ${JSON.stringify({
         toolStatus: 'used',
+        toolName: 'tavily_search',
         toolNames: webResults.length > 0 ? Array.from(toolsUsed) : [],
+        toolSummary: searchSummary,
+        toolDurationMs: Date.now() - searchStarted,
       })}\n\n`);
     }
 
@@ -927,6 +947,7 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
     const needsTools = !freeAsk && (shouldPrepareToolsForAgentMode(normalizedAgentMode) || shouldPrepareConversationTools(content));
     if (needsTools && resolvedProviderId !== 'anthropic' && resolvedProviderId !== 'google') {
       res.write(`data: ${JSON.stringify({ toolStatus: 'running' })}\n\n`);
+      const prepareStarted = Date.now();
       toolPreparation = await prepareToolMessages({
         providerId: resolvedProviderId,
         model: resolvedModel,
@@ -936,32 +957,38 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
         endpointUrl: config.endpoint_url ?? null,
         note,
       });
-      if (toolPreparation.toolCalls.length > 0) {
-        toolPreparation.toolCalls.forEach(tool => toolsUsed.add(tool.name));
-        res.write(`data: ${JSON.stringify({
-          toolStatus: 'used',
-          toolNames: Array.from(toolsUsed),
-        })}\n\n`);
-      }
+      const prepared = toolPreparation.toolCalls.map(tool => tool.name);
+      prepared.forEach(name => toolsUsed.add(name));
+      const prepareMs = Date.now() - prepareStarted;
+      prepared.forEach(name => toolSteps.push({ name, ms: prepareMs }));
+      // 什么也没用上也要说一声结束了：以前这里不发，「找相关内容」那个标签会一直转到回答写完
+      res.write(`data: ${JSON.stringify({
+        toolStatus: 'used',
+        toolNames: prepared,
+        toolDurationMs: prepareMs,
+      })}\n\n`);
     }
 
+    const lengthPlan = await lengthPlanPromise;
+    const answerSystem = `${systemContent}\n\n${lengthInstruction(lengthPlan)}`;
+
+    /** 发一次流式请求，token 直接推给学生。返回这一次是不是写到上限被截住；请求失败返回错误 */
+    const streamAnswer = async (messages: ConversationAIMessage[]): Promise<{ truncated: boolean } | { failed: string }> => {
     const { url, headers, body } = await buildConversationStreamRequest(
       resolvedProviderId,
       resolvedModel,
-      toolPreparation.messages,
-      systemContent,
+      messages,
+      answerSystem,
       apiKey,
       config.endpoint_url ?? null,
+      lengthPlan.maxTokens,
     );
     const upstream = await aiFetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
     if (!upstream.ok) {
       const errText = await upstream.text();
-      res.write(`data: ${JSON.stringify({ error: `HTTP ${upstream.status}: ${errText.slice(0, 200)}` })}\n\n`);
-      res.write('data: [DONE]\n\n');
-      clearInterval(keepaliveTimer);
-      res.end();
-      return;
+      return { failed: `HTTP ${upstream.status}: ${errText.slice(0, 200)}` };
     }
+    let cut = false;
     if (upstream.body) {
       const reader = (upstream.body as any).getReader();
       const decoder = new TextDecoder();
@@ -970,6 +997,7 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
         if (!line.startsWith('data: ') || line === 'data: [DONE]') return;
         try {
           const json = JSON.parse(line.slice(6));
+          if (conversationStreamTruncated(resolvedProviderId, json)) cut = true;
           const reasoning = extractConversationReasoning(resolvedProviderId, json);
           if (reasoning) {
             reasoningChars += reasoning.length;
@@ -1007,6 +1035,30 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
         handleStreamLine(streamBuffer.trim());
       }
     }
+    return { truncated: cut };
+    };
+
+    const first = await streamAnswer(toolPreparation.messages);
+    if ('failed' in first) {
+      res.write(`data: ${JSON.stringify({ error: first.failed })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      clearInterval(keepaliveTimer);
+      res.end();
+      return;
+    }
+    // 写到上限被截住：接着写，学生看到的是一段完整的回答（2026-10-05）
+    let truncated = first.truncated;
+    let continuations = 0;
+    while (truncated && fullReply.trim() && continuations < MAX_CONTINUATIONS) {
+      continuations += 1;
+      const next = await streamAnswer([
+        ...toolPreparation.messages,
+        { role: 'assistant', content: fullReply },
+        { role: 'user', content: CONTINUE_PROMPT },
+      ]);
+      if ('failed' in next) break;
+      truncated = next.truncated;
+    }
 
     const { data: assistantMessage, error: assistantError } = await supabase
       .from('note_conversation_messages')
@@ -1018,6 +1070,9 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
         ai_metadata: {
           provider_id: resolvedProviderId,
           model: normalizedModel,
+          answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
+          tool_steps: toolSteps,
+          elapsed_ms: Date.now() - turnStartedAt,
           use_web_search: shouldUseWebSearch,
           agent_mode: freeAsk ? 'free_ask' : normalizedAgentMode,
           streamed: true,
@@ -1080,7 +1135,8 @@ const agentRegistry = createDefaultRegistry();
 
 router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (req: Request, res: Response) => {
   const { thread, standing } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
-  const { content, provider_id: requestedProviderId, model: requestedModel, scaffold_id, scaffold_step_id, attachments = [], agent_mode } = req.body as {
+  const turnStartedAt = Date.now();
+  const { content, provider_id: requestedProviderId, model: requestedModel, scaffold_id, scaffold_step_id, attachments = [], agent_mode, answer_length } = req.body as {
     content?: string;
     provider_id?: string;
     model?: string;
@@ -1088,6 +1144,7 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
     scaffold_step_id?: string;
     attachments?: Attachment[];
     agent_mode?: unknown;
+    answer_length?: unknown;
   };
   if (!content?.trim()) throw new ApiError(400, 'content is required');
   if (!requestedProviderId || !requestedModel) throw new ApiError(400, 'provider_id and model are required');
@@ -1096,6 +1153,10 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   const partner = await resolvePartnerModel(thread.course_id, requestedProviderId, requestedModel);
   const provider_id = partner.providerId;
   const model = partner.model;
+  // 回答写多长：学生选的档位 + 问题深浅（Jev），和下面装上下文同时进行
+  const lengthPlanPromise = planAnswerLength(content.trim(), parseAnswerLength(answer_length), {
+    thinking: thinkingLikely(provider_id, model),
+  });
 
   const { data: userMessage, error: userMessageError } = await supabase
     .from('note_conversation_messages')
@@ -1168,6 +1229,12 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   const allToolCalls: Array<{ id: string; name: string }> = [];
   const allToolsUsed = new Set<string>();
   let agentIterations = 0;
+  let continuations = 0;
+  let truncated = false;
+  // 每一步的结果和用时，推给学生（AgentProcess），也存进回答里
+  const toolSteps: Array<{ name: string; summary?: string; ms?: number }> = [];
+  const toolStartedAt = new Map<string, number>();
+  const summaryLang = detectQuestionLanguage(content);
 
   const keepaliveTimer2 = setInterval(() => {
     try { res.write(': keepalive\n\n'); } catch {}
@@ -1196,18 +1263,21 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
       res.write(`data: ${JSON.stringify({ modelSwitched: effectiveModel, reason: 'vision' })}\n\n`);
     }
 
+    const lengthPlan = await lengthPlanPromise;
     const stream = runAgentLoopStream({
       providerId: provider_id,
       model: effectiveModel,
       apiKey,
       endpointUrl: config.endpoint_url ?? null,
-      systemPrompt: carriesImage
-        ? `${agentContext.systemPrompt}\n\n${IMAGE_TURN_RULES}`
-        : agentContext.systemPrompt,
+      systemPrompt: [
+        agentContext.systemPrompt,
+        carriesImage ? IMAGE_TURN_RULES : '',
+        lengthInstruction(lengthPlan),
+      ].filter(Boolean).join('\n\n'),
       messages: withImages,
       tools,
       executeToolFn: (name, args) => agentRegistry.executeTool(name, args, toolContext),
-      maxTokens: NOTE_CONVERSATION_MAX_TOKENS,
+      maxTokens: lengthPlan.maxTokens,
     });
 
     for await (const event of stream) {
@@ -1218,17 +1288,32 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
         case 'tool_call':
           allToolCalls.push({ id: event.toolCall.id, name: event.toolCall.function.name });
           allToolsUsed.add(event.toolCall.function.name);
+          toolStartedAt.set(event.toolCall.function.name, Date.now());
           res.write(`data: ${JSON.stringify({ toolStatus: 'running', toolName: event.toolCall.function.name })}\n\n`);
           break;
-        case 'tool_result':
-          res.write(`data: ${JSON.stringify({ toolStatus: 'used', toolName: event.toolName, toolNames: Array.from(allToolsUsed) })}\n\n`);
+        case 'tool_result': {
+          const startedAt = toolStartedAt.get(event.toolName);
+          const ms = startedAt ? Date.now() - startedAt : undefined;
+          // 只推统计性摘要（几条、成没成），不复述内容
+          const summary = summarizeToolResult(event.toolName, event.result, summaryLang);
+          toolSteps.push({ name: event.toolName, summary, ...(ms != null ? { ms } : {}) });
+          res.write(`data: ${JSON.stringify({
+            toolStatus: 'used',
+            toolName: event.toolName,
+            toolNames: Array.from(allToolsUsed),
+            toolSummary: summary,
+            toolDurationMs: ms,
+          })}\n\n`);
           break;
+        }
         case 'token':
           fullReply += event.content;
           res.write(`data: ${JSON.stringify({ token: event.content })}\n\n`);
           break;
         case 'done':
           agentIterations = event.result.iterations;
+          continuations = event.result.continuations ?? 0;
+          truncated = event.result.truncated === true;
           break;
         case 'error':
           res.write(`data: ${JSON.stringify({ error: event.error })}\n\n`);
@@ -1245,6 +1330,9 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
         content: fullReply,
         ai_metadata: {
           provider_id,
+          answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
+          tool_steps: toolSteps,
+          elapsed_ms: Date.now() - turnStartedAt,
           // 记实际跑的模型。带图时会被切到视觉档，记请求值等于把回复
           // 算到一个没参与生成的模型头上，研究数据会失真。
           model: effectiveModel,
@@ -1625,12 +1713,13 @@ async function buildConversationStreamRequest(
   systemContent: string,
   apiKey: string,
   endpointUrl: string | null,
+  maxTokens: number = NOTE_CONVERSATION_MAX_TOKENS,
 ): Promise<{ url: string; headers: Record<string, string>; body: Record<string, unknown> }> {
   if (providerId === 'anthropic') {
     return {
       url: 'https://api.anthropic.com/v1/messages',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: { model, max_tokens: NOTE_CONVERSATION_MAX_TOKENS, stream: true, system: systemContent, messages: messages.map((m) => ({ role: m.role, content: m.content ?? '' })) },
+      body: { model, max_tokens: maxTokens, stream: true, system: systemContent, messages: messages.map((m) => ({ role: m.role, content: m.content ?? '' })) },
     };
   }
 
@@ -1639,7 +1728,7 @@ async function buildConversationStreamRequest(
     return {
       url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
       headers: { 'Content-Type': 'application/json' },
-      body: { system_instruction: { parts: [{ text: systemContent }] }, contents, generationConfig: { maxOutputTokens: NOTE_CONVERSATION_MAX_TOKENS, temperature: 0.7 } },
+      body: { system_instruction: { parts: [{ text: systemContent }] }, contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 } },
     };
   }
 
@@ -1648,7 +1737,7 @@ async function buildConversationStreamRequest(
   return {
     url,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: withDeepSeekOptions(providerId, model, { model, stream: true, messages: [{ role: 'system', content: systemContent }, ...messages], max_tokens: NOTE_CONVERSATION_MAX_TOKENS, temperature: 0.7 }),
+    body: withDeepSeekOptions(providerId, model, { model, stream: true, messages: [{ role: 'system', content: systemContent }, ...messages], max_tokens: maxTokens, temperature: 0.7 }),
   };
 }
 
@@ -1659,6 +1748,13 @@ function extractConversationStreamToken(providerId: string, json: any): string |
   }
   if (providerId === 'google') return json.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
   return json.choices?.[0]?.delta?.content ?? null;
+}
+
+/** 这一行是不是在说「写到 max_tokens 停了」 */
+export function conversationStreamTruncated(providerId: string, json: any): boolean {
+  if (providerId === 'anthropic') return json.type === 'message_delta' && json.delta?.stop_reason === 'max_tokens';
+  if (providerId === 'google') return json.candidates?.[0]?.finishReason === 'MAX_TOKENS';
+  return json.choices?.[0]?.finish_reason === 'length';
 }
 
 function extractConversationReasoning(providerId: string, json: any): string | null {

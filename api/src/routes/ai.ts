@@ -244,6 +244,8 @@ const DEFAULT_TRIGGER_SETTINGS = {
   response_language: 'auto' as 'auto' | 'zh' | 'en',
   max_feedback_length: 300,
   experiment_mode: false,
+  // 画布问题栏后面滚动的讨论主题（2026-10-05 起，默认开）
+  view_topics_enabled: true,
 };
 
 router.get(
@@ -313,6 +315,9 @@ router.put(
     }
     if (typeof body.experiment_mode === 'boolean') {
       patch.experiment_mode = body.experiment_mode;
+    }
+    if (typeof body.view_topics_enabled === 'boolean') {
+      patch.view_topics_enabled = body.view_topics_enabled;
     }
 
     // Write to the same row that reads resolve to (first non-empty settings

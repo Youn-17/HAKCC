@@ -20,7 +20,7 @@ const MobileCommunity: React.FC<MobileCommunityProps> = ({
   const lbl = (zh: string, en: string) => lang === 'zh' ? zh : en;
 
   const items = [
-    { icon: 'mind-map',          label: lbl('Idea 网络', 'Idea Network'),   desc: lbl('查看想法之间的关系网络', 'View idea relationship network'),   onClick: onOpenMap,      color: 'bg-blue-50 text-blue-600' },
+    { icon: 'git-branch-line',   label: lbl('Build-on 网络', 'Build-on Network'), desc: lbl('追踪观点的依据、分支与汇合', 'Follow idea foundations, branches and convergences'), onClick: onOpenMap, color: 'bg-blue-50 text-blue-600' },
     { icon: 'calendar-todo-line', label: lbl('时间线', 'Timeline'),          desc: lbl('按时间查看知识建构活动', 'View KB activity over time'),       onClick: onOpenTimeline, color: 'bg-amber-50 text-amber-600' },
     { icon: 'group-2-line',       label: lbl('小组', 'Groups'),             desc: lbl('查看和管理小组', 'View and manage groups'),                  onClick: onOpenGroups,   color: 'bg-green-50 text-green-600' },
     { icon: 'team-line',          label: lbl('成员', 'Members'),            desc: lbl('查看社区成员', 'View community members'),                    onClick: onOpenMembers,  color: 'bg-purple-50 text-purple-600' },

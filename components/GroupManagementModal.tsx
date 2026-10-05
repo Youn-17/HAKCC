@@ -73,6 +73,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
   const [isLoading, setIsLoading] = useState(false);
 
   // Teacher: Create/Edit
+  const [groupLayout, setGroupLayout] = useState<'grid' | 'list'>('grid');
   const [newGroupName, setNewGroupName] = useState('');
   const [draggedMemberId, setDraggedMemberId] = useState<string | null>(null);
   const [isCreatingSpaces, setIsCreatingSpaces] = useState(false);
@@ -540,9 +541,9 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     );
 
     return (
-      <div className="flex h-full gap-6">
+      <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto lg:flex-row">
         {/* Left: Groups */}
-        <div className="flex-1 overflow-y-auto space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 lg:overflow-y-auto">
            <div className="mb-5 flex flex-wrap items-center gap-2">
               <input
                 value={newGroupName}
@@ -550,7 +551,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
                 onKeyDown={(e) => { if (e.key === 'Enter') handleCreateGroup(); }}
                 placeholder={t.groupName}
                 aria-label={t.groupName}
-                className="min-w-[220px] flex-1 rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 transition-colors focus:border-[#000080]/40 focus:outline-none focus:ring-2 focus:ring-[#000080]/10"
+                className="min-w-0 w-full flex-1 rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 transition-colors focus:border-[#000080]/40 focus:outline-none focus:ring-2 focus:ring-[#000080]/10"
               />
               {/* Disabled until a name is typed — the button used to look
                   clickable but silently did nothing, which reads as "broken". */}
@@ -574,17 +575,21 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
               </button>
            </div>
 
+           <div className="view-toolbar mb-3 flex gap-1" role="group" aria-label={lang === 'zh' ? '小组布局' : 'Group layout'}>
+             <button type="button" aria-pressed={groupLayout === 'grid'} onClick={() => setGroupLayout('grid')}>{lang === 'zh' ? '网格' : 'Grid'}</button>
+             <button type="button" aria-pressed={groupLayout === 'list'} onClick={() => setGroupLayout('list')}>{lang === 'zh' ? '列表' : 'List'}</button>
+           </div>
            {groupError && (
              <div className="mb-4 rounded-xl border px-3.5 py-2.5 text-xs" style={noticeStyle(MORANDI.rose)}>
                {groupError}
              </div>
            )}
 
-           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+           <div className={`grid grid-cols-1 gap-4 ${groupLayout === 'grid' ? 'lg:grid-cols-2' : ''}`}>
               {groups.map(group => (
                 <div
                   key={group.id}
-                  className="group/card rounded-2xl border border-zinc-200 bg-white p-5 transition-colors duration-200 hover:border-zinc-300"
+                  className="view-content-card group/card rounded-2xl border border-zinc-200 bg-white p-5 transition-colors duration-200 hover:border-zinc-300"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => handleDropMember(group.id)}
                 >
@@ -656,7 +661,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
         </div>
 
         {/* Right: Unassigned */}
-        <div className="flex w-64 flex-shrink-0 flex-col border-l border-zinc-200 pl-6">
+        <div className="flex w-full shrink-0 flex-col border-t border-zinc-200 pt-4 lg:w-64 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
            <div className="mb-3">
              <h3 className="text-[0.8125rem] font-semibold tracking-tight text-zinc-900">{t.unassigned}</h3>
              <p className="mt-0.5 text-xs text-zinc-500">
@@ -1036,8 +1041,8 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
   const currentTab = activeTab === 'experiment' && !isStaff ? 'overview' : activeTab;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="flex h-[86vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl shadow-zinc-900/10">
+    <div className="workspace-view-shell fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div role="dialog" aria-modal="true" aria-label={t.title} className="workspace-view-dialog flex h-[86vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl shadow-zinc-900/10">
 
         {/* Header */}
         <div className="flex items-center justify-between gap-6 border-b border-zinc-200 px-6 py-4">

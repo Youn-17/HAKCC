@@ -27,14 +27,17 @@ import type { ApiAIConfig, CourseRole } from '../services/apiClient';
 import InquiryPanel from './InquiryPanel';
 import { Note, Edge, UserRole, Language, ViewDefinition, Scaffold, Notification, GroupTask, RelationType } from '../types';
 import { scaffoldMarkerHtml } from './scaffoldLibrary';
-import { ApiClientError, courses as coursesApi, groups as groupsApi, riseAbove as riseAboveApi, notes as notesApi, relations as relationsApi, notifications as notificationsApi, scaffolds as scaffoldsApi, trackEvent, viewCards as viewCardsApi, views as viewsApi } from '../services/apiClient';
+import { ApiClientError, courses as coursesApi, groups as groupsApi, riseAbove as riseAboveApi, notes as notesApi, noteAiFeedback, relations as relationsApi, notifications as notificationsApi, scaffolds as scaffoldsApi, trackEvent, viewCards as viewCardsApi, views as viewsApi } from '../services/apiClient';
 import type { ApiNote, ApiScaffold, ApiShape, ApiView, ApiViewCard, NotePresentation, ShapePayload, ShapeType, Space } from '../services/apiClient';
 import ShapeLayer, { type ShapeDraft } from './ShapeLayer';
 import ShapeStylePanel, { type ShapeStyleValue } from './ShapeStylePanel';
 import ShapeGlyph from './ShapeGlyph';
 import { SHAPE_CATALOG, isLineShape } from './shapeGeometry';
 import { notePlainParagraphs, notePreviewText, plainTextToNoteHtml } from './noteText';
-import { hotBuildOnCounts, isNoteNew, markNoteSeen, useNoteSeenVersion } from './noteBadges';
+import { hotBuildOnCounts, isNoteNew, isOwnNote, useMarkSeenAfterDwell, useNoteSeenVersion } from './noteBadges';
+import ViewTopicTicker from './ViewTopicTicker';
+import { notesFingerprint, useViewTopics } from './viewTopics';
+import type { ViewTopic } from '../services/apiClient';
 import { useSpaceData, apiNoteToNote, apiRelationToEdge, type NoteGeometry } from '../hooks/useSpaceData';
 import { useAuth } from '../contexts/AuthContext';
 import { useReportHelpContext } from './help/helpContext';
@@ -480,6 +483,10 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   const [ideaGraphOpen, setIdeaGraphOpen] = useState(false);
   const [buildOnNetOpen, setBuildOnNetOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [timelineFocus, setTimelineFocus] = useState<string|null>(null);
+  const [networkFocus, setNetworkFocus] = useState<string|null>(null);
+  const [networkSpace, setNetworkSpace] = useState<string|null>(null);
+  const [pendingTimelineNote, setPendingTimelineNote] = useState<{note:Note;spaceId:string;observedLoading:boolean}|null>(null);
   const [myGroup, setMyGroup] = useState<{ id: string; name: string } | null>(null);
   // 告诉右边缘的「使用帮助」学生此刻在哪：阅读页和讨论室不改地址，它自己看不出来
   useReportHelpContext({
@@ -1499,15 +1506,22 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   const notesRef = useRef(notes);
   notesRef.current = notes;
 
-  // 在右侧详情栏里停一会儿也算打开过：详情栏能看全文。一点而过、拖卡片时顺手选中的不算。
-  useEffect(() => {
-    if (!selectedNoteId) return;
-    const timer = window.setTimeout(() => {
-      const note = notesRef.current.find(n => n.id === selectedNoteId);
-      if (note) markNoteSeen(note, user?.id);
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [selectedNoteId, user?.id]);
+  /**
+   * 双击打开的窗口开着、停够 3 秒，New 才摘掉：AI 对话笔记、画图、附件、讨论室发布的 Rise Above。
+   * 普通笔记走笔记页，NoteEditorModal 自己算。单击选中、右侧详情栏都不算——
+   * 以前详情栏停 1.2 秒就算看过，学生一点卡片 New 就没了（10-05 用户反馈）。
+   */
+  const openedForSeen = useMemo<Note | null>(() => {
+    if (dialogueNote) return dialogueNote;
+    if (isDrawingOpen && drawingToEdit) return drawingToEdit;
+    if (viewingFile) return viewingFile;
+    if (riseAboveRoomId) {
+      const publishedId = riseAboveRooms.find(room => room.id === riseAboveRoomId)?.published_note_id;
+      return publishedId ? notes.find(n => n.id === publishedId) ?? null : null;
+    }
+    return null;
+  }, [dialogueNote, isDrawingOpen, drawingToEdit, viewingFile, riseAboveRoomId, riseAboveRooms, notes]);
+  useMarkSeenAfterDwell(openedForSeen, user?.id);
 
   /**
    * 把 .md 附件转成一条真正的笔记，放在原附件旁边。
@@ -1824,7 +1838,17 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
       setNotes(prev => prev.map(n => n.id === noteId ? { ...n, title, content } : n));
       if (!spaceId || !noteId) return;
       notesApi.update(noteId, { title, content, tags })
-        .then(() => {
+        .then(async () => {
+          const ownContribution = user?.id === before?.authorId;
+          if (ownContribution) {
+            try {
+              const result = await noteAiFeedback.finalize(noteId);
+              if (result.outcomes.some(outcome => outcome.publishedNoteId)) refetchSpace();
+            } catch (error) {
+              console.error('[feedback contribution review]', error);
+              window.alert(lang === 'zh' ? '笔记已保存，反馈发布判断暂未完成；下次贡献时会重试。' : 'Note saved. Feedback review is pending and will retry on your next contribution.');
+            }
+          }
           trackEvent({
             event_type: 'note_updated',
             object_type: 'note',
@@ -1956,7 +1980,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     closeNoteEditor();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCreatingNew, editingNote, buildOnParentId, buildOnRelationType, notes, viewPort, activeViewId, activeScaffold,
-      spaceId, user, currentSpace?.inquiry_question, closeNoteEditor, createBuildOnRelation, canEditNote, lang]);
+      spaceId, user, currentSpace?.inquiry_question, closeNoteEditor, createBuildOnRelation, canEditNote, lang, refetchSpace]);
 
   const handleAiNotePublished = useCallback((
     createdNote: Parameters<typeof apiNoteToNote>[0],
@@ -2221,7 +2245,6 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   // 每次渲染新建函数会让 memo 完全失效，拖动又回到全量重渲染。
   const handleDoubleClickNote = useCallback((e: React.MouseEvent, note: Note) => {
     e.stopPropagation();
-    markNoteSeen(note, user?.id);
     if (spaceId) {
       trackEvent({
         event_type: 'note_opened',
@@ -2265,7 +2288,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
           setIsCreatingNew(false);
         }
     }
-  }, [spaceId, activeViewId, goToView, riseAboveRooms, user?.id]);
+  }, [spaceId, activeViewId, goToView, riseAboveRooms]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2579,6 +2602,94 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     setSelectedNoteId(targetNote.id);
   }, [notes, viewPort.zoom]);
 
+  const openTimelineNote = async (id:string, targetSpace?:string) => {
+    try {
+      const {note:raw}=await notesApi.get(id);
+      const note=apiNoteToNote(raw,user?.name);
+      if(targetSpace&&targetSpace!==spaceId&&courseId){
+        const {spaces}=await coursesApi.listSpaces(courseId);
+        const target=spaces.find(s=>s.id===targetSpace);
+        if(!target)throw new Error('Space unavailable');
+        setPendingTimelineNote({note,spaceId:targetSpace,observedLoading:false});
+        setCurrentSpace(target);setSpaceId(targetSpace);
+      }else{setEditingNote(note);setIsCreatingNew(false);focusNote(id);}
+      setTimelineOpen(false);setBuildOnNetOpen(false);
+    }catch{window.alert(lang==='zh'?'暂时无法打开这条 Note，请重试。':'Could not open this Note. Please retry.');}
+  };
+  useEffect(()=>{
+    if(!pendingTimelineNote||spaceId!==pendingTimelineNote.spaceId)return;
+    if(spaceLoading&&!pendingTimelineNote.observedLoading){setPendingTimelineNote({...pendingTimelineNote,observedLoading:true});return;}
+    if(spaceLoading||!pendingTimelineNote.observedLoading)return;
+    const note=pendingTimelineNote.note;
+    setNotes(current=>current.some(n=>n.id===note.id)?current:[...current,note]);
+    setEditingNote(note);setIsCreatingNew(false);setPendingTimelineNote(null);
+  },[pendingTimelineNote,spaceId,spaceLoading,setNotes]);
+
+  /**
+   * 「我的笔记」（2026-10-05 用户：学生在画布上一下子找不到自己的 note）。
+   * 卡片浅蓝底只解决「在眼前的认得出」；画布大了，自己的笔记在屏幕外，什么颜色都看不到。
+   * 开着时别人的卡片淡下去，细栏上一条一条把自己的笔记移到画布中间，新的在前。
+   * 只移画布、不选中：选中会弹出右侧详情栏。
+   */
+  const [mineFocus, setMineFocus] = useState(false);
+  const [mineIndex, setMineIndex] = useState(0);
+  const myNotes = useMemo(
+    () => visibleNotes
+      .filter(n => isOwnNote(n, user?.id))
+      .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''))),
+    [visibleNotes, user?.id],
+  );
+  const myNoteIds = useMemo(() => new Set(myNotes.map(n => n.id)), [myNotes]);
+  const panToNote = useCallback((note: Note) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const { w, h } = getNoteDimensions(note);
+    setViewPort(prev => ({
+      ...prev,
+      x: (rect?.width ?? window.innerWidth) / 2 - (note.x + w / 2) * prev.zoom,
+      y: (rect?.height ?? window.innerHeight) / 2 - (note.y + h / 2) * prev.zoom,
+    }));
+  }, []);
+  const showMyNote = useCallback((index: number) => {
+    if (myNotes.length === 0) return;
+    const next = ((index % myNotes.length) + myNotes.length) % myNotes.length;
+    setMineIndex(next);
+    panToNote(myNotes[next]);
+  }, [myNotes, panToNote]);
+  const toggleMineFocus = useCallback(() => {
+    if (mineFocus) {
+      setMineFocus(false);
+      return;
+    }
+    setMineFocus(true);
+    setMineIndex(0);
+    if (myNotes.length > 0) panToNote(myNotes[0]);
+  }, [mineFocus, myNotes, panToNote]);
+  useEffect(() => { setMineIndex(0); }, [activeViewId]);
+  useEffect(() => {
+    if (!mineFocus) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMineFocus(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mineFocus]);
+
+  /**
+   * 问题栏后面滚动的讨论主题（2026-10-05）。点一个主题：画布移到相关的第一条笔记，相关的几条亮四秒。
+   * 用单独的高亮，不借多选：多选会弹出批量操作的工具条，学生只是想看看是哪几条。
+   */
+  const topicFingerprint = useMemo(() => notesFingerprint(visibleNotes), [visibleNotes]);
+  const viewTopicList = useViewTopics(spaceId, activeViewId, topicFingerprint);
+  const [topicHighlight, setTopicHighlight] = useState<ReadonlySet<string>>(() => new Set());
+  const topicHighlightTimer = useRef(0);
+  const selectTopic = useCallback((topic: ViewTopic) => {
+    const ids = topic.noteIds.filter(id => visibleNoteById.has(id));
+    if (ids.length === 0) return;
+    panToNote(visibleNoteById.get(ids[0])!);
+    setTopicHighlight(new Set(ids));
+    window.clearTimeout(topicHighlightTimer.current);
+    topicHighlightTimer.current = window.setTimeout(() => setTopicHighlight(new Set()), 4000);
+  }, [visibleNoteById, panToNote]);
+  useEffect(() => () => window.clearTimeout(topicHighlightTimer.current), []);
+
   const headerTitle = courseTitle || currentSpace?.title || (lang === 'zh' ? '知识空间' : 'Workspace');
 
   return (
@@ -2614,10 +2725,12 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
           width={sidebarWidth}
           onWidthChange={setSidebarWidth}
           onOpenIdeaGraph={() => setIdeaGraphOpen(true)}
-          onOpenMap={() => setBuildOnNetOpen(true)}
-          onOpenTimeline={() => setTimelineOpen(true)}
+          onOpenMap={() => {setNetworkFocus(null);setNetworkSpace(null);setBuildOnNetOpen(true);}}
+          onOpenTimeline={() => {setTimelineFocus(null);setTimelineOpen(true);}}
           onOpenGroups={() => setIsGroupModalOpen(true)}
           onOpenMembers={() => setIsMemberModalOpen(true)}
+          mineActive={mineFocus}
+          onToggleMine={toggleMineFocus}
         />
         
         {/* Canvas column: inquiry strip + canvas */}
@@ -2633,9 +2746,15 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
               <span className="text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-gray-400 shrink-0" style={{ fontVariant: 'small-caps', fontFamily: 'ui-monospace, monospace' }}>
                 {lang === 'zh' ? 'inquiry' : 'inquiry'}
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200">
+              <span className={`min-w-0 truncate text-xs font-medium text-gray-800 dark:text-gray-200 ${viewTopicList.length > 0 ? 'max-w-[42%] shrink' : 'flex-1'}`}>
                 {currentSpace?.inquiry_question || (lang === 'zh' ? '我们共同讨论的问题' : 'The question we are working on together')}
               </span>
+              {viewTopicList.length > 0 && (
+                <>
+                  <span aria-hidden="true" className="h-4 w-px shrink-0 bg-gray-200 dark:bg-gray-700" />
+                  <ViewTopicTicker topics={viewTopicList} lang={lang === 'zh' ? 'zh' : 'en'} onSelect={selectTopic} />
+                </>
+              )}
               <span className="flex items-center gap-3 shrink-0 text-[0.6875rem] text-gray-500">
                 <span><span className="font-semibold text-gray-700 dark:text-gray-300">{visibleNotes.length}</span> {lang === 'zh' ? '想法' : 'ideas'}</span>
                 <span><span className="font-semibold text-gray-700 dark:text-gray-300">{edges.length}</span> Build-on</span>
@@ -2863,7 +2982,13 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                   synthesisDepth={synthesisDepthMap.get(note.id)}
                   isNew={isNoteNew(note, user?.id)}
                   hotCount={hotBuildOnCountMap.get(note.id) ?? 0}
-                  className="gsap-note-item"
+                  isMine={myNoteIds.has(note.id)}
+                  className={[
+                    'gsap-note-item transition-opacity duration-200 motion-reduce:transition-none',
+                    mineFocus && !myNoteIds.has(note.id) ? 'opacity-30' : '',
+                    // 点了上面的讨论主题：相关的几条亮几秒
+                    topicHighlight.has(note.id) ? 'rounded-lg ring-2 ring-amber-400 ring-offset-2 ring-offset-transparent' : '',
+                  ].filter(Boolean).join(' ')}
                   onMouseDown={handleMouseDownNote}
                   onDoubleClick={handleDoubleClickNote}
                   onContextMenu={handleContextMenu}
@@ -3160,6 +3285,52 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                   {lang === 'zh' ? '点击左侧工具栏创建第一个想法' : 'Click the toolbar to create your first idea'}
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* 「我的笔记」细栏：几条、第几条、上一条/下一条 */}
+          {mineFocus && (
+            <div
+              role="toolbar"
+              aria-label={lang === 'zh' ? '我的笔记' : 'My notes'}
+              data-canvas-overlay
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+              className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-[#B9CDF0] bg-white/95 py-1 pl-3 pr-1 text-xs shadow-[0_8px_24px_-12px_rgba(30,58,138,0.35)] backdrop-blur"
+            >
+              <RemixIcon name="user-search-line" size={15} className="text-[#1E3A8A]" />
+              <span className="font-semibold text-[#1E3A8A]">{lang === 'zh' ? '我的笔记' : 'My notes'}</span>
+              {myNotes.length === 0 ? (
+                <span className="px-1 text-slate-500">{lang === 'zh' ? '这个视图里还没有你写的笔记' : 'You have no notes in this view yet'}</span>
+              ) : (
+                <>
+                  <span className="px-1 tabular-nums text-slate-600" aria-live="polite">{mineIndex + 1} / {myNotes.length}</span>
+                  <button
+                    type="button"
+                    aria-label={lang === 'zh' ? '上一条' : 'Previous'}
+                    onClick={() => showMyNote(mineIndex - 1)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-[#E3ECFB] hover:text-[#1E3A8A] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  >
+                    <RemixIcon name="arrow-left-s-line" size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={lang === 'zh' ? '下一条' : 'Next'}
+                    onClick={() => showMyNote(mineIndex + 1)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-[#E3ECFB] hover:text-[#1E3A8A] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  >
+                    <RemixIcon name="arrow-right-s-line" size={18} />
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                aria-label={lang === 'zh' ? '退出我的笔记' : 'Leave My notes'}
+                onClick={() => setMineFocus(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              >
+                <RemixIcon name="close-line" size={16} />
+              </button>
             </div>
           )}
 
@@ -3674,18 +3845,23 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
           spaceId={spaceId}
           currentUserId={user?.id}
           lang={lang === 'zh' ? 'zh' : 'en'}
-          onLocateNote={(id) => { setTimelineOpen(false); focusNote(id); }}
+          initialNoteId={timelineFocus}
+          onLocateNote={openTimelineNote}
+          onShowNetwork={(id,sid)=>{setTimelineOpen(false);setNetworkFocus(id);setNetworkSpace(sid??spaceId);setBuildOnNetOpen(true);}}
           onClose={() => setTimelineOpen(false)}
         />
       )}
 
       {buildOnNetOpen && (
         <BuildOnNetwork
+          spaceId={networkSpace??spaceId??undefined}
           notes={notes}
           edges={edges}
           currentUserId={user?.id}
           lang={lang === 'zh' ? 'zh' : 'en'}
-          onLocateNote={(id) => { setBuildOnNetOpen(false); focusNote(id); }}
+          initialNoteId={networkFocus}
+          onLocateNote={id=>openTimelineNote(id,networkSpace??spaceId??undefined)}
+          onShowTimeline={id=>{setBuildOnNetOpen(false);setTimelineFocus(id);setTimelineOpen(true);}}
           onClose={() => setBuildOnNetOpen(false)}
         />
       )}

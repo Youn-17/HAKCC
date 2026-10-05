@@ -50,10 +50,17 @@ const h = vi.hoisted(() => {
 
 vi.mock('../config/supabase', () => ({ supabase: { from: h.from } }));
 vi.mock('../services/aiGateway', () => ({ aiFetch: h.aiFetch }));
-vi.mock('../services/aiProviderConfig', () => ({ decryptProviderApiKey: (k: string) => `key:${k}` }));
-vi.mock('../services/agentLoop', async () => {
+// 请求体规则（关思考、Kimi 的温度）用真的，只换掉解密和端点
+vi.mock('../services/aiProviderConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/aiProviderConfig')>()),
+  decryptProviderApiKey: (k: string) => `key:${k}`,
+}));
+vi.mock('../services/agentLoop', async (importOriginal) => {
   const { CHAT_ENDPOINTS } = await import('../services/providerEndpoints');
-  return { getProviderEndpoint: (pid: string) => CHAT_ENDPOINTS[pid] ?? CHAT_ENDPOINTS.openai };
+  return {
+    ...(await importOriginal<typeof import('../services/agentLoop')>()),
+    getProviderEndpoint: (pid: string) => CHAT_ENDPOINTS[pid] ?? CHAT_ENDPOINTS.openai,
+  };
 });
 vi.mock('../services/modelRouter', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/modelRouter')>();

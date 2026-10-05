@@ -1,4 +1,4 @@
-// 自动生成：学生版使用手册的纯文本快照，求助回答以它为依据。不要手改。
+// 自动生成：使用手册的纯文本快照，求助回答以它为依据。不要手改。
 // 来源是 components/manual/manualContent.ts。手册改了以后重新生成：
 //   npx vitest run api/src/services/supportManual.test.ts -u
 import type { ManualChunk } from './supportManual';
@@ -96,8 +96,8 @@ export const STUDENT_MANUAL: ManualChunk[] = [
     },
     "heading": null,
     "text": {
-      "zh": "进课程后看到的是工作区，一块全班共用的画布。每张卡片是一条笔记，卡片之间的连线表示谁在谁的笔记上接着写了什么。\n（配图）工作区。最上面一行是这一周的探究问题和笔记数量，左边是工具栏，画布上的方框是老师画的分区。",
-      "en": "After entering a course you see the workspace: one canvas the whole class shares. Each card is a note, and the lines between cards show who continued whose note, and how.\n(Figure) The workspace. The top strip shows this week's inquiry question and the note counts, the toolbar is on the left, and the boxes on the canvas are areas your teacher drew."
+      "zh": "进课程后看到的是工作区，一块全班共用的画布。每张卡片是一条笔记，卡片之间的连线表示谁在谁的笔记上接着写了什么。\n（配图）工作区。最上面一行是这一周的探究问题，后面滚动着这个视图正在讨论的几个主题，再后面是笔记数量；左边是工具栏，画布上的方框是老师画的分区。\n问题后面滚动的是这个视图正在讨论的几个主题，由 AI 按画布上的笔记总结，每个主题后面的数字是涉及几条笔记。点一个主题，画布会移到相关的笔记上，它们亮几秒。笔记有变化时，最快三分钟更新一次。主题只说在讨论什么，不下结论。视图里的笔记少于三条时不显示；手机上没有这一行。鼠标放上去滚动就停；系统设了「减少动态效果」的，改成每五秒换一个。",
+      "en": "After entering a course you see the workspace: one canvas the whole class shares. Each card is a note, and the lines between cards show who continued whose note, and how.\n(Figure) The workspace. The top strip shows this week's inquiry question, then the topics being discussed in this view rolling past, then the note counts; the toolbar is on the left, and the boxes on the canvas are areas your teacher drew.\nThe topics rolling past after the question are what this view is discussing, summarised by the AI from the notes on the canvas; the number after each is how many notes it covers. Click a topic and the canvas moves to those notes, which light up for a few seconds. As notes change it refreshes at most every three minutes. The topics say what is being discussed and draw no conclusions. They do not appear while a view has fewer than three notes, and the phone layout has no such strip. Hover to stop the scrolling; with \"reduce motion\" turned on in your system, it shows one topic at a time instead."
     }
   },
   {
@@ -126,8 +126,8 @@ export const STUDENT_MANUAL: ManualChunk[] = [
       "en": "What a card shows"
     },
     "text": {
-      "zh": "- 顶上的彩色条：这条笔记收到过哪几种 Build-on，颜色和第 5 节的六种关系对应。还没人接的是灰色。\n- 标题：卡片越高，显示的行数越多。\n- 底部：作者头像、姓名和发布时间。\n- 「已有 Build-on」：已经有人接着这条往下写了。\n- 红色的 ! 数字：有几位同学对它提出了质疑。\n- 左上角闪动的小红点：老师给这条写了你还没看的评语。\n- 左上角红色的「New」：同学发的笔记，你还没打开过。你双击打开、或在右侧详情面板里看过，它在你这里就不再标 New；每个人各算各的，同学看没看过不影响你。9 月 15 日以前发的笔记不标。\n- 左上角的火和数字：整个空间里被 Build-on 次数最多的笔记，数字是次数。至少两次才算，并列最多的都会标。\n- 「可继续对话」：你采纳 AI 反馈后生成的对话式笔记，见第 7 节。",
-      "en": "- The coloured bar on top: which kinds of build-on this note has received, in the colours of the six relations in section 5. Grey means none yet.\n- Title: the taller the card, the more lines show.\n- Bottom: the author's avatar and name, and when it was posted.\n- \"Built on\": someone has already continued from this note.\n- A red ! n: how many classmates have challenged it.\n- A pulsing red dot at the top left: a teacher comment you have not read.\n- A red \"New\" at the top left: a classmate's note you have not opened yet. Once you open it, or view it in the detail panel, it stops showing New for you; everyone has their own, so what classmates have opened does not change yours. Notes posted before 15 September are not marked.\n- A flame and a number at the top left: the note with the most build-ons in the space, and how many. It takes at least two, and ties all get the flame.\n- \"Open dialogue\": a dialogue note created when you accepted AI feedback (section 7)."
+      "zh": "- 顶上的彩色条：这条笔记收到过哪几种 Build-on，颜色和第 5 节的六种关系对应。还没人接的是灰色。\n- 标题：卡片越高，显示的行数越多。\n- 底部：作者头像、姓名和发布时间。\n- 浅蓝底、名字旁有个「我」：你自己写的笔记。画布大了找不到时，点左侧工具栏的「我的笔记」：别人的卡片淡下去，顶上出现一条细栏，用左右箭头一条一条跳到自己的笔记，最新的在前；点 × 或按 Esc 退出。手机上在列表顶上点「我的」。\n- 「已有 Build-on」：已经有人接着这条往下写了。\n- 红色的 ! 数字：有几位同学对它提出了质疑。\n- 左上角闪动的小红点：老师给这条写了你还没看的评语。\n- 左上角红色的「New」：同学发的笔记，你还没打开过。双击打开、看上几秒，回到画布它就不再标 New；只是单击选中、在右侧详情面板里扫一眼，New 还会留着。每个人各算各的，同学看没看过不影响你。9 月 15 日以前发的笔记不标。\n- 左上角的火和数字：整个空间里被 Build-on 次数最多的笔记，数字是次数。至少两次才算，并列最多的都会标。\n- 「可继续对话」：你采纳 AI 反馈后生成的对话式笔记，见第 7 节。",
+      "en": "- The coloured bar on top: which kinds of build-on this note has received, in the colours of the six relations in section 5. Grey means none yet.\n- Title: the taller the card, the more lines show.\n- Bottom: the author's avatar and name, and when it was posted.\n- A light-blue card with \"Me\" next to the name: a note you wrote. When the canvas is too big to find them, click \"My notes\" in the left toolbar: other cards fade, and a bar at the top lets you jump through your notes one by one with the arrows, newest first; click × or press Esc to leave. On a phone, tap \"Mine\" at the top of the list.\n- \"Built on\": someone has already continued from this note.\n- A red ! n: how many classmates have challenged it.\n- A pulsing red dot at the top left: a teacher comment you have not read.\n- A red \"New\" at the top left: a classmate's note you have not opened yet. Double-click to open it and read it for a few seconds; back on the canvas it no longer shows New. Just clicking it, or glancing at it in the detail panel, leaves the New in place. Everyone has their own, so what classmates have opened does not change yours. Notes posted before 15 September are not marked.\n- A flame and a number at the top left: the note with the most build-ons in the space, and how many. It takes at least two, and ties all get the flame.\n- \"Open dialogue\": a dialogue note created when you accepted AI feedback (section 7)."
     }
   },
   {
@@ -156,8 +156,8 @@ export const STUDENT_MANUAL: ManualChunk[] = [
       "en": "The toolbar"
     },
     "text": {
-      "zh": "工具栏默认展开，图标旁边有文字。想让画布大一些，把工具栏右边缘往左拖，它会收成一列图标，下次进来还是收着的。最下面的「退出」回到首页，不会让你退出课程。\n（配图）工具栏分创建、建构、社区三组，下面是图例和「退出」。\n分组 | 工具 | 用来做什么\n创建 | Note 创建 | 新写一条笔记\n | 绘图 | 在画布上画方框、箭头和文字，给内容分区\n | 附件 | 上传图片、文档、视频，单个文件最大 500 MB。PDF、Word 和 Markdown 可以在网页里直接读（第 9 节）\n建构 | 探究 | 打开「探究工具」：老师开了图灵测试时在这里进入，另外还有计算思维工具\n | 综合升华 | 选几条笔记开一间讨论室，写一条更高一层的说法（第 8 节）\n | Scaffold | 查看这门课的支架（第 4 节）\n社区 | 视图 | 新建或切换画布\n | Build-on 网络 | 全班的笔记怎么连在一起，你在其中哪里（第 10 节）\n | 时间线 | 按时间回看讨论（第 10 节）\n | 观点图谱 | 你们组这一周讨论到哪了（第 10 节）\n | 小组 | 你所在的小组和组员",
-      "en": "The toolbar starts expanded, with a label beside each icon. To give the canvas more room, drag its right edge to the left and it shrinks to icons; it stays that way next time. Exit at the bottom takes you back to the home page. It does not remove you from the course.\n(Figure) The toolbar has three groups, Create, Build and Community, with the legend and Exit below.\nGroup | Tool | What it does\nCreate | Create Note | Write a new note\n | Drawing | Draw boxes, arrows and text to organise the canvas\n | Attachment | Upload images, documents and video, up to 500 MB each. PDF, Word and Markdown open in the browser (section 9)\nBuild | Inquiry | Opens Inquiry tools: the Turing test when your teacher has opened one, and the computational thinking tool\n | Rise Above | Open a discussion room on several notes and write a higher-level account (section 8)\n | Scaffolds | Browse the course scaffolds (section 4)\nCommunity | Views | Create or switch canvases\n | Build-on Network | How the class's notes connect and where you are (section 10)\n | Timeline | Replay the discussion over time (section 10)\n | Idea Graph | Where your group's discussion stands this week (section 10)\n | Groups | Your group and its members"
+      "zh": "工具栏默认展开，图标旁边有文字。想让画布大一些，把工具栏右边缘往左拖，它会收成一列图标，下次进来还是收着的。最下面的「退出」回到首页，不会让你退出课程。\n（配图）工具栏分创建、建构、社区三组，下面是图例和「退出」。\n分组 | 工具 | 用来做什么\n创建 | Note 创建 | 新写一条笔记\n | 绘图 | 在画布上画方框、箭头和文字，给内容分区\n | 附件 | 上传图片、文档、视频，单个文件最大 500 MB。PDF、Word 和 Markdown 可以在网页里直接读（第 9 节）\n建构 | 探究 | 打开「探究工具」：老师开了图灵测试时在这里进入，另外还有计算思维工具\n | 综合升华 | 选几条笔记开一间讨论室，写一条更高一层的说法（第 8 节）\n | Scaffold | 查看这门课的支架（第 4 节）\n社区 | 我的笔记 | 别人的卡片淡下去，用顶上细栏的左右箭头一条一条跳到自己写的笔记；再点一下、点 × 或按 Esc 退出\n | 视图 | 新建或切换画布\n | Build-on 网络 | 全班的笔记怎么连在一起，你在其中哪里（第 10 节）\n | 时间线 | 按时间回看讨论（第 10 节）\n | 观点图谱 | 你们组这一周讨论到哪了（第 10 节）\n | 小组 | 你所在的小组和组员",
+      "en": "The toolbar starts expanded, with a label beside each icon. To give the canvas more room, drag its right edge to the left and it shrinks to icons; it stays that way next time. Exit at the bottom takes you back to the home page. It does not remove you from the course.\n(Figure) The toolbar has three groups, Create, Build and Community, with the legend and Exit below.\nGroup | Tool | What it does\nCreate | Create Note | Write a new note\n | Drawing | Draw boxes, arrows and text to organise the canvas\n | Attachment | Upload images, documents and video, up to 500 MB each. PDF, Word and Markdown open in the browser (section 9)\nBuild | Inquiry | Opens Inquiry tools: the Turing test when your teacher has opened one, and the computational thinking tool\n | Rise Above | Open a discussion room on several notes and write a higher-level account (section 8)\n | Scaffolds | Browse the course scaffolds (section 4)\nCommunity | My notes | Fades other cards; the arrows in the bar at the top jump through the notes you wrote one by one. Click it again, click × or press Esc to leave\n | Views | Create or switch canvases\n | Build-on Network | How the class's notes connect and where you are (section 10)\n | Timeline | Replay the discussion over time (section 10)\n | Idea Graph | Where your group's discussion stands this week (section 10)\n | Groups | Your group and its members"
     }
   },
   {
@@ -312,8 +312,8 @@ export const STUDENT_MANUAL: ManualChunk[] = [
       "en": "Other controls"
     },
     "text": {
-      "zh": "- 「优化提问」：把你的问题改写得更清楚，不会替你回答。不满意可以点撤销图标还原。\n- 模型菜单：「默认 · 课程首选模型」用老师配置的第一个模型，也可以指定一个模型。\n- 三个小图标依次是「让 AI 画一张配图」「让 AI 看整块画布」「上传图片或文件」。每个文件不超过 8 MB，一次最多 4 个，文件上会标出 AI 读得到内容还是只看得到文件名。\n- 面板顶上一行有「新建对话」和「历史对话」。「新建对话」开一段新的，原来的那段还在。「历史对话」列出这条笔记下你以前和 AI 的对话，每段用你问的第一句话标出来，点一条就能接着看、接着问。\n- 不想留的对话，在「历史对话」里点它右边的垃圾桶图标，确认后这段对话就不再显示。只能删自己的。\n- 提问发出去以后，AI 那一栏会显示「正在思考」，前面三个点在跳；等了三秒以上会显示已经等了几秒。字开始写出来以后，文字末尾的小点还在跳，说明它还在写；小点不见了，就是写完了。\n回答写完后，下面有「添加到 Note」「发布为新 Note」和一个重新生成的图标。只想用其中一段，可以选中那几句，弹出的小菜单里同样有这两项，另外还有「添加到聊天框」。",
-      "en": "- \"Refine question\" rewrites your question more clearly without answering it. Use the undo icon to get your original back.\n- The model menu: \"Default · course model\" uses the first model your teacher set up, or you can pick a specific model.\n- The three small icons are \"Ask the AI to draw an image\", \"Show the AI the whole canvas\" and \"Attach an image or file\". Files can be up to 8 MB, four at a time, and each is marked with whether the AI can read its content or only its name.\n- The top row of the panel has \"New chat\" and \"History\". \"New chat\" starts a fresh conversation and the old one stays. \"History\" lists your earlier conversations with the AI on this note, each named by the first thing you asked. Click one to read it or carry on.\n- To drop a conversation, click the bin icon on its right in \"History\" and confirm; it no longer shows. You can only delete your own.\n- After you send a question, the AI row shows \"Thinking\" with three dots bouncing, and the seconds you have waited once it passes three. When the text starts to appear, the dots after it keep bouncing while it is still writing, and disappear when it is done.\nWhen an answer is finished, \"Add to Note\", \"Publish as Note\" and a regenerate icon appear below it. To use only part of it, select those sentences: the small menu that pops up has the same two options, plus \"Add to chat\"."
+      "zh": "- 「优化提问」：把你的问题改写得更清楚，不会替你回答。不满意可以点撤销图标还原。\n- 模型菜单：「默认 · 课程首选模型」用老师配置的第一个模型，也可以指定一个模型。\n- 「回答长度」：简短、适中、详细，大约 250、550、1000 字，默认适中。这只是比例，AI 会按问题的难易再增减：简单的问题写得更短，难的写得更长；回答一定写完整，不会说到一半停下。选一次就记住，知识空间助手也用同一个选择。\n- 「画图」（带画笔的图标）、「让 AI 看整块画布」「上传图片或文件」三个按钮在右边。每个文件不超过 8 MB，一次最多 4 个，文件上会标出 AI 读得到内容还是只看得到文件名。\n- 面板顶上一行有「新建对话」和「历史对话」。「新建对话」开一段新的，原来的那段还在。「历史对话」列出这条笔记下你以前和 AI 的对话，每段用你问的第一句话标出来，点一条就能接着看、接着问。\n- 不想留的对话，在「历史对话」里点它右边的垃圾桶图标，确认后这段对话就不再显示。只能删自己的。\n- 提问发出去以后，AI 那一栏会一步步显示它在做什么：用到工具时（找相关笔记、查 Build-on 关系、联网搜索等）每一步一行，先转圈，做完打勾，写上结果和用了几秒；最后一行是「正在思考」或「正在组织回答」，等了三秒以上会显示已经等了几秒。字开始写出来以后，这些步骤收成一行「用了 N 步 · X 秒」，点开还能看；文字末尾的小点在跳说明还在写，小点不见了就是写完了。\n回答写完后，下面有「添加到 Note」「发布为新 Note」和一个重新生成的图标。只想用其中一段，可以选中那几句，弹出的小菜单里同样有这两项，另外还有「添加到聊天框」。",
+      "en": "- \"Refine question\" rewrites your question more clearly without answering it. Use the undo icon to get your original back.\n- The model menu: \"Default · course model\" uses the first model your teacher set up, or you can pick a specific model.\n- \"Answer length\": Brief, Medium or Detailed, roughly 250, 550 and 1000 characters, Medium by default. These are proportions: the AI writes less for a simple question and more for a hard one, and always finishes the answer rather than stopping midway. Your choice is remembered and the workspace assistant uses it too.\n- \"Draw\" (the picture icon), \"Show the AI the whole canvas\" and \"Attach an image or file\" sit on the right. Files can be up to 8 MB, four at a time, and each is marked with whether the AI can read its content or only its name.\n- The top row of the panel has \"New chat\" and \"History\". \"New chat\" starts a fresh conversation and the old one stays. \"History\" lists your earlier conversations with the AI on this note, each named by the first thing you asked. Click one to read it or carry on.\n- To drop a conversation, click the bin icon on its right in \"History\" and confirm; it no longer shows. You can only delete your own.\n- After you send a question, the AI row shows what it is doing step by step: when it uses a tool (finding related notes, looking up Build-on links, searching the web and so on) each step gets a line that spins, then ticks, with what it found and how many seconds it took; the last line says \"Thinking\" or \"Putting the answer together\", with the seconds you have waited once it passes three. When the text starts to appear, the steps fold into one line, \"N steps · X s\", which you can open again; the dots after the text keep bouncing while it is still writing and disappear when it is done.\nWhen an answer is finished, \"Add to Note\", \"Publish as Note\" and a regenerate icon appear below it. To use only part of it, select those sentences: the small menu that pops up has the same two options, plus \"Add to chat\"."
     }
   },
   {
@@ -342,8 +342,8 @@ export const STUDENT_MANUAL: ManualChunk[] = [
       "en": "The workspace assistant"
     },
     "text": {
-      "zh": "画布顶栏的「助手」打开知识空间 AI 助手。它看的是整个空间，适合问「这块画布上讨论到哪了」这类问题。它有两个页签：「对话」「历史」。平台怎么用的问题，问页面右边的「使用帮助」，见第 13 节。\n（配图）知识空间助手的「讨论速览」：把当前视图整理成存在分歧的问题、不同观点、已形成的共识和尚无人建构的笔记。\n（配图）问「哪些提问还没有人回应」。等待时显示已经等了几秒，推理过程和用到的工具一条条出现，然后是回答。\n- 上方可以选模型。右边的按钮选范围：不勾选就是「整个空间」；勾几条笔记，AI 会读到这几条更完整的正文。\n- 「讨论速览」可以选「当前 View」「本组讨论」或「选中的 N 条」（在画布上按住 Shift 选中的笔记），再点「生成速览」。它只整理已有的内容，不下结论。\n- 可以附图片和文件，一条消息最多 4 个，同时要写几句话。\n- 「历史」页签里是你在这个空间最近 50 次和 AI 的来往。",
-      "en": "\"Agent\" in the canvas top bar opens the workspace AI assistant. It looks at the whole space, so it suits questions like \"where has the discussion on this canvas got to\". It has two tabs: Chat and History. For questions about using the platform, use Help on the right edge of the page (section 13).\n(Figure) The workspace assistant's discussion overview sorts the current view into contested questions, differing positions, points of agreement, and notes nobody has built on.\n(Figure) Asking which questions nobody has answered. While you wait it shows the seconds elapsed, then its reasoning and the tools it used, then the answer.\n- Pick a model at the top. The button beside it sets the scope: with nothing ticked it is the whole space; tick some notes and the AI reads more of their text.\n- For the discussion overview, choose \"Current view\", \"Group discussion\" or \"N selected\" (notes you Shift-selected on the canvas), then click \"Generate\". It sorts what is there and draws no conclusions.\n- You can attach images and files, up to four per message, as long as you also write something.\n- The History tab lists your last 50 exchanges with the AI in this space."
+      "zh": "画布顶栏的「助手」打开知识空间 AI 助手。它占屏幕的一半，宽度可以拖，下次打开还是你拖的宽度。它看的是整个空间，包括笔记之间谁 Build-on 了谁，适合问「这块画布上讨论到哪了」「哪些想法还没人接着写」这类问题。平台怎么用的问题，问页面右边的「使用帮助」，见第 13 节。\n（配图）点开「讨论速览」，把当前视图整理成存在分歧的问题、不同观点、已形成的共识和尚无人建构的笔记。\n（配图）问「哪些提问还没有人回应」。等待时显示已经等了几秒，推理过程和用到的工具一条条出现，然后是回答。\n- 输入框下面一排：回形针附文件，「整个空间」选范围，接着是模型和「回答长度」（和笔记页的 AI 助手共用一个选择），右边是「画图」和发送。范围不勾选就是整个空间；勾几条笔记，AI 会读到这几条更完整的正文。\n- 「画图」：在输入框里写下想画什么，点「画图」直接出图；还没写就点，输入框里会先填上「画一张：」，接着写完再点。\n- 它能看到笔记之间的 Build-on：谁 Build-on 了谁、是延伸还是质疑、哪些想法被接得最多、哪些还没人接。\n- 「讨论速览」平时收成一行，点开后选「当前 View」「本组讨论」或「选中的 N 条」（在画布上按住 Shift 选中的笔记），再点「生成速览」。它只整理已有的内容，不下结论。\n- 可以附图片和文件，一条消息最多 4 个，同时要写几句话。\n- 你和助手的对话会存下来。再打开面板，接着的是这个空间里最近的一段；顶上的「新对话」另开一段，「历史对话」里是最近的 30 段，点一段就接着聊。回答还没说完时不能切换。",
+      "en": "\"Agent\" in the canvas top bar opens the workspace AI assistant. It takes up half the screen; drag its edge to change the width and it remembers your choice. It looks at the whole space, including who has built on whom, so it suits questions like \"where has the discussion on this canvas got to\" and \"which ideas has nobody built on yet\". For questions about using the platform, use Help on the right edge of the page (section 13).\n(Figure) Open the discussion overview and it sorts the current view into contested questions, differing positions, points of agreement, and notes nobody has built on.\n(Figure) Asking which questions nobody has answered. While you wait it shows the seconds elapsed, then its reasoning and the tools it used, then the answer.\n- The row under the input box: the paperclip attaches files, \"Whole space\" sets the scope, then the model and \"Answer length\" (shared with the note page's AI assistant), with \"Draw\" and send on the right. With nothing ticked the scope is the whole space; tick some notes and the AI reads more of their text.\n- \"Draw\": type what you want drawn and click \"Draw\" to get the picture straight away; click it with an empty box and it starts the box with \"画一张：\" for you to finish.\n- It can see the Build-ons between notes: who has built on whom, whether it extends or challenges, which ideas have been built on most, and which nobody has built on.\n- The discussion overview is folded into one line; open it, choose \"Current view\", \"Group discussion\" or \"N selected\" (notes you Shift-selected on the canvas), then click \"Generate\". It sorts what is there and draws no conclusions.\n- You can attach images and files, up to four per message, as long as you also write something.\n- Your chats with the assistant are kept. When you open the panel again it continues the latest chat in this space; \"New chat\" at the top starts another, and \"History\" lists the last 30 chats, each one a click away. You cannot switch while an answer is still coming in."
     }
   },
   {
@@ -399,8 +399,8 @@ export const STUDENT_MANUAL: ManualChunk[] = [
       "en": "The three buttons on a card"
     },
     "text": {
-      "zh": "（配图）点「不同意」以后，选一项最接近的理由就完成了。\n（配图）点「追问」，反馈原文被放进左边的输入框。补一句自己的问题再发出去，AI 接着回答。\n按钮 | 点了之后\n采纳 | 画布上在你这条笔记旁边生成一张对话式笔记，用「延伸」关系连回你的笔记。你可以在里面接着追问（见本节最后）\n不同意 | 出现「哪一点不合适？点一下就好」，在「误解了我的意思」「我已经考虑过了」「和我的探究无关」「我不认同这个判断」里点一项就完成了。想补充几句，先展开「想多说两句」写好，再点理由\n追问 | 反馈原文被放进左边 AI 助手的输入框，面板打开。补上你的问题再发送\n右上角的 × | 收起卡片，记为未处理\n收到过不止一条反馈时，反馈区会出现「历史」，可以看以前的反馈。在画布上单击这条笔记，详情面板里也列着它收到的反馈，点「打开笔记处理 N 条反馈」可以回到笔记页处理。",
-      "en": "(Figure) After clicking Disagree, picking the closest reason is all it takes.\n(Figure) Click Follow up and the feedback text is placed in the input box on the left. Add your own question, send it, and the AI answers.\nButton | What happens\nAccept | A dialogue note appears on the canvas beside your note, linked back to it as an extension. You can keep asking questions in it (see the end of this section)\nDisagree | \"What doesn't fit? One tap is enough\" appears. Tap one of \"Misread my point\", \"Already considered\", \"Not my focus\" and \"I disagree\" and you are done. To add a comment, open \"Add a note\" and write it before tapping a reason\nFollow up | The feedback text is put into the AI assistant's input box on the left and the panel opens. Add your question and send it\nThe × at the top right | Collapses the card; it is recorded as not handled\nOnce a note has had more than one piece of feedback, a History link lets you see the earlier ones. Clicking the note on the canvas also lists its feedback in the detail panel, with a link back to the note page to deal with it."
+      "zh": "（配图）点「不同意」以后，选一项最接近的理由就完成了。\n（配图）点「追问」，反馈原文被放进左边的输入框。补一句自己的问题再发出去，AI 接着回答。\n按钮 | 点了之后\n采纳 | 画布上在你这条笔记旁边生成一张对话式笔记，标题由 AI 总结这条反馈在谈什么，用「延伸」关系连回你的笔记。你可以在里面接着追问（见本节最后）\n不同意 | 出现「哪一点不合适？点一下就好」，在「误解了我的意思」「我已经考虑过了」「和我的探究无关」「我不认同这个判断」里点一项就完成了。想补充几句，先展开「想多说两句」写好，再点理由\n追问 | 反馈原文被放进左边 AI 助手的输入框，面板打开。补上你的问题再发送\n右上角的 × | 收起卡片，记为未处理\n收到过不止一条反馈时，反馈区会出现「历史」，可以看以前的反馈。在画布上单击这条笔记，详情面板里也列着它收到的反馈，点「打开笔记处理 N 条反馈」可以回到笔记页处理。",
+      "en": "(Figure) After clicking Disagree, picking the closest reason is all it takes.\n(Figure) Click Follow up and the feedback text is placed in the input box on the left. Add your own question, send it, and the AI answers.\nButton | What happens\nAccept | A dialogue note appears on the canvas beside your note, titled by the AI with what the feedback is about, and linked back to your note as an extension. You can keep asking questions in it (see the end of this section)\nDisagree | \"What doesn't fit? One tap is enough\" appears. Tap one of \"Misread my point\", \"Already considered\", \"Not my focus\" and \"I disagree\" and you are done. To add a comment, open \"Add a note\" and write it before tapping a reason\nFollow up | The feedback text is put into the AI assistant's input box on the left and the panel opens. Add your question and send it\nThe × at the top right | Collapses the card; it is recorded as not handled\nOnce a note has had more than one piece of feedback, a History link lets you see the earlier ones. Clicking the note on the canvas also lists its feedback in the detail panel, with a link back to the note page to deal with it."
     }
   },
   {
@@ -972,8 +972,8 @@ export const STUDENT_MANUAL: ManualChunk[] = [
       "en": "Accepting feedback added a card to the canvas"
     },
     "text": {
-      "zh": "那是对话式笔记，作者显示为 AI Partner，标着「可继续对话」，用延伸关系连在你的笔记上。双击它可以接着追问，见第 7 节。",
-      "en": "That is a dialogue note, shown with the author AI Partner and marked \"Open dialogue\", linked to your note as an extension. Double-click it to keep asking (section 7)."
+      "zh": "那是对话式笔记，作者显示为 AI Partner，标题是 AI 总结的这条反馈在谈什么，标着「可继续对话」，用延伸关系连在你的笔记上。双击它可以接着追问，见第 7 节。",
+      "en": "That is a dialogue note, shown with the author AI Partner, titled by the AI with what the feedback is about, marked \"Open dialogue\", and linked to your note as an extension. Double-click it to keep asking (section 7)."
     }
   },
   {
@@ -989,6 +989,217 @@ export const STUDENT_MANUAL: ManualChunk[] = [
     "text": {
       "zh": "平台还在随课程调整。先看侧栏最下面的「更新日志」，多半是刚改过。\n还是对不上，点右边的「使用帮助」问一句，AI 答不上来会转给老师。",
       "en": "The platform keeps changing as courses run. Check What's new at the bottom of the sidebar first; it has probably just changed.\nIf it still does not match, ask in the Help tab. Anything the AI cannot answer goes to your teacher."
+    }
+  }
+];
+
+// 教师专属的章节，只有教师在「使用帮助」里提问时才用
+export const TEACHER_MANUAL_EXTRA: ManualChunk[] = [
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": null,
+    "text": {
+      "zh": "这一节只有教师能看到。前面讲画布、笔记、AI 和综合升华的内容，教师端都一样。教师首页的侧栏和学生不同：「主要」里有概览、个人资料、我的课程、教学日志；「AI 智能体」里有 AI 对话、备课助手、学情分析、教学评估、学生求助、AI 设置；「研究」里是几种分析和数据导出；「平台理念与帮助」里有使用手册和平台理念，后者写明每项设计的依据和文献。学生首页上的学习面板和练习场，教师端没有。",
+      "en": "Only teachers see this section. Everything earlier about the canvas, notes, AI and rise-above works the same for you. Your home sidebar differs from a student's: Main has Overview, Profile, My courses and Teaching log; AI Agents has AI chat, Lesson prep, Analytics, Assessment, Student help and AI settings; Research has the analyses and the data export; Rationale & Help has the user manual and the design rationale, which gives the reasoning and literature behind each design. The student learning panels and practice areas are not on the teacher side."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "课程设置",
+      "en": "Course settings"
+    },
+    "text": {
+      "zh": "在「我的课程」里点课程卡片上的齿轮，进入课程设置页。页头是课程码、学生数、知识空间数和笔记数，下面分「学习目标」「课程资料」「学习任务」「教学安排」「协作与权限」五个分区。课程名旁边的铅笔可以改名，只有课程创建者能改。",
+      "en": "Click the gear on a course card under My courses to open the course settings page. The header shows the course code and the numbers of students, spaces and notes. Below are five areas: Learning goals, Materials, Assignments, Schedule and Collaboration. The pencil beside the course name renames it; only the course creator can do that."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "教学安排和教学日志",
+      "en": "Schedule and teaching log"
+    },
+    "text": {
+      "zh": "（配图）AI 教学日志。每次课的参与人数、新增笔记、Build-on 和 AI 反馈数来自数据库；文字小结由 AI 按需生成，标明「AI 生成」或「教师已修订」。\n1. 在「教学安排」里填课程类型、课时、持续周数、开课日期和每周上课时段（一周上几次就点「+ 增加一个时段」），点「保存并排课」，系统排出整学期的课次。\n2. 上课时间过了还没记录的课次，登录时会提示「有 N 次课还没记录」。点「记录这次课」，选「上课了」「调课」（要填新日期）或「没上」，可以加备注，点「确认记录」。关掉提示后，也可以在侧栏「教学日志」里补记。\n3. 「教学日志」页列出每次课。已上的课显示当时的参与人数、新增笔记、Build-on 和 AI 反馈数。点「生成教学日志」得到一段 AI 小结，可以直接修改。\n调课和没上课是分开记录的。研究数据导出里的「课次记录」会把计划和实际的上课时间都导出来。",
+      "en": "(Figure) The teaching log. Attendance, new notes, build-ons and AI feedback for each class come from the database; the written summary is generated on request and labelled as AI-generated or revised by the teacher.\n1. Under Schedule, fill in the course type, credit hours, number of weeks, start date and weekly time slots (use \"+ Add a slot\" for more than one a week), then click \"Save & schedule\". Every class for the term is laid out.\n2. Classes whose time has passed without a record trigger a prompt when you sign in. Click \"Record this class\", choose held, rescheduled (with the new date) or not held, add a note if you like, and confirm. After closing the prompt you can still record classes from Teaching log.\n3. Teaching log lists every class. Held classes show attendance, new notes, build-ons and AI feedback for that time. \"Generate teaching log\" writes an AI summary that you can edit directly.\nRescheduled and cancelled classes are recorded separately. The class sessions table in the research export includes both planned and actual times."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "协作与权限",
+      "en": "Co-teachers and course managers"
+    },
+    "text": {
+      "zh": "在课程设置的「协作与权限」里，课程创建者可以邀请其他教师加入，并把他们设为「课程管理员」或撤销。课程管理员可以改课程设置、排课、确认课次、写教学日志，也会收到补记提醒；可以移除学生，不能移除教师。指定和撤销管理员只有创建者能做。\n在工作区里，课程创建者和课程管理员可以修改、删除任何人的笔记和批注，可以查看每个组的任务板。被邀请但没有设为管理员的教师，以及用学生验证码自己加入课程的教师账号，在这门课里是普通成员：和学生一样只能改删自己的内容，小组空间、任务板和观点图谱只看得到自己所在的组。",
+      "en": "Under Collaboration in course settings, the course creator can invite other teachers and make them course managers, or take that away. Managers can change settings, plan the schedule, confirm classes and write the teaching log, and they get the same reminders. They can remove students but not teachers. Only the creator can appoint or remove managers.\nIn the workspace, the creator and course managers can edit or delete anyone's notes and comments and can view every group's task board. A teacher who was invited but not made a manager, or who joined with the student code, is an ordinary member of that course: like a student, they can change only their own content, and see only their own group's space, task board and idea graph."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "AI 设置",
+      "en": "AI settings"
+    },
+    "text": {
+      "zh": "（配图）AI 集成设置。每个服务商一张卡片，添加 API 密钥后标为「已配置」。密钥按课程保存。\n侧栏「AI 设置」的上半部分是「AI 集成设置」。在服务商卡片上点「添加 API 密钥」，填 API Key（Endpoint URL 可以不填），在「选择启用的模型」里勾这门课能用的模型（都不勾就是全部），点「验证并保存」。密钥按课程保存，课程创建者、课程管理员和平台管理员可以修改。验证不通过时密钥仍会保存，并提示「连通性验证未通过」，这时学生端的 AI 多半用不了，先检查密钥和模型名。\n【选模型】至少勾一个 flash、air、turbo 这类快速模型，学生等待时间会短很多，使用帮助也优先用它。深度推理的模型留给分析类的任务。一门课可以勾好几个。",
+      "en": "(Figure) AI integration settings. Each provider has a card, marked as configured once a key is added. Keys are stored per course.\nThe top half of AI settings is AI integration. On a provider card, click \"Add API key\", enter the key (the endpoint URL is optional), tick the models this course may use under \"Choose models\" (none ticked means all), and click \"Verify and save\". Keys are stored per course and can be changed by the creator, course managers and platform administrators. If verification fails, the key is still saved with a warning; the AI will probably not work for students until you fix the key or model name.\n[Choosing models] Enable at least one fast model (flash, air, turbo). Students wait noticeably less, and Help prefers that tier. Keep heavy reasoning models for analysis. A course can have several."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "各功能用哪个 AI",
+      "en": "Which AI each feature uses"
+    },
+    "text": {
+      "zh": "「AI 集成设置」下面是「各功能用哪个 AI」：平台上每个用到 AI 的功能列成一张表，写明谁会用到、现在用的是哪个模型、出错时换哪一家。每一项都可以在「指定模型」里选一个，或者留「自动」。自动的规则是：学生在等的功能（笔记 AI 助手、AI 反馈、讨论室、使用帮助等）先用 DeepSeek Flash，DMX 放最后；生成图片先用 DMX。模型旁边的「快，并发高」「最慢」这类提示来自 2026 年 9 月的实测。\n表下面是「各入口的模型菜单里显示哪些模型」：笔记 AI 助手、知识空间助手、学生首页的「AI 对话」各一块。选「只显示勾选的」，再勾要显示的模型（可以多选，至少留一个），那个入口的模型菜单里就只有这几个。菜单里的「默认」是上表对应那一行的模型，它没被勾上时改用勾上的里排在最前的；之前选过、后来不在名单里的，会自动换成默认。学生首页「AI 对话」的名单只管学生，老师在自己有教职的课里不受限。",
+      "en": "Below AI integration is \"Which AI each feature uses\": every AI feature on the platform, who uses it, the model it uses now and what it falls back to. Each can be set to a specific model or left on Auto. Auto puts DeepSeek Flash first for features students wait on (note AI partner, AI feedback, the discussion room, Help and so on) and DMX last, and DMX first for images. Notes such as \"fast, high concurrency\" or \"slowest\" come from measurements in September 2026.\nBelow the table, \"Which models each model menu shows\" has one block each for the note AI partner, the workspace assistant and students' AI chat. Choose \"Show only the ticked ones\" and tick the models to show (several are fine, keep at least one), and that entry's menu lists only those. \"Default\" in the menu is the model of the matching row above; if it is not ticked, Default uses the first ticked one, and an earlier pick that is no longer on the list switches to Default. The list for students' AI chat applies to students only; teachers are not limited in courses they teach."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "触发设置",
+      "en": "Trigger settings"
+    },
+    "text": {
+      "zh": "（配图）AI 触发设置：总开关、六类触发、灵敏度和冷却时间。\n「AI 设置」的下半部分是「AI 触发设置」，控制第 7 节讲的自动反馈：\n- 「自动反馈（编辑时）」是总开关。\n- 「启用的触发类型」里六类（T1 到 T6）逐一开关。刚开课时开两三类就够了，学生对提醒的耐受度比想象中低。\n- 「灵敏度」（保守、平衡、积极）、「冷却时间」（30 到 600 秒，默认 120 秒）和「最大反馈字数」（默认 300）对整门课生效。\n- 「课程上下文提示」会一起发给模型，可以写上这门课在讨论什么。\n- 同一页上的「AI 响应语言」「响应风格」「AI 角色设定」目前会保存，但还不影响自动反馈的内容。",
+      "en": "(Figure) Trigger settings: the main switch, the six trigger types, sensitivity and cooldown.\nThe lower half of AI settings, Trigger settings, controls the automatic feedback described in section 7:\n- \"Auto feedback while editing\" is the main switch.\n- Each of the six trigger types (T1 to T6) can be switched on or off. Early in a course two or three are enough; students tolerate fewer prompts than you would expect.\n- Sensitivity (conservative, balanced, aggressive), cooldown (30 to 600 seconds, 120 by default) and maximum feedback length (300 by default) apply to the whole course.\n- The course context text is sent to the model with each check, so describe what the course is discussing.\n- The response language, response style and AI persona fields on the same page are saved but do not yet affect the feedback."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "支架",
+      "en": "Scaffolds"
+    },
+    "text": {
+      "zh": "在画布工具栏点「Scaffold」打开「支架管理」，可以新建支架，把某条在本课隐藏或恢复显示，标为必用或推荐。隐藏的支架，学生和老师写笔记时都不会在支架栏里看到；在支架管理里打开「显示已隐藏」可以找回来恢复。支架分「全局」和「本课程」两种，全局支架是各门课共用的。\n打开「强制使用支架」后，学生贡献普通笔记时必须至少用一条支架，没用会被拦下并提示（第 4 节）。综合升华笔记不受限制。目前教师自己保存笔记时也会被拦下，写示范笔记前可以先关掉。",
+      "en": "Click Scaffolds in the canvas toolbar to open scaffold management. You can add scaffolds, hide or restore them for this course, and mark them required or recommended. A hidden scaffold no longer appears in the scaffold column when anyone writes a note, teachers included; turn on \"Show hidden\" in scaffold management to find and restore it. Scaffolds are either global, shared by all courses, or specific to this course.\nWith \"Require scaffold\" on, a student's ordinary note must contain at least one scaffold or it will not be contributed (section 4). Rise-above notes are exempt. At present the rule also applies to teachers' own notes, so switch it off while writing a model note."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "小组与实验条件",
+      "en": "Groups and study conditions"
+    },
+    "text": {
+      "zh": "画布工具栏的「小组」打开小组管理，有「小组概览」「协作任务」「分析」「实验设置」四个页签。在小组概览里创建小组、把学生拖进去、设组长；右侧「待分配」里也列着还没进组的教师，教师也可以拖进小组，和学生一起讨论；「为每组建空间」给每个组建一块只有本组能进的空间。「协作任务」是各组的任务板，在左上角「查看小组」里切换组。观点图谱按小组计算，没分组就没有图谱，开课后尽早分组。\n做对照研究时，可以给每个小组标「实验组」「对照组」或「未分配」，在「实验设置」里打开「实验模式」，也可以给个别学生单独设「强制开」或「强制关」，优先于小组条件。对照组学生收不到自动反馈，「请求反馈」也不会返回结果，看不到 AI 写的话头和讨论室里的系统卡片；系统仍会用规则检测并记下影子记录，不投递给学生，留作事后对比。实验模式下，没分组的学生按对照组处理，学生只能在本组的空间里发笔记。",
+      "en": "Groups in the canvas toolbar opens group management, with four tabs: Overview, Collaborative tasks, Analysis and Experiment settings. In Overview you create groups, drag students into them and choose leaders; teachers not yet in a group are listed under \"Not in a group\" too and can be dragged into a group to join the discussion; \"Create group spaces\" gives each group a space only its members can enter. Collaborative tasks shows each group's task board; switch groups with \"Group\" at the top left. The idea graph is computed per group, so assign groups early.\nFor a controlled study, mark each group as experimental, control or unassigned, and turn on experiment mode under Experiment settings. Individual students can be forced on or off, which overrides their group. Control students get no automatic feedback, no result from \"Ask AI\", no AI-written prompts and no system cards in rise-above rooms. The system still detects with rules and records shadow data without delivering it, for later comparison. In experiment mode, students without a group count as control, and students can post only in their own group's space."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "学生求助",
+      "en": "Student help"
+    },
+    "text": {
+      "zh": "（配图）学生求助。AI 答不了或学生说没解决的问题转到这里，默认只显示等你回复的。\n- 顶上四个数：等你回复、AI 已解决、你已回复、累计。默认筛选是「待回复」，可以切到「全部」。\n- 展开「AI 当时的回答 · 提问时的处境」，能看到 AI 当时怎么答的，以及学生所在的页面、打开的面板、模型、窗口大小、空间和版本。\n- 学生贴的截图直接显示在问题下面。\n- 同样的问题反复出现时会标「×N」（按问题的前 40 个字判断）。一周里七个人问同一件事，多半是界面设计的问题。\n- 这些问答会进研究数据导出。同一位创建者的各门课程之间会复用这些问答，其他老师的课程不会混进来。\n学生求助也在每个页面右边缘的「使用帮助」小球里：有学生在等你回复时，球上显示条数。点开先是「学生求助」页签，在里面直接回复，学生在自己的「使用帮助」里看到；底下的按钮回到这一页看全部记录。另一个页签「问 AI」回答你自己的平台操作问题，依据包括这一章；手册里没写到的，可以一键转给平台管理员。你问的不会出现在课程的学生求助里，也不进研究数据导出。",
+      "en": "(Figure) Student help. Questions the AI could not answer, or that students marked unsolved, land here. By default only those waiting for you are shown.\n- Four counts at the top: waiting for you, solved by AI, answered by you, and total. The default filter is waiting; switch to All to see everything.\n- Expand the AI's answer and context to see how the AI replied and where the student was: page, open panel, model, window size, space and version.\n- Screenshots the student attached appear under the question.\n- Repeated questions are marked ×N, matched on their first 40 characters. Seven people asking the same thing in a week usually points to a design problem.\n- These exchanges go into the research export. Questions are reused across courses with the same creator; other teachers' courses are kept separate.\nStudent help also lives in the Help ball on the right edge of every page: when students are waiting for you, the ball shows how many. It opens on the Student help tab, where you can reply directly; students see the reply in their own Help window, and the button at the bottom brings you back to this page for the full record. The other tab, Ask the AI, answers your own questions about the platform, drawing on this chapter too; anything the manual does not cover can go to the platform administrator in one click. Your questions do not appear in a course's student help and are not part of the research export."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "研究数据导出",
+      "en": "Research export"
+    },
+    "text": {
+      "zh": "在「研究 → 数据导出」里导出。第一次用要先给课程填英文名称，点「保存并生成编号」，每位学生会得到一个稳定编号（如 STPKB01）。\n一共 11 张表：笔记总表、互动总表、参与者名册、对话消息、AI 内嵌反馈、AI 干预日志、AI 反馈检查记录、行为事件流、笔记修订史、学生求助问答、课次记录。可以按课程、知识空间、小组（标着实验或对照）、View 和时间范围筛选；「包含」里可以勾 AI 生成笔记、已删除笔记、对照组影子记录和真实姓名；「显示列」里的技术 ID 默认不显示。单张表点「导出这张表」得到 CSV；「一次导出多张表」（至少两张，可选「核心三表」或「全选」）得到附说明文件的 ZIP。表头可以选中文或英文。\n和 AI 反馈有关的列包括「不采纳的归类」「不采纳的补充说明」「AI 建议的支架」「AI 支架是否被使用」，多数表上还有「实验条件」一列。「AI 反馈检查记录」从 2026 年 10 月 5 日起才有：一行一次自动检查，没出反馈的也在，记着要不要反馈、哪一类、原来的模型和 Jev 各自怎么判、由谁决定，用来算触发率和两边的一致率。\n【真实姓名】「真实姓名」默认不导出，勾上时页面会显示警告。不勾时每个人用稳定编号代替，跨表能对上，但对应不到具体的人。做匿名分析保持默认即可。",
+      "en": "Export data from Research → Export. The first time, give the course an English name and click \"Save & generate codes\"; each student then gets a stable code such as STPKB01.\nThere are eleven tables: notes, interactions, participants, conversation messages, in-note AI feedback, AI intervention log, AI feedback checks, event stream, note revisions, student help, and class sessions. Filter by course, space, group (marked experimental or control), view and date range. Under Include you can add AI-generated notes, deleted notes, control-group shadow records and real names; technical IDs are hidden by default under Columns. \"Export this table\" gives a CSV; \"Export several tables\" (two or more, or the core three, or all) gives a ZIP with a readme. Headers can be in Chinese or English.\nColumns about AI feedback include the reason category for not adopting, the free-text note, the AI-suggested scaffold and whether it was used. Most tables also carry the study condition. The AI feedback checks table starts on 5 October 2026: one row per automatic check, including checks that produced no feedback, with whether feedback was needed, which type, how the existing model and Jev each judged, and who decided. Use it for trigger rates and for how often the two agree.\n[Real names] Real names are left out unless you tick them, and the page warns you when you do. Without them each person has a stable code that joins across tables but does not identify anyone. Keep the default for anonymous analysis."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "主持图灵测试",
+      "en": "Running a Turing test"
+    },
+    "text": {
+      "zh": "在画布工具栏点「探究」，在「探究工具」的「图灵测试」卡片上点「设置与主持」，进入主持页。\n- 设置：活动标题、群聊话题、给学生的任务说明；扮演同学的模型（默认 DeepSeek Flash）和人设；对话时长 2 到 30 分钟（默认 5 分钟）；每群学生数 2 到 12（默认 6）；每群 AI 数 1 到 3（默认 1）；是否告诉学生群里有几个 AI（默认告诉）。\n- 阶段按钮依次是「开放给学生」「分群并开始对话」（至少要有 2 名学生）「结束对话，开始判断」「公布答案」「结束活动」。\n- 对话进行时可以「旁观」任意一个群。成员的真名和 AI 身份默认遮住，点「显示身份」才出现，投屏时不会泄底。\n- 公布答案后显示全班判断准确率、AI 被认出的比例、真人被当成 AI 的比例，以及判对和判错的学生各自靠的线索。",
+      "en": "Click Inquiry in the canvas toolbar and choose \"Set up\" on the Turing test card under Inquiry tools to open the hosting page.\n- Settings: title, chat topic and instructions for students; the model playing classmates (DeepSeek Flash by default) and its persona; chat length 2 to 30 minutes (5 by default); students per group 2 to 12 (6 by default); AI members per group 1 to 3 (1 by default); and whether to tell students how many AIs there are (on by default).\n- The phase buttons run in order: open to students, form groups and start (at least two students), end the chat and start judging, reveal, and end the activity.\n- While groups are chatting you can watch any of them. Real names and AI identities stay hidden until you click \"Show identities\", so nothing leaks on a projector.\n- After the reveal you see the class's accuracy, how often AIs were spotted, how often humans were taken for AIs, and the clues used by those who got it right and wrong."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "备课助手、学情分析、教学评估",
+      "en": "Lesson prep, analytics and assessment"
+    },
+    "text": {
+      "zh": "这三个在侧栏「AI 智能体」里，各有自己的历史对话（时钟图标），记录可以删除，齿轮里可以设课程上下文和模型。「备课助手」按课程、时长、探究主题和知识建构原则生成教案、教学资源、探究活动或讨论分析，结果可以「导出」为 Word。「学情分析」用对话的方式查询这门课的数据。「教学评估」给出参与学生数、高支持学生比例、风险提示数和 AI 反馈接受率，「完整评估报告」生成带图表的 Word 报告。",
+      "en": "All three are under AI Agents in the sidebar. Each keeps its own history (the clock icon), entries can be deleted, and the gear sets the course context and model. Lesson prep generates a lesson plan, teaching resources, an inquiry activity or a discussion analysis from the course, length, inquiry topic and knowledge-building principles, and exports to Word. Analytics lets you query the course's data in conversation. Assessment shows participating students, the share needing high support, risk alerts and AI feedback acceptance, and \"Full assessment report\" produces a Word report with charts."
+    }
+  },
+  {
+    "num": "14",
+    "section": {
+      "zh": "教师端",
+      "en": "For teachers"
+    },
+    "heading": {
+      "zh": "登录记录",
+      "en": "Sign-in records"
+    },
+    "text": {
+      "zh": "在画布工具栏的「成员」→「成员管理」里，「最后登录」一列显示每位学生最近一次登录和 30 天内的登录次数，点开能看登录记录。只记录时间和登录方式，保留 180 天。",
+      "en": "Under Members → Member management in the canvas toolbar, the \"Last sign-in\" column shows each student's latest sign-in and how many times they signed in over 30 days; click to see the record. Only the time and method are kept, for 180 days."
     }
   }
 ];

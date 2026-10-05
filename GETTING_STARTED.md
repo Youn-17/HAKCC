@@ -40,6 +40,10 @@ Accordingly, this release does not recommend blindly applying the archive with `
 
 No production database dump or course dataset is included. A future release can provide a verified baseline schema without exposing private content.
 
+## Upgrading to v0.3.0
+
+Review the [supplementary upgrade guide](write/UPDATES_v0.3.0.en.md) for migrations 074–077, course feature configuration and optional server-side Jev settings. Test schema and permissions in an isolated environment before upgrading an existing installation. No hosted database migration or deployment is part of this publication.
+
 ## Run locally
 
 After provisioning the database and environment:
@@ -64,7 +68,7 @@ Configure AI services through the appropriate administration/course tools. Selec
 ```bash
 npm run build
 npm run build --prefix api
-VITE_SUPABASE_URL=https://example.supabase.co VITE_SUPABASE_ANON_KEY=public-release-test-key npm test
+VITE_SUPABASE_URL=https://example.supabase.co VITE_SUPABASE_ANON_KEY=public-release-test-key npm test -- --maxWorkers=2 --testTimeout=20000
 ```
 
 The test command uses dummy browser configuration; API test setup also uses test values. API tests require permission to bind loopback ports. These tests do not require or validate a production course or a live provider key.

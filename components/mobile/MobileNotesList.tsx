@@ -3,7 +3,8 @@ import RemixIcon from '../RemixIcon';
 import type { Note, Language } from '../../types';
 import { htmlToPlainText, noteSearchText } from '../noteText';
 import NoteCornerBadges from '../NoteCornerBadges';
-import { isNoteNew, useNoteSeenVersion } from '../noteBadges';
+import { isNoteNew, isOwnNote, useNoteSeenVersion } from '../noteBadges';
+import { MINE_CARD } from '../morandiPalette';
 
 type SortMode = 'newest' | 'author' | 'type';
 type FilterType = 'all' | 'note' | 'riseabove' | 'drawing' | 'attachment';
@@ -40,9 +41,12 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
   const [sort, setSort] = useState<SortMode>('newest');
   const [filter, setFilter] = useState<FilterType>('all');
   const [search, setSearch] = useState('');
+  /** 「我的」：只列自己写的（2026-10-05 用户：学生找不到自己的笔记） */
+  const [mineOnly, setMineOnly] = useState(false);
 
   const filtered = useMemo(() => {
     let list = notes;
+    if (mineOnly) list = list.filter(n => isOwnNote(n, currentUserId));
     if (filter !== 'all') list = list.filter(n => n.type === filter);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -54,7 +58,7 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
       case 'type':   return [...list].sort((a, b) => a.type.localeCompare(b.type));
       default: return list;
     }
-  }, [notes, filter, search, sort]);
+  }, [notes, filter, search, sort, mineOnly, currentUserId]);
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -72,6 +76,16 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
         </div>
         {/* Filter chips */}
         <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
+          <button
+            type="button"
+            aria-pressed={mineOnly}
+            onClick={() => setMineOnly(v => !v)}
+            className={`shrink-0 px-3 h-7 rounded-full text-xs font-medium transition-colors ${
+              mineOnly ? 'bg-[#000080] text-white' : `${MINE_CARD.tagClass} active:opacity-80`
+            }`}
+          >
+            {lbl('我的', 'Mine')}
+          </button>
           {FILTER_OPTIONS.map(f => (
             <button
               key={f.id}
@@ -118,12 +132,15 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
           filtered.map(note => {
             const meta = TYPE_LABELS[note.type] || TYPE_LABELS.note;
             const preview = note.content ? htmlToPlainText(note.content).slice(0, 120) : '';
-            const isMine = note.authorId === currentUserId;
+            const isMine = isOwnNote(note, currentUserId);
             return (
               <button
                 key={note.id}
                 onClick={() => onNoteOpen(note)}
-                className="relative w-full text-left bg-white rounded-xl p-3.5 border border-gray-100 active:scale-[0.98] transition-transform shadow-sm"
+                data-mine={isMine || undefined}
+                className={`relative w-full text-left rounded-xl p-3.5 border active:scale-[0.98] transition-transform shadow-sm ${
+                  isMine ? `${MINE_CARD.bgClass} ${MINE_CARD.borderClass}` : 'bg-white border-gray-100'
+                }`}
               >
                 <NoteCornerBadges
                   isNew={isNoteNew(note, currentUserId)}
@@ -149,6 +166,7 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
                     )}
                     <div className="mt-2 flex items-center gap-2 text-[0.6875rem] text-gray-400">
                       <span className={isMine ? 'text-[#000080] font-medium' : ''}>{note.author}</span>
+                      {isMine && <span className={`rounded px-1 font-semibold ${MINE_CARD.tagClass}`}>{lbl('我', 'Me')}</span>}
                       <span>·</span>
                       <span>{new Date(note.date).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' })}</span>
                       {note.metrics && note.metrics.buildOnCount > 0 && (

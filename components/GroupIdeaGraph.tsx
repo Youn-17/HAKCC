@@ -118,6 +118,7 @@ const GroupIdeaGraph: React.FC<Props> = ({ groupId, groupName, lang, isTeacher, 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLabels, setShowLabels] = useState(true);
   const [activeConcept, setActiveConcept] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 640, h: 380 });
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -248,8 +249,8 @@ const GroupIdeaGraph: React.FC<Props> = ({ groupId, groupName, lang, isTeacher, 
   const fmt = (iso: string) => new Date(iso).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'numeric', day: 'numeric' });
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-stone-950/45 p-4 backdrop-blur-sm">
-      <div className="flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950">
+    <div className="workspace-view-shell fixed inset-0 z-[80] flex items-center justify-center bg-stone-950/45 p-4 backdrop-blur-sm">
+      <div role="dialog" aria-modal="true" aria-label={t.title} className="workspace-view-dialog flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950">
 
         {/* 顶栏 */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 px-6 py-4 dark:border-gray-800">
@@ -263,7 +264,8 @@ const GroupIdeaGraph: React.FC<Props> = ({ groupId, groupName, lang, isTeacher, 
               {snap && ` · ${t.windowLabel} ${fmt(snap.window_start)} – ${fmt(snap.window_end)}`}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="view-toolbar flex items-center gap-2">
+            <button type="button" aria-pressed={showLabels} onClick={() => setShowLabels(value => !value)}>{lang === 'zh' ? '显示标签' : 'Show labels'}</button>
             {isTeacher && (
               <button
                 type="button"
@@ -278,7 +280,7 @@ const GroupIdeaGraph: React.FC<Props> = ({ groupId, groupName, lang, isTeacher, 
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close"
+              aria-label={lang === 'zh' ? '关闭' : 'Close'}
               className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-stone-200 text-stone-600 transition hover:bg-stone-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
             >
               <X size={18} />
@@ -329,7 +331,7 @@ const GroupIdeaGraph: React.FC<Props> = ({ groupId, groupName, lang, isTeacher, 
                 ))}
               </div>
 
-              <div ref={canvasRef} className="relative min-h-0 flex-1 bg-stone-50/70 dark:bg-gray-900/40">
+              <div ref={canvasRef} className="view-graph-stage relative min-h-0 flex-1 bg-stone-50/70 dark:bg-gray-900/40">
                 <svg
                   ref={svgRef}
                   width="100%" height="100%"
@@ -364,7 +366,9 @@ const GroupIdeaGraph: React.FC<Props> = ({ groupId, groupName, lang, isTeacher, 
                         key={c.id}
                         onPointerDown={(e) => onNodeDown(e, c.id)}
                         onClick={() => { if (!justDragged.current) setActiveConcept(on ? null : c.id); }}
-                        className={dragging === c.id ? 'cursor-grabbing' : 'cursor-grab'}
+                        role="button" tabIndex={0} aria-label={c.term} aria-pressed={on}
+                        onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveConcept(on ? null : c.id); } }}
+                        className={`view-graph-node outline-none ${dragging === c.id ? 'cursor-grabbing' : 'cursor-grab'}`}
                         opacity={dim ? 0.32 : 1}
                         style={{ touchAction: 'none' }}
                       >
@@ -378,6 +382,7 @@ const GroupIdeaGraph: React.FC<Props> = ({ groupId, groupName, lang, isTeacher, 
                         <text
                           x={pos.x} y={pos.y + 4} textAnchor="middle"
                           className="pointer-events-none select-none"
+                          opacity={showLabels || on ? 1 : 0}
                           fontSize={12} fontWeight={600}
                           fill={on ? '#ffffff' : '#1c1b18'}
                         >

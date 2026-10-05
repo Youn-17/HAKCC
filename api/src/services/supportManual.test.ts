@@ -8,9 +8,10 @@ import {
   renderManualDataModule,
   selectManualExcerpts,
   splitAnswerSources,
+  TEACHER_MANUAL,
   tokenize,
 } from './supportManual';
-import { STUDENT_MANUAL } from './supportManualData';
+import { STUDENT_MANUAL, TEACHER_MANUAL_EXTRA } from './supportManualData';
 
 /**
  * 求助的回答以学生版使用手册为依据。后端读不到前端源码，手册以快照形式放在
@@ -19,7 +20,7 @@ import { STUDENT_MANUAL } from './supportManualData';
 
 describe('手册快照', () => {
   it('和 components/manual/manualContent.ts 一致（手册改了就跑 -u 重新生成）', async () => {
-    await expect(renderManualDataModule(buildManualChunks(MANUAL_SECTIONS)))
+    await expect(renderManualDataModule(buildManualChunks(MANUAL_SECTIONS), buildManualChunks(MANUAL_SECTIONS, { teacherOnly: true })))
       .toMatchFileSnapshot('./supportManualData.ts');
   });
 
@@ -30,6 +31,14 @@ describe('手册快照', () => {
     const inSnapshot = new Set(STUDENT_MANUAL.map(c => c.num));
     for (const num of teacherNums) expect(inSnapshot.has(num)).toBe(false);
     for (const num of studentNums) expect(inSnapshot.has(num)).toBe(true);
+  });
+
+  it('教师专属的章节单独一份，只有教师提问时才用', () => {
+    const teacherNums = new Set(MANUAL_SECTIONS.filter(s => s.teacherOnly).map(s => s.num));
+    expect(TEACHER_MANUAL_EXTRA.length).toBeGreaterThan(0);
+    expect(TEACHER_MANUAL_EXTRA.every(c => teacherNums.has(c.num))).toBe(true);
+    expect(TEACHER_MANUAL.length).toBe(STUDENT_MANUAL.length + TEACHER_MANUAL_EXTRA.length);
+    expect(TEACHER_MANUAL_EXTRA.some(c => c.heading?.zh === 'AI 设置')).toBe(true);
   });
 
   it('常见问题每一问单独成段，问题就是小标题', () => {

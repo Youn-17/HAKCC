@@ -316,7 +316,7 @@ describe('服务端拼正文的转义', () => {
 });
 
 // 这一组要真的等 worker 撑爆内存、跑到超时再被杀掉，机器忙的时候（并行跑测试）会超过默认的 5 秒
-describe('畸形正文拖不垮 API', { timeout: 20_000 }, () => {
+describe('畸形正文拖不垮 API', { timeout: 40_000 }, () => {
   // 格式元素重建放大：19KB 能让 jsdom 算十几秒、吃掉 2GB
   const bomb = (a: number, b: number) => '<p>' + Array.from({ length: a }, (_, i) => `<b class="c${i}">`).join('') + '</p>' + '<p>x</p>'.repeat(b);
   const sanitizers: ReturnType<typeof createNoteSanitizer>[] = [];

@@ -22,7 +22,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 function countOf(data: unknown): number | null {
   if (Array.isArray(data)) return data.length;
   if (!isRecord(data)) return null;
-  for (const key of ['results', 'notes', 'items', 'matches', 'triggers', 'sources', 'insights', 'events']) {
+  // get_note_context：整个空间时给的是 totalBuildOns（列表可能被截断），指定一条笔记时是 buildOnRelations
+  if (typeof data.totalBuildOns === 'number') return data.totalBuildOns;
+  for (const key of ['results', 'notes', 'items', 'matches', 'triggers', 'sources', 'insights', 'events', 'buildOnRelations']) {
     const v = data[key];
     if (Array.isArray(v)) return v.length;
   }
@@ -34,7 +36,7 @@ function countOf(data: unknown): number | null {
 const ZH: Record<string, (n: number | null, d: unknown) => string> = {
   search_notes: n => (n === 0 ? '没找到相关笔记' : `找到 ${n} 条相关笔记`),
   read_note: () => '读完了',
-  get_note_context: () => '取到上下文',
+  get_note_context: n => (n === null ? '取到上下文' : n === 0 ? '还没有 Build-on 关系' : `找到 ${n} 条 Build-on 关系`),
   compare_notes: n => (n ? `比对了 ${n} 条` : '比对完成'),
   analyze_argument: () => '分析完成',
   web_search: n => (n === 0 ? '没搜到结果' : `搜到 ${n} 条`),
@@ -48,7 +50,7 @@ const ZH: Record<string, (n: number | null, d: unknown) => string> = {
 const EN: Record<string, (n: number | null, d: unknown) => string> = {
   search_notes: n => (n === 0 ? 'no matching notes' : `${n} notes found`),
   read_note: () => 'read',
-  get_note_context: () => 'context loaded',
+  get_note_context: n => (n === null ? 'context loaded' : n === 0 ? 'no Build-on links yet' : `${n} Build-on links found`),
   compare_notes: n => (n ? `compared ${n}` : 'compared'),
   analyze_argument: () => 'analysed',
   web_search: n => (n === 0 ? 'no results' : `${n} results`),

@@ -1,3 +1,4 @@
+import { getCourseMemberCounts } from '../services/courseMemberCounts';
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT, requireRole } from '../middleware/auth';
@@ -32,6 +33,7 @@ type CourseSummary = {
   verificationCode: string | null;
   createdAt: string;
   studentCount: number;
+  teacherCount: number;
   noteCount: number;
   lastActivityAt: string | null;
   hasAi: boolean;
@@ -84,25 +86,6 @@ async function getInstructorNames(courses: CourseRow[]): Promise<Map<string, str
   }
 
   return names;
-}
-
-async function getStudentCounts(courseIds: string[]): Promise<Map<string, number>> {
-  if (courseIds.length === 0) return new Map();
-
-  const { data, error } = await supabase
-    .from('course_members')
-    .select('course_id, users!user_id(role)')
-    .in('course_id', courseIds);
-
-  if (error) throw new ApiError(500, error.message);
-
-  const counts = new Map<string, number>();
-  for (const row of (data ?? []) as Array<{ course_id: string; users?: { role?: string } | null }>) {
-    if (row.users?.role !== 'student') continue;
-    counts.set(row.course_id, (counts.get(row.course_id) ?? 0) + 1);
-  }
-
-  return counts;
 }
 
 async function getCourseSpaces(courseIds: string[]): Promise<Array<{ id: string; course_id: string }>> {
@@ -233,7 +216,7 @@ async function getUnreadFeedbackCountsForTeacher(
 function toCourseSummary(
   course: CourseRow,
   instructorNames: Map<string, string>,
-  studentCounts: Map<string, number>,
+  studentCounts: Map<string, { teacherCount: number; studentCount: number }>,
   noteStats: Map<string, { noteCount: number; lastActivityAt: string | null }>,
   aiEnabledCourseIds: Set<string>,
   unreadFeedbackCounts: Map<string, number>,
@@ -254,7 +237,8 @@ function toCourseSummary(
     tags: course.tags ?? [],
     verificationCode: exposeVerificationCode ? course.verification_code : null,
     createdAt: course.created_at,
-    studentCount: studentCounts.get(course.id) ?? 0,
+    studentCount: studentCounts.get(course.id)?.studentCount ?? 0,
+    teacherCount: studentCounts.get(course.id)?.teacherCount ?? 1,
     noteCount: courseStats.noteCount,
     lastActivityAt: courseStats.lastActivityAt,
     hasAi: aiEnabledCourseIds.has(course.id),
@@ -288,7 +272,7 @@ router.get('/student-overview', verifyJWT, requireRole('student'), async (req: R
 
   const [instructorNames, studentCounts, aiEnabledCourseIds, spaceRows, unreadNotificationsResult, recentTeacherNotificationsResult] = await Promise.all([
     getInstructorNames(relevantCourses),
-    getStudentCounts(relevantCourses.map((course) => course.id)),
+    getCourseMemberCounts(relevantCourses),
     getAiEnabledCourseIds(relevantCourses.map((course) => course.id)),
     getCourseSpaces(enrolledCourses.map((course) => course.id)),
     supabase
@@ -388,7 +372,7 @@ router.get('/teacher-overview', verifyJWT, requireRole('teacher', 'admin'), asyn
 
   const [instructorNames, studentCounts, aiEnabledCourseIds, spaceRows] = await Promise.all([
     getInstructorNames(courseRows),
-    getStudentCounts(courseIds),
+    getCourseMemberCounts(courseRows),
     getAiEnabledCourseIds(courseIds),
     getCourseSpaces(courseIds),
   ]);

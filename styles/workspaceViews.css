@@ -1,0 +1,31 @@
+/* Quiet, shared surfaces for the community's ways of looking at knowledge. */
+.workspace-view-shell { background: rgb(18 27 45 / 32%); backdrop-filter: blur(12px); }
+.workspace-view-dialog { --view-paper: #fff; --view-wash: #f7f8fa; --view-line: #e5e8ee; --view-ink: #253047; background: var(--view-paper); color: var(--view-ink); border-radius: 1.25rem; border: 1px solid var(--view-line); box-shadow: 0 24px 80px rgb(20 35 65 / 18%), 0 0 0 1px rgb(255 255 255 / 25%); animation: view-appear 180ms ease-out; }
+.dark .workspace-view-dialog { --view-paper: #111a29; --view-wash: #0d1522; --view-line: #2b3546; --view-ink: #e5eaf3; }
+.workspace-view-dialog > :first-child { background: var(--view-paper); border-color: var(--view-line); }
+.workspace-view-dialog button, .workspace-view-dialog select { transition: background-color 150ms, border-color 150ms, box-shadow 150ms; }
+.workspace-view-dialog button:focus-visible, .workspace-view-dialog select:focus-visible, .workspace-view-dialog summary:focus-visible { outline: 2px solid #697dd2; outline-offset: 3px; }
+.workspace-view-dialog button:active:not(:disabled) { filter: brightness(.96); }
+.workspace-view-dialog button[aria-label*="关闭"], .workspace-view-dialog button[aria-label="Close"] { min-width: 2rem; min-height: 2rem; }
+.view-toolbar { display: flex; align-items: center; gap: .25rem; }
+.view-toolbar :is(button,select) { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-height: 1.85rem; border: 1px solid var(--view-line); border-radius: .6rem; padding: .25rem .65rem; background: var(--view-paper); color: var(--view-ink); font-size: .6875rem; }
+.view-toolbar button:hover { background: var(--view-wash); border-color: #b9c5de; }
+.view-toolbar button[aria-pressed="true"] { background: #edf1fc; color: #000080; border-color: #c3cdeb; }
+.dark .view-toolbar button[aria-pressed="true"] { background: #223051; color: #c1cbff; border-color: #445379; }
+.view-graph-stage { background-color: var(--view-wash); background-image: radial-gradient(#abb6c533 .8px, transparent .8px); background-size: 18px 18px; }
+.view-graph-node circle { transition: stroke-width 150ms, fill 150ms, r 150ms; }
+.view-graph-node:hover circle, .view-graph-node:focus-visible circle { stroke-width: 3px; filter: drop-shadow(0 2px 5px rgb(20 35 65 / 20%)); }
+.view-content-card { box-shadow: 0 2px 6px rgb(20 35 65 / 3%); }
+.view-content-card:hover, .view-content-card:focus-within { border-color: #b7c3dc; box-shadow: 0 6px 20px rgb(20 35 65 / 7%); }
+.view-timeline-list[data-density="compact"] section { margin-bottom: .25rem; }
+.view-timeline-list[data-density="compact"] button { padding-top: .35rem; padding-bottom: .35rem; }
+.dark .workspace-view-dialog .bg-white { background-color: var(--view-paper); }
+.dark .workspace-view-dialog :is(.text-zinc-700,.text-zinc-900,.text-zinc-950) { color: var(--view-ink); }
+@keyframes view-appear { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+@media (max-width: 767px) {
+  .workspace-view-shell { padding: .5rem; }
+  .workspace-view-dialog { max-height: 96dvh; border-radius: 1rem; }
+  .workspace-view-dialog > :first-child { flex-wrap: wrap; padding: .85rem 1rem; gap: .6rem; }
+  .view-toolbar { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .workspace-view-dialog { animation: none; } .view-graph-node circle { transition: none; } }

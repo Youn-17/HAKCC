@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
@@ -48,6 +48,8 @@ let backend: {
   courses: Array<{ id: string; title: string }>;
   answer: (body: Row) => Row;
   calls: Array<{ method: string; url: string; body: Row | null }>;
+  /** 教师小球的收件箱 */
+  inbox: { student: Row[]; teacher: Row[] };
 };
 
 function stubBackend() {
@@ -60,6 +62,14 @@ function stubBackend() {
       new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 
     if (method === 'GET' && url.includes('/support/questions/mine')) return json({ questions: backend.history });
+    if (method === 'GET' && url.endsWith('/support/inbox')) {
+      return json({ ...backend.inbox, counts: { student: backend.inbox.student.length, teacher: backend.inbox.teacher.length } });
+    }
+    const answered = url.match(/\/support\/questions\/([^/?]+)\/answer$/);
+    if (method === 'POST' && answered) {
+      backend.inbox.student = backend.inbox.student.filter(q => q.id !== answered[1]);
+      return json({ question: question({ id: answered[1], status: 'teacher_answered', teacherAnswer: body!.answer }) });
+    }
     if (method === 'POST' && url.endsWith('/support/questions')) return json({ question: backend.answer(body!) }, 201);
     const patch = url.match(/\/support\/questions\/([^/?]+)$/);
     if (method === 'PATCH' && patch) {
@@ -96,6 +106,14 @@ function Reporter({ context }: { context: HelpPageContext }) {
   return null;
 }
 
+/** 记下当前地址：「打开学生求助页」要跳回首页并带上要落的那一栏 */
+let currentLocation: { pathname: string; state: unknown } | null = null;
+function LocationProbe() {
+  const location = useLocation();
+  currentLocation = { pathname: location.pathname, state: location.state };
+  return null;
+}
+
 async function mount(path: string, role: 'student' | 'teacher' | 'admin' | null = 'student', page?: HelpPageContext) {
   h.user = role ? { id: 'stu-1', name: '林晓', email: 'lin@example.test', role } : null;
   host = document.createElement('div');
@@ -106,6 +124,7 @@ async function mount(path: string, role: 'student' | 'teacher' | 'admin' | null 
       MemoryRouter,
       { initialEntries: [path] },
       page ? React.createElement(Reporter, { context: page }) : null,
+      React.createElement(LocationProbe),
       React.createElement(HelpWidget, { lang: 'zh' }),
     ));
   });
@@ -151,7 +170,9 @@ beforeEach(() => {
       aiAnswer: '1. 单击同学的那条笔记。\n2. 点「建立于此」，选一种关系。',
     }),
     calls: [],
+    inbox: { student: [], teacher: [] },
   };
+  currentLocation = null;
   stubBackend();
 });
 
@@ -172,13 +193,13 @@ describe('谁看得到小球', () => {
     expect(ball()!.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('教师和管理员看不到：他们有学生求助收件箱', async () => {
+  it('教师和管理员也看得到（2026-10-05 起）', async () => {
     await mount('/workspace/course-1', 'teacher');
-    expect(ball()).toBeNull();
+    expect(ball()).not.toBeNull();
     await act(async () => { root?.unmount(); });
     host?.remove();
     await mount('/dashboard', 'admin');
-    expect(ball()).toBeNull();
+    expect(ball()).not.toBeNull();
   });
 
   it('没登录、或者在公开首页，都不挂', async () => {
@@ -447,5 +468,72 @@ describe('只有一个求助入口', () => {
       .map(path => relative(ROOT, path));
     expect(askers).toEqual(['help/HelpChat.tsx']);
     expect(readFileSync(join(ROOT, 'WorkspaceAgentPanel.tsx'), 'utf-8')).not.toMatch(/'support'/);
+  });
+});
+
+describe('教师：球上有等回复的数，面板里能直接回学生', () => {
+  const waitingQuestion = (id: string, over: Partial<Row> = {}) => question({
+    id, userName: '林晓', courseTitle: '人工智能与学习', askerRole: 'student', status: 'escalated',
+    question: '我写的笔记不见了', escalationNote: '刷新也没有', escalatedAt: now(), ...over,
+  });
+
+  it('有学生在等：球上显示条数，打开先落在「学生求助」，回复后从列表里消失、数跟着变', async () => {
+    backend.inbox.student = [waitingQuestion('sq-1'), waitingQuestion('sq-2', { userName: '周子涵', question: '支架插错了' })];
+    await mount('/dashboard', 'teacher');
+    const badge = await waitFor(() => ball()!.querySelector('[data-help-waiting]'), '球上的数');
+    expect(badge.textContent).toBe('2');
+    expect(ball()!.getAttribute('aria-label')).toContain('2 条求助等你回复');
+
+    const dialog = await openPanel();
+    await waitFor(() => dialog.textContent?.includes('我写的笔记不见了'), '收件箱里的求助');
+    const tab = Array.from(dialog.querySelectorAll('[role="tab"]')).find(el => el.getAttribute('aria-selected') === 'true')!;
+    expect(tab.textContent).toBe('学生求助 · 2');
+    expect(dialog.textContent).toContain('人工智能与学习');
+    expect(dialog.textContent).toContain('刷新也没有');
+
+    const box = dialog.querySelector<HTMLTextAreaElement>('textarea[aria-label="回复林晓"]')!;
+    await act(async () => { typeInto(box, '先点右上角「视图」看看是不是在别的画布'); });
+    await click(buttonWith('回复'));
+    await waitFor(() => !dialog.textContent?.includes('我写的笔记不见了'), '回复过的那条离开列表');
+    const sent = backend.calls.find(c => c.method === 'POST' && c.url.endsWith('/support/questions/sq-1/answer'))!;
+    expect(sent.body).toEqual({ answer: '先点右上角「视图」看看是不是在别的画布' });
+    expect(dialog.textContent).toContain('已回复林晓');
+    await waitFor(() => ball()!.querySelector('[data-help-waiting]')?.textContent === '1', '球上的数变成 1');
+  });
+
+  it('「问 AI」页签：按教师说话，答不了转平台管理员，常见问题是教师端的', async () => {
+    backend.courses = [{ id: 'course-1', title: '人工智能与学习' }];
+    await mount('/dashboard', 'teacher');
+    const dialog = await openPanel();
+    const askTab = Array.from(dialog.querySelectorAll('[role="tab"]')).find(el => el.textContent === '问 AI')!;
+    expect(askTab.getAttribute('aria-selected')).toBe('true');
+    await waitFor(() => dialog.textContent?.includes('转给平台管理员'), '教师版的开场白');
+    expect(dialog.textContent).toContain('怎么导出研究数据？');
+    expect(dialog.textContent).not.toContain('怎么加入一门新课？');
+  });
+
+  it('没有人在等：球上不显示数', async () => {
+    await mount('/workspace/course-1', 'teacher');
+    await waitFor(() => backend.calls.some(c => c.url.endsWith('/support/inbox')), '查过收件箱');
+    await settle(20);
+    expect(ball()!.querySelector('[data-help-waiting]')).toBeNull();
+  });
+
+  it('「打开学生求助页」回到首页，落在那一栏', async () => {
+    backend.inbox.student = [waitingQuestion('sq-1')];
+    await mount('/workspace/course-1', 'teacher');
+    const dialog = await openPanel();
+    await waitFor(() => dialog.textContent?.includes('我写的笔记不见了'), '收件箱');
+    await click(Array.from(dialog.querySelectorAll('button')).find(b => b.textContent?.includes('打开「学生求助」页'))!);
+    expect(currentLocation).toEqual({ pathname: '/dashboard', state: { dashboardTab: 'student-help' } });
+    await waitFor(() => !panelOpen(), '面板收起');
+  });
+
+  it('学生看不到「学生求助」页签，也不查收件箱', async () => {
+    await mount('/workspace/course-1', 'student');
+    const dialog = await openPanel();
+    expect(dialog.querySelector('[role="tablist"]')).toBeNull();
+    await settle(20);
+    expect(backend.calls.some(c => c.url.endsWith('/support/inbox'))).toBe(false);
   });
 });

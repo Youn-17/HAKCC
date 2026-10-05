@@ -100,6 +100,10 @@ export type AgentLoopResult = {
   iterations: number;
   finishReason: 'completed' | 'max_iterations' | 'error';
   error?: string;
+  /** 回答写到 max_tokens 被截住后，接着写了几段（2026-10-05 起） */
+  continuations?: number;
+  /** 接着写到上限次数仍没写完 */
+  truncated?: boolean;
 };
 
 export type AgentStreamEvent =
@@ -116,6 +120,13 @@ export type AgentStreamEvent =
 
 const DEFAULT_MAX_ITERATIONS = 5;
 const DEFAULT_MAX_TOKENS = 8192;
+
+/**
+ * 回答写到 max_tokens 被截住时，接着写的那一句和最多接几段（2026-10-05 用户：输出要完整，不要硬截断）。
+ * 回答长度只写在提示词里（answerLength.ts），max_tokens 只防跑飞；真撞上了就接着写。
+ */
+export const CONTINUE_PROMPT = 'Your previous reply was cut off by the length limit. Continue exactly where it stopped, without repeating anything, and finish the answer.';
+export const MAX_CONTINUATIONS = 2;
 const DEFAULT_TEMPERATURE = 0.7;
 const TOOL_EXECUTION_TIMEOUT_MS = 15_000;
 
@@ -405,6 +416,7 @@ function messagesToAnthropic(
 function parseAnthropicResponse(data: any): {
   content: string | null;
   toolCalls: AgentToolCall[];
+  truncated: boolean;
 } {
   const contentBlocks: any[] = data.content ?? [];
   let text = '';
@@ -423,7 +435,7 @@ function parseAnthropicResponse(data: any): {
       });
     }
   }
-  return { content: text || null, toolCalls };
+  return { content: text || null, toolCalls, truncated: data.stop_reason === 'max_tokens' };
 }
 
 /** Convert OpenAI tool definitions to Google functionDeclarations. */
@@ -486,6 +498,7 @@ function messagesToGoogle(
 function parseGoogleResponse(data: any): {
   content: string | null;
   toolCalls: AgentToolCall[];
+  truncated: boolean;
 } {
   const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
   let text = '';
@@ -504,7 +517,7 @@ function parseGoogleResponse(data: any): {
       });
     }
   }
-  return { content: text || null, toolCalls };
+  return { content: text || null, toolCalls, truncated: data.candidates?.[0]?.finishReason === 'MAX_TOKENS' };
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +540,8 @@ type ProviderCallResult = {
   content: string | null;
   toolCalls: AgentToolCall[];
   reasoning?: string;
+  /** 厂商说写到 max_tokens 停的（finish_reason=length 之类） */
+  truncated?: boolean;
 };
 
 /**
@@ -732,6 +747,7 @@ async function callOpenAICompatibleWithTools(
     content: msg?.content ?? null,
     toolCalls,
     reasoning,
+    truncated: choice?.finish_reason === 'length',
   };
 }
 
@@ -776,6 +792,7 @@ async function callOpenAICompatibleNoTools(
   return {
     content: data.choices?.[0]?.message?.content ?? null,
     toolCalls: [],
+    truncated: data.choices?.[0]?.finish_reason === 'length',
   };
 }
 
@@ -1238,9 +1255,33 @@ export async function* runAgentLoopStream(
             for (let i = 0; i < direct.length; i += 48) {
               yield { type: 'token', content: direct.slice(i, i + 48) };
             }
+            // 写到 max_tokens 被截住：接着写，学生看到的是一段完整的回答
+            let full = direct;
+            let truncated = result.truncated === true;
+            let continuations = 0;
+            while (truncated && continuations < MAX_CONTINUATIONS) {
+              continuations += 1;
+              const more = await callProviderWithTools({
+                providerId, model, apiKey, endpointUrl,
+                messages: [...conversation, { role: 'assistant', content: full }, { role: 'user', content: CONTINUE_PROMPT }],
+                tools: [],
+                maxTokens, temperature,
+              }).catch(() => null);
+              const extra = more ? stripToolMarkup(flattenContent(more.content ?? '')) : '';
+              if (!extra) break;
+              for (let i = 0; i < extra.length; i += 48) {
+                yield { type: 'token', content: extra.slice(i, i + 48) };
+              }
+              full += extra;
+              truncated = more?.truncated === true;
+            }
             yield {
               type: 'done',
-              result: { content: direct, toolCalls: allToolCalls, iterations, finishReason: 'completed' },
+              result: {
+                content: full, toolCalls: allToolCalls, iterations, finishReason: 'completed',
+                ...(continuations > 0 ? { continuations } : {}),
+                ...(truncated ? { truncated: true } : {}),
+              },
             };
             return;
           }

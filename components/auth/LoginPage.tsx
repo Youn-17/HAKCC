@@ -251,8 +251,8 @@ const PRIVACY_SECTIONS: { title: { en: string; zh: string }; content: { en: stri
   {
     title: { en: 'Data Sharing', zh: '信息共享' },
     content: {
-      en: `We do not sell, rent, or share your personal information for commercial purposes. Information may be shared only with service providers assisting platform operations (under confidentiality), when required by law, or to protect rights, property, or safety.`,
-      zh: `我们不会出售、出租或以商业目的共享您的个人信息。仅在以下情况下共享：协助平台运营的服务提供商（须保密）、法律要求，或保护权利、财产或安全。`,
+      en: `We do not sell, rent, or share your personal information for commercial purposes. Information may be shared only with service providers assisting platform operations (under confidentiality), when required by law, or to protect rights, property, or safety.\n\nTo decide whether a note should get automatic AI feedback, and of what kind, HAKCC sends the note's title and text (up to 2,000 characters, without your name) to Jev, a service of the overseas provider TypeSafe. When the AI assistant estimates how long an answer should be, it sends the question itself to the same service.`,
+      zh: `我们不会出售、出租或以商业目的共享您的个人信息。仅在以下情况下共享：协助平台运营的服务提供商（须保密）、法律要求，或保护权利、财产或安全。\n\nAI 自动反馈判断一条笔记要不要反馈、属于哪一类时，会把笔记的标题和正文（最多 2000 字，不带姓名）发给境外服务商 TypeSafe 的 Jev 服务；AI 助手估计一个问题要答多长时，会把问题本身发给同一服务。`,
     },
   },
   {

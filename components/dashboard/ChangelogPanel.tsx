@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import RemixIcon from '../RemixIcon';
@@ -53,11 +53,24 @@ interface Props {
 const ChangelogPanel: React.FC<Props> = ({ lang, audience, onClose }) => {
   const zh = lang === 'zh';
   const entries = changelogFor(audience);
+  const panelRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const previousFocus = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Tab') return;
+      const targets = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('button, summary, a[href], [tabindex="0"]') ?? [])
+        .filter(el => el.getClientRects().length > 0);
+      const first = targets[0];
+      const last = targets[targets.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => { window.removeEventListener('keydown', onKey); previousFocus?.focus(); };
   }, [onClose]);
 
   /*
@@ -79,9 +92,11 @@ const ChangelogPanel: React.FC<Props> = ({ lang, audience, onClose }) => {
       />
 
       <aside
+        ref={panelRef}
         role="dialog"
+        aria-modal="true"
         aria-label={zh ? '更新日志' : 'Changelog'}
-        className="relative flex h-full w-full max-w-[26rem] flex-col border-l border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-950"
+        className="release-panel relative flex h-full w-full max-w-[28rem] flex-col border-l border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-950"
       >
         <header className="flex items-start justify-between gap-3 border-b border-gray-100 px-6 py-5 dark:border-gray-800">
           <div>
@@ -89,13 +104,14 @@ const ChangelogPanel: React.FC<Props> = ({ lang, audience, onClose }) => {
               {zh ? '更新日志' : "What's new"}
             </h2>
             <p className="mt-0.5 text-[0.6875rem] text-gray-500 dark:text-gray-400">
-              {zh ? '平台从上线到现在的变化' : 'How the platform has changed since launch'}
+              {zh ? '功能改进与问题修复' : 'Product improvements and fixes'}
             </p>
           </div>
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
-            className="-mr-1 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            className="-mr-1 inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000080] dark:text-gray-400 dark:hover:bg-gray-800 dark:focus-visible:outline-blue-300"
             aria-label={zh ? '关闭' : 'Close'}
           >
             <X size={18} />
@@ -103,45 +119,28 @@ const ChangelogPanel: React.FC<Props> = ({ lang, audience, onClose }) => {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          <ol className="space-y-7">
+          <ol className="space-y-4">
             {entries.map((entry, i) => (
-              <li key={entry.version} className="relative pl-5">
-                {/* 时间轴：一条竖线串起所有版本，最后一条不再往下画 */}
-                <span
-                  className={`absolute left-[3px] top-2 w-px bg-gray-200 dark:bg-gray-800 ${
-                    i === entries.length - 1 ? 'h-0' : 'h-[calc(100%+1.75rem)]'
-                  }`}
-                />
-                <span
-                  className={`absolute left-0 top-1.5 h-[7px] w-[7px] rounded-full ${
-                    i === 0 ? 'bg-[#000080] dark:bg-blue-400' : 'bg-gray-300 dark:bg-gray-700'
-                  }`}
-                />
-
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="text-[0.8125rem] font-bold tracking-tight text-gray-900 dark:text-gray-100">
-                    {entry.version}
-                  </span>
-                  <span className="text-[0.6875rem] text-gray-400">{entry.date}</span>
-                  {i === 0 && (
-                    <span className="rounded-full bg-[#000080]/[0.08] px-2 py-0.5 text-[0.625rem] font-semibold text-[#000080] dark:bg-blue-950/50 dark:text-blue-300">
-                      {zh ? '最新' : 'Latest'}
-                    </span>
-                  )}
-                </div>
-
-                <p className="mt-0.5 text-[0.8125rem] font-semibold text-gray-800 dark:text-gray-200">
-                  {zh ? entry.titleZh : entry.titleEn}
-                </p>
-
-                <ul className="mt-2 space-y-1.5">
-                  {entry.items.map((item, j) => (
-                    <li key={j} className="flex gap-2 text-[0.75rem] leading-6 text-gray-600 dark:text-gray-400">
-                      <span className="mt-[9px] h-[3px] w-[3px] shrink-0 rounded-full bg-gray-300 dark:bg-gray-600" />
-                      <span>{zh ? item.zh : item.en}</span>
-                    </li>
-                  ))}
-                </ul>
+              <li key={entry.version}>
+                <details open={i < 3} className="group rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800">
+                  <summary className="cursor-pointer list-none rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#000080] dark:focus-visible:outline-blue-300 [&::-webkit-details-marker]:hidden">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[0.75rem] font-semibold tabular-nums text-gray-900 dark:text-gray-100">{entry.version}</span>
+                      <time dateTime={entry.date} className="text-[0.6875rem] text-gray-500 dark:text-gray-400">{entry.date}</time>
+                      {i === 0 && <span className="rounded-full bg-[#000080]/[0.08] px-2 py-0.5 text-[0.625rem] font-semibold text-[#000080] dark:bg-blue-950/50 dark:text-blue-300">{zh ? '最新' : 'Latest'}</span>}
+                      <RemixIcon name="arrow-down-s-line" size={16} className="ml-auto text-gray-500 transition-transform group-open:rotate-180" />
+                    </div>
+                    <span className="mt-1.5 block text-[0.8125rem] font-semibold leading-6 text-gray-800 dark:text-gray-200">{zh ? entry.titleZh : entry.titleEn}</span>
+                  </summary>
+                  <ul className="mt-3 space-y-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                    {entry.items.map((item, j) => (
+                      <li key={j} className="flex gap-2 text-[0.75rem] leading-6 text-gray-600 dark:text-gray-400">
+                        <span className="mt-[9px] h-[3px] w-[3px] shrink-0 rounded-full bg-gray-300 dark:bg-gray-600" />
+                        <span className="min-w-0 break-words">{zh ? item.zh : item.en}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               </li>
             ))}
           </ol>

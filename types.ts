@@ -50,6 +50,8 @@ export interface Note {
   author: string;
   authorId?: string;
   authorAvatar?: string;
+  /** AI 写的（显示成 AI Partner）。author_id 可能是触发它的学生，判断「我的」时要排除 */
+  isAiGenerated?: boolean;
   date: string;
   /** ISO timestamp — the source of truth for formatting; `date` is a locale string. */
   createdAt?: string;
@@ -262,6 +264,7 @@ export interface Course {
   instructor: string;
   instructor_id?: string; // teacher's user ID
   studentCount: number;
+  teacherCount?: number;
   noteCount: number;
   progress?: number; // 0-100 for students
   visits?: number;   // for admin/teacher

@@ -1,3 +1,4 @@
+import { getCourseMemberCounts } from '../services/courseMemberCounts';
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT, requireRole } from '../middleware/auth';
@@ -239,16 +240,7 @@ router.get('/courses', verifyJWT, requireRole('admin'), async (_req: Request, re
     if (name) instructorNameById.set(row.id, name);
   }
 
-  const { data: memberships, error: memberError } = await supabase
-    .from('course_members')
-    .select('course_id')
-    .in('course_id', courseIds);
-  if (memberError) throw new ApiError(500, memberError.message);
-
-  const studentCountByCourse = new Map<string, number>();
-  for (const row of (memberships ?? []) as Array<{ course_id: string }>) {
-    studentCountByCourse.set(row.course_id, (studentCountByCourse.get(row.course_id) ?? 0) + 1);
-  }
+  const memberCounts = await getCourseMemberCounts(courseRows);
 
   const { data: spaces, error: spacesError } = await supabase
     .from('spaces')
@@ -294,7 +286,8 @@ router.get('/courses', verifyJWT, requireRole('admin'), async (_req: Request, re
       tags: course.tags ?? [],
       verification_code: course.verification_code ?? null,
       created_at: course.created_at,
-      student_count: studentCountByCourse.get(course.id) ?? 0,
+      student_count: memberCounts.get(course.id)?.studentCount ?? 0,
+      teacher_count: memberCounts.get(course.id)?.teacherCount ?? 1,
       note_count: noteCountByCourse.get(course.id) ?? 0,
       last_activity_at: lastActiveByCourse.get(course.id) ?? null,
     };
