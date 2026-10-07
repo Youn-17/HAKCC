@@ -13,6 +13,8 @@
  * 任务状态由调用方持久化（document_renders 表），进程重启不会丢。
  */
 
+import { pageMapFromContentList, type PageMap } from './pageMap';
+
 const BASE = 'https://mineru.net/api/v4';
 const REQUEST_TIMEOUT_MS = 20_000;
 const ZIP_TIMEOUT_MS = 60_000;
@@ -109,8 +111,11 @@ export async function getMinerUTask(taskId: string): Promise<MinerUTask> {
   };
 }
 
-/** 下载结果包并取出 full.md。zip 里还有图片和中间产物，我们只要正文。 */
-export async function fetchMinerUMarkdown(zipUrl: string): Promise<string> {
+/**
+ * 下载结果包并取出 full.md；同一个包里的 *_content_list.json 每块带页码，用来做页码对照表（见 pageMap.ts）。
+ * zip 里还有图片和中间产物，我们只要这两样。
+ */
+export async function fetchMinerUMarkdown(zipUrl: string): Promise<{ markdown: string; pageMap: PageMap }> {
   const { readZipText } = await import('./zipReader');
 
   const controller = new AbortController();
@@ -123,7 +128,15 @@ export async function fetchMinerUMarkdown(zipUrl: string): Promise<string> {
 
     const markdown = readZipText(buffer, name => name.endsWith('full.md'));
     if (!markdown?.trim()) throw new Error('解析结果里没有 full.md');
-    return markdown;
+    // 新版包里另有 _content_list_v2.json，格式不同；只认 v1 那份。没有或读不了就是没有页码，不影响正文
+    let pageMap: PageMap = [];
+    try {
+      const list = readZipText(buffer, name => name.endsWith('_content_list.json'));
+      if (list) pageMap = pageMapFromContentList(markdown, JSON.parse(list));
+    } catch (err: any) {
+      console.warn('[MinerU] 页码对照表没做成：', err?.message);
+    }
+    return { markdown, pageMap };
   } finally {
     clearTimeout(timer);
   }

@@ -434,6 +434,11 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
 
   // File Viewer State
   const [viewingFile, setViewingFile] = useState<Note | null>(null);
+  /** 从笔记 AI 的来源卡片打开时要跳到的页；阅读页一关就清掉，画布上双击打开的从第一页看 */
+  const [viewingFilePage, setViewingFilePage] = useState<number | null>(null);
+  useEffect(() => {
+    if (!viewingFile) setViewingFilePage(null);
+  }, [viewingFile]);
   /** 从文档查看器带去知识空间 AI 助手的文档，助手打开后挂到它的输入框上 */
   const [assistantAttachment, setAssistantAttachment] =
     useState<{ file_url: string; file_name: string; mime_type: string; text?: string } | null>(null);
@@ -1621,6 +1626,18 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     setViewingFile(null);
     setIsWorkspaceAgentOpen(true);
   }, [viewingFile, lang]);
+
+  /**
+   * 笔记 AI 回答下面的来源卡片：打开那份附件，PDF 跳到那一页。阅读页叠在笔记页上面，关掉回到笔记。
+   * 附件不在这个空间的画布上（课里别的空间）时按 id 取一次，接口照常判权限。
+   */
+  const openKbSource = useCallback(async (noteId: string, page: number | null) => {
+    const target = notes.find(note => note.id === noteId)
+      ?? await notesApi.get(noteId).then(res => apiNoteToNote(res.note)).catch(() => null);
+    if (!target?.fileUrl) return;
+    setViewingFilePage(page);
+    setViewingFile(target);
+  }, [notes]);
 
   // 上传、换地址、记旧版本都在服务端一次做完，这里不碰 metadata：打开阅读器时拿到的那块
   // 可能已经旧了，整块写回会冲掉这期间同学对这张卡的「固定」、显示方式，或别人刚存的一版。
@@ -3780,6 +3797,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         onPersistDraft={handlePersistDraft}
         currentViewId={activeViewId}
         onAiNotePublished={handleAiNotePublished}
+        onOpenKbSource={openKbSource}
         userRole={userRole}
         isStaff={viewerIsStaff}
         onTeacherFeedbackRead={(noteId, _feedbackId) => {
@@ -3819,6 +3837,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
           courseId={courseId}
           isStaff={viewerIsStaff}
           canEdit={canEditNote(viewingFile)}
+          initialPage={viewingFilePage}
           lang={lang}
         />
       )}
@@ -4111,6 +4130,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         onLocateNote={(id) => { setIsWorkspaceAgentOpen(false); focusNote(id); }}
         pendingAttachment={assistantAttachment}
         onPendingAttachmentTaken={() => setAssistantAttachment(null)}
+        onOpenKbSource={openKbSource}
       />
 
       {/* Inquiry Panel */}

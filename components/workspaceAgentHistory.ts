@@ -1,6 +1,7 @@
-import type { AgentConversation, AgentMessage } from '../services/apiClient';
+import type { AgentConversation, AgentMessage, KbSourceCard } from '../services/apiClient';
 import type { ToolCallInfo } from './AgentToolCallDisplay';
 import { stepsFromMetadata } from './agentProcessSteps';
+import { parseKbSources } from './KbSourceCards';
 
 /**
  * 知识空间 AI 助手「历史对话」和面板宽度的纯逻辑：接着聊哪一段、列表怎么排、
@@ -16,6 +17,8 @@ export interface RestoredMessage {
   content: string;
   tools?: ToolCallInfo[];
   elapsedMs?: number;
+  /** 课程资料的来源卡片（10-07 起存在 ai_metadata.kb_sources） */
+  kbSources?: KbSourceCard[];
 }
 
 /** 新的在前，同一条只留一次 */
@@ -89,12 +92,14 @@ export function messagesFromApi(list: readonly AgentMessage[]): RestoredMessage[
       if (m.role !== 'assistant') return { id: m.id, role: m.role, content: m.content };
       const tools = stepsFromMetadata({ ...(m.ai_metadata ?? {}), tools_used: m.ai_metadata?.tool_steps ? undefined : m.tools_used });
       const elapsed = Number(m.ai_metadata?.elapsed_ms);
+      const kbSources = parseKbSources(m.ai_metadata?.kb_sources);
       return {
         id: m.id,
         role: m.role,
         content: m.content,
         ...(tools.length > 0 ? { tools } : {}),
         ...(Number.isFinite(elapsed) && elapsed > 0 ? { elapsedMs: elapsed } : {}),
+        ...(kbSources.length > 0 ? { kbSources } : {}),
       };
     });
 }

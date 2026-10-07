@@ -8,6 +8,8 @@ import { invalidateConditionCache } from '../services/experimentCondition';
 import { validateDeclaredUpload, verifyStoredBytes } from '../services/attachmentValidation';
 import { canExtractText } from '../services/documentText';
 import { materialKbState, scheduleMaterialKbIngest } from '../services/kbIngest';
+import { kbDocumentCounts, type KbDocumentCounts } from '../services/knowledgeBase';
+import { lastPageOf } from '../services/pageMap';
 import { isUuid } from '../services/eventPayload';
 
 const router = Router();
@@ -531,21 +533,23 @@ router.delete('/courses/:courseId/goals/:goalId', verifyJWT, requireRole('teache
 // AI 知识库，和知识空间里上传的附件走同一条解析与入库链路。
 // 学生端没有资料列表 —— 学生是通过 AI 用到它们的。以前这里存的是浏览器的
 // blob: 地址，只在上传者那个标签页里有效，也从没进过知识库。
+// 进不进知识库的开关、重新解析、检索测试在 courseKnowledgeBase.ts。
 
 const MATERIALS_BUCKET = 'note-chat-attachments';
 const MATERIAL_MAX_BYTES = 50 * 1024 * 1024;
 const materialPrefix = (courseId: string) => `materials/${courseId}/`;
 
-// GET /api/courses/:courseId/materials — list all materials for a course
-router.get('/courses/:courseId/materials', verifyJWT, async (req: Request, res: Response) => {
+// GET /api/courses/:courseId/materials — 资料列表，只给创建者和课程管理员。
+// 原来课内成员都能调：学生直接请求就拿得到每份资料的下载地址，老师关掉「进入知识库」的答案、考卷也一样（10-07 收紧）
+router.get('/courses/:courseId/materials', verifyJWT, requireRole('teacher', 'admin'), async (req: Request, res: Response) => {
   const courseId = String(req.params.courseId);
-  await ensureCourseMember(courseId, req.user!);
+  await ensureCourseInstructor(courseId, req.user!);
 
   const { data, error } = await supabase
     .from('course_materials')
     .select(`
       id, course_id, title, description, file_url, file_name, file_size, mime_type, created_at,
-      text_updated_at, mineru_state,
+      text_updated_at, mineru_state, kb_enabled, page_map,
       users!uploaded_by(id, name, avatar),
       kb_documents!material_id(id, status, char_count)
     `)
@@ -558,25 +562,12 @@ router.get('/courses/:courseId/materials', verifyJWT, async (req: Request, res: 
   const docOf = (m: any) => (Array.isArray(m.kb_documents) ? m.kb_documents[0] : m.kb_documents) ?? null;
   const docIds = rows.map(docOf).filter(Boolean).map((d: any) => d.id as string);
 
-  // 有没有拿到向量只看 embedding_model：它和 embedding 同时写入，不必把向量本身拉回来
-  const chunkCounts = new Map<string, { chunks: number; embedded: number }>();
-  if (docIds.length > 0) {
-    const { data: chunks } = await supabase
-      .from('kb_chunks')
-      .select('document_id, embedding_model')
-      .in('document_id', docIds)
-      .limit(50000);
-    for (const c of (chunks ?? []) as Array<{ document_id: string; embedding_model: string | null }>) {
-      const entry = chunkCounts.get(c.document_id) ?? { chunks: 0, embedded: 0 };
-      entry.chunks += 1;
-      if (c.embedding_model) entry.embedded += 1;
-      chunkCounts.set(c.document_id, entry);
-    }
-  }
+  // 片段数和其中有向量的片段数在库里按文档数好
+  const chunkCounts = docIds.length > 0 ? await kbDocumentCounts(courseId) : new Map<string, KbDocumentCounts>();
 
   const materials = rows.map((m) => {
     const doc = docOf(m);
-    const counts = doc ? chunkCounts.get(doc.id) ?? { chunks: 0, embedded: 0 } : null;
+    const counts = doc ? chunkCounts.get(doc.id) ?? { chunks: 0, embedded: 0, pending: false } : null;
     const kb = materialKbState(m, doc ? { status: doc.status, ...counts! } : null);
     return {
       id: m.id,
@@ -597,6 +588,9 @@ router.get('/courses/:courseId/materials', verifyJWT, async (req: Request, res: 
         refining: kb.refining,
         chars: doc?.char_count ?? 0,
         chunks: counts?.chunks ?? 0,
+        // 关掉的资料文件和片段都在，只是 AI 检索不到
+        enabled: m.kb_enabled !== false,
+        pages: lastPageOf(m.page_map),
       },
       createdAt: m.created_at,
     };

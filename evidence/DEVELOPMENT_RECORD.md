@@ -1,14 +1,14 @@
 # Development and disclosure record
 
-Public author: **Zhenhai He**, GitHub **Youn-17**. Version: **v0.3.0**, prepared **2026-10-06**.
+Public author: **Zhenhai He**, GitHub **Youn-17**. Version: **v0.4.0**, prepared **2026-10-07**.
 
-The application snapshot uses development revision `9f1e83a0ba93bb4a0fbdedf4d7e4d641fc9f7b70` together with inspected working-tree changes. The public SHA-256 manifests identify the actual published bytes; the revision identifier alone does not identify these uncommitted additions. The previous public package remains identifiable by tag `v0.2.0`. The public repository has its own disclosure history. Local Git dates are author-controlled metadata and are not independently certified creation dates.
+The application snapshot uses development revision `c25f8555184e94701b8c7daef05a2b28673ed329` together with inspected working-tree changes. The public SHA-256 manifests identify the actual published bytes; the revision identifier alone does not identify these uncommitted additions. Previous packages remain identifiable by tags `v0.2.0` and `v0.3.0`. The public repository has its own disclosure history. Local Git dates are author-controlled metadata and are not independently certified creation dates.
 
 ## Source correspondence
 
-[source_snapshot.json](source_snapshot.json) records the published source paths, current SHA-256 hashes, and whether each file was adjusted for publication. Adjustments replace deployment-specific literals, remove private explanatory material, update the public in-app release notes and uptake explanations, provide generic setup configuration, and align a sanitizer test timeout with its worker timeout. They preserve the application contracts and course access controls. UI tests now locate the updated accessible input label; all original behavior assertions remain.
+[source_snapshot.json](source_snapshot.json) records **737 published source files**, their current SHA-256 hashes, and whether each differs from its inspected development copy (**55 publication-adjusted files**). Adjustments retain generic deployment configuration and prior privacy cleanup, remove internal research/operational commentary, update public release notes and fictional media, preserve test compatibility, and apply compatible dependency patches for proxy-addr and Capacitor Android/iOS. They preserve the application contracts and course access controls. Original behavior assertions remain in the tests.
 
-The release adds an English-led system guide, Chinese companion documents, original diagrams, fictional demonstration media, attribution, and the MIT License. Private development history, credentials, course records, research manuscripts, and operational account details are excluded.
+The release supplies English-led system and upgrade guides, Chinese companion documents, original diagrams, fictional demonstration media, attribution, and the MIT License. Private development history, credentials, course records, research manuscripts, internal evaluation scripts and operational account details are excluded. Publication does not modify the private development installation or deploy the hosted site.
 
 ## Public file manifest
 

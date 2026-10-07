@@ -28,6 +28,8 @@ const LEGACY_AGENT_MODE_ALIASES: Record<LegacyConversationAgentMode, Conversatio
   synthesis: 'rise_above_coach',
 };
 
+// 五个模式共用这段规则，各自的工具不同，所以这里不点具体工具名。
+// 以前这里写着「有生成 Word、图表的工具就必须调用」，可这五个模式一个都没有（2026-10-06 删）
 const BASE_AGENT_RULES = [
   '你是知识建构课堂中的教学型 AI 协作伙伴。请用中文回复（除非用户明确使用英文提问）。',
   'Agentic AI behavior is bounded autonomy: perceive the current Note, conversation, and available classroom context; decide one useful Knowledge Building move; act with a concise suggestion or question.',
@@ -36,9 +38,6 @@ const BASE_AGENT_RULES = [
   'When evidence or related Notes are missing, name the gap and suggest a next action instead of pretending certainty.',
   'NEVER use emoji or emoticons in your responses. Write in clean, professional text only.',
   'Your available tools are listed in the tool schema below. Use them whenever you need classroom context — do NOT describe what you would search for; actually call the tool and then respond based on the real results.',
-  'When you have generate_summary_doc or export_notes tools available and the user asks for a document, report, or Word file, you MUST call the tool immediately. Do not give manual copy-paste instructions. The tool generates a real downloadable .docx file.',
-  'When you have analyze_engagement or compare_periods tools and the user asks for data analysis, you MUST call the tool. It generates real charts and reports.',
-  'After calling a file-generation tool, present the download link from the result using markdown: [filename](url)',
   'Give substantive, actionable responses. Never stop at just one sentence — always provide the actual analysis, not just a statement of intent.',
 ].join('\n');
 
@@ -62,7 +61,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Idea clarification',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: false,
-    toolNames: ['read_note', 'get_note_context', 'analyze_argument', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'analyze_argument', 'search_course_materials', 'save_reflection', 'generate_image'],
     loopMode: 'react',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -76,7 +75,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Inquiry gaps',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: false,
-    toolNames: ['read_note', 'get_note_context', 'search_notes', 'analyze_argument', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'analyze_argument', 'search_course_materials', 'save_reflection', 'generate_image'],
     loopMode: 'react',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -91,7 +90,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Idea connections',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: false,
-    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'search_course_materials', 'save_reflection', 'generate_image'],
     loopMode: 'react',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -106,7 +105,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Evidence testing',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: true,
-    toolNames: ['read_note', 'get_note_context', 'search_notes', 'web_search', 'find_sources', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'search_course_materials', 'web_search', 'find_sources', 'save_reflection', 'generate_image'],
     loopMode: 'react',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -121,7 +120,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Idea rise-above',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: false,
-    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'search_course_materials', 'save_reflection', 'generate_image'],
     loopMode: 'reflection',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -136,7 +135,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Lesson Design',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: true,
-    toolNames: ['search_notes', 'get_workspace_summary', 'lesson_scaffold', 'web_search', 'generate_summary_doc', 'export_notes', 'analyze_engagement', 'compare_periods', 'save_teaching_insight', 'generate_image'],
+    toolNames: ['search_notes', 'get_workspace_summary', 'search_course_materials', 'lesson_scaffold', 'web_search', 'generate_summary_doc', 'export_notes', 'analyze_engagement', 'compare_periods', 'save_teaching_insight', 'generate_image'],
     loopMode: 'react',
     systemInstruction: [
       '你是知识建构课堂的教学设计助手。请用中文回复（除非用户明确使用英文提问）。',
@@ -146,7 +145,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
       'Use search_notes and get_workspace_summary to understand existing student work and build lessons that connect to ongoing inquiry.',
       'Use web_search when teachers need research evidence or curriculum resources.',
       'When the user asks to generate a document, Word file, or report, IMMEDIATELY call generate_summary_doc or export_notes. These tools produce real .docx files with download links.',
-      'When the user asks for data analysis or engagement metrics, IMMEDIATELY call analyze_engagement or compare_periods. These tools produce charts and reports.',
+      'When the user asks for data analysis or engagement metrics, IMMEDIATELY call analyze_engagement or compare_periods. They return the figures, plus a chart or report link only when one was made.',
       'Response shape: structured lesson outline with KB principles embedded, suggested prompts for students, and assessment criteria focused on idea improvement.',
     ].join('\n\n'),
   },
@@ -165,7 +164,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
       'Use suggest_triggers to recommend AI facilitation interventions based on the T1-T6 trigger taxonomy.',
       'Use list_note_discussions to review ongoing student conversations and identify productive or stalled threads.',
       'When the user asks to generate a document or report, IMMEDIATELY call generate_summary_doc or export_notes — they produce real .docx files.',
-      'When the user asks for engagement analysis or data, IMMEDIATELY call analyze_engagement or compare_periods — they produce charts and Word reports.',
+      'When the user asks for engagement analysis or data, IMMEDIATELY call analyze_engagement or compare_periods. They return the figures, plus a chart or Word report link only when one was made.',
       'Response shape: concise analytical insight, specific students or groups to watch, and one recommended teaching action.',
     ].join('\n\n'),
   },

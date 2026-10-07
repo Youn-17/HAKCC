@@ -48,9 +48,16 @@ export class AiBusyError extends Error {
  * 深处的模型调用不必层层传参就能拿到——否则 31 个调用点都要改签名，改漏一个就没限流。
  */
 const requestContext = new AsyncLocalStorage<{ userId: string | null }>();
+/** 最近一次登录用户的请求。课程知识库的连接保温（kbEmbedding）看它判断平台这会儿有没有人在用 */
+let lastUserRequestAt = 0;
 
 export function withAiContext<T>(userId: string | null, fn: () => T): T {
+  if (userId) lastUserRequestAt = Date.now();
   return requestContext.run({ userId }, fn);
+}
+
+export function lastUserRequestTime(): number {
+  return lastUserRequestAt;
 }
 
 /** 域名 → 厂商。用来分桶，认不出来的归到 other 桶（上限最保守）。 */
@@ -103,6 +110,9 @@ const LIMITS = {
 const PROVIDER_LIMITS: Record<string, number> = {
   dmx: num('AI_MAX_CONCURRENT_DMX', 16),
   dmxapi: num('AI_MAX_CONCURRENT_DMX', 16),
+  // 课程知识库的向量请求（kbEmbedding 显式传这个桶）单独计数：上课时几十个学生同时提问，
+  // 检索的补发请求不能把 AI 对话要用的名额占满
+  'kb-embed': num('AI_MAX_CONCURRENT_KB_EMBED', 12),
   // 各家的额度不一样，按实测的成功率和延迟给：
   // DeepSeek 最快最稳（p50 0.17s，两轮 39/39 全成），给宽一点；
   // Kimi 升到 Tier2（40 并发 / 100 RPM），并发放宽到 12——

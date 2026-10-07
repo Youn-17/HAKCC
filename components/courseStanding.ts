@@ -20,6 +20,17 @@ export function isCourseStaff(standing: CourseRole | null | undefined, userRole:
  * （平台管理员的课内身份按 owner 算），课程管理员也不行。进课时一个空间都没有、
  * 要不要替这门课建默认空间就看它。拿不到课内身份时同上，按平台身份。
  */
+/**
+ * 课程管理（课程设置页）给谁进：课程创建者、课程管理员，以及平台管理员（2026-10-06 用户）。
+ *
+ * 和 isCourseStaff 不同，拿不到课内身份时不按平台身份猜：列表里不知道就不显示入口，
+ * 免得凭学生验证码入课的教师看见按钮、点进去却没有权限。
+ */
+export function canManageCourse(standing: CourseRole | null | undefined, userRole: UserRole): boolean {
+  if (userRole === 'admin') return true;
+  return standing === 'owner' || standing === 'manager';
+}
+
 export function canCreateCourseSpace(standing: CourseRole | null | undefined, userRole: UserRole): boolean {
   if (standing) return standing === 'owner';
   return userRole === 'teacher' || userRole === 'admin';

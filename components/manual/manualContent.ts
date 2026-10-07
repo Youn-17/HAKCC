@@ -623,8 +623,8 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '知识空间助手', en: 'The workspace assistant' },
       {
         kind: 'p',
-        zh: '画布顶栏的「助手」打开知识空间 AI 助手。它占屏幕的一半，宽度可以拖，下次打开还是你拖的宽度。它看的是整个空间，包括笔记之间谁 Build-on 了谁，适合问「这块画布上讨论到哪了」「哪些想法还没人接着写」这类问题。平台怎么用的问题，问页面右边的「使用帮助」，见第 13 节。',
-        en: '"Agent" in the canvas top bar opens the workspace AI assistant. It takes up half the screen; drag its edge to change the width and it remembers your choice. It looks at the whole space, including who has built on whom, so it suits questions like "where has the discussion on this canvas got to" and "which ideas has nobody built on yet". For questions about using the platform, use Help on the right edge of the page (section 13).',
+        zh: '画布顶栏的「助手」打开知识空间 AI 助手。它占屏幕的一半，宽度可以拖，下次打开还是你拖的宽度。它看的是整个空间，包括笔记之间谁 Build-on 了谁，适合问「这块画布上讨论到哪了」「哪些想法还没人接着写」这类问题。它也读得到平台记下的 AI 反馈和 AI 内容插入：你自己收到几条反馈、每条怎么处理的，你插入 AI 内容时选了哪个支架；全班的只有画布上本来就看得到的部分，也就是采纳后发布成笔记的反馈有几条、AI 内容插入了几次、选的是哪些支架。老师问的时候看到全班的，并按人分开。平台怎么用的问题，问页面右边的「使用帮助」，见第 13 节。',
+        en: '"Agent" in the canvas top bar opens the workspace AI assistant. It takes up half the screen; drag its edge to change the width and it remembers your choice. It looks at the whole space, including who has built on whom, so it suits questions like "where has the discussion on this canvas got to" and "which ideas has nobody built on yet". It can also read the platform\'s records of AI feedback and AI content inserted into notes: how many feedback cards you received and what you did with each, and which scaffold you chose when inserting AI content. For the whole class it sees only what is already visible on the canvas: how many adopted feedback cards were posted as notes, how many times AI content was inserted, and which scaffolds were chosen. When a teacher asks, it sees the whole class, broken down by person. For questions about using the platform, use Help on the right edge of the page (section 13).',
       },
       {
         kind: 'figure',
@@ -1277,11 +1277,11 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         zh: '这一节只有教师能看到。前面讲画布、笔记、AI 和综合升华的内容，教师端都一样。教师首页的侧栏和学生不同：「主要」里有概览、个人资料、我的课程、教学日志；「AI 智能体」里有 AI 对话、备课助手、学情分析、教学评估、学生求助、AI 设置；「研究」里是几种分析和数据导出；「平台理念与帮助」里有使用手册和平台理念，后者写明每项设计的依据和文献。学生首页上的学习面板和练习场，教师端没有。',
         en: 'Only teachers see this section. Everything earlier about the canvas, notes, AI and rise-above works the same for you. Your home sidebar differs from a student\'s: Main has Overview, Profile, My courses and Teaching log; AI Agents has AI chat, Lesson prep, Analytics, Assessment, Student help and AI settings; Research has the analyses and the data export; Rationale & Help has the user manual and the design rationale, which gives the reasoning and literature behind each design. The student learning panels and practice areas are not on the teacher side.',
       },
-      { kind: 'h3', zh: '课程设置', en: 'Course settings' },
+      { kind: 'h3', zh: '课程管理', en: 'Course management' },
       {
         kind: 'p',
-        zh: '在「我的课程」里点课程卡片上的齿轮，进入课程设置页。页头是课程码、学生数、知识空间数和笔记数，下面分「学习目标」「课程资料」「学习任务」「教学安排」「协作与权限」五个分区。课程名旁边的铅笔可以改名，只有课程创建者能改。',
-        en: 'Click the gear on a course card under My courses to open the course settings page. The header shows the course code and the numbers of students, spaces and notes. Below are five areas: Learning goals, Materials, Assignments, Schedule and Collaboration. The pencil beside the course name renames it; only the course creator can do that.',
+        zh: '在「我的课程」里，每门课「进入」的左边有「课程管理」，点它进入课程管理页。这个按钮只有课程创建者和课程管理员看得到；课里的其他人（包括凭学生验证码入课的教师账号）看不到，直接打开这一页也只会看到「没有权限管理这门课」。页头是课程码、学生数、知识空间数和笔记数，下面分「学习目标」「课程资料」「学习任务」「教学安排」「协作与权限」五个分区。课程名旁边的铅笔可以改名，只有课程创建者能改。',
+        en: 'Under My courses, each course has Manage to the left of Enter; it opens the course management page. Only the course creator and course managers see that button. Other members, including teacher accounts that joined with the student code, do not see it, and opening the page directly only shows that they cannot manage the course. The header shows the course code and the numbers of students, spaces and notes. Below are five areas: Learning goals, Materials, Assignments, Schedule and Collaboration. The pencil beside the course name renames it; only the course creator can do that.',
       },
       { kind: 'h3', zh: '教学安排和教学日志', en: 'Schedule and teaching log' },
       {
@@ -1313,8 +1313,8 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '协作与权限', en: 'Co-teachers and course managers' },
       {
         kind: 'p',
-        zh: '在课程设置的「协作与权限」里，课程创建者可以邀请其他教师加入，并把他们设为「课程管理员」或撤销。课程管理员可以改课程设置、排课、确认课次、写教学日志，也会收到补记提醒；可以移除学生，不能移除教师。指定和撤销管理员只有创建者能做。',
-        en: 'Under Collaboration in course settings, the course creator can invite other teachers and make them course managers, or take that away. Managers can change settings, plan the schedule, confirm classes and write the teaching log, and they get the same reminders. They can remove students but not teachers. Only the creator can appoint or remove managers.',
+        zh: '在课程管理的「协作与权限」里，课程创建者可以邀请其他教师加入，并把他们设为「课程管理员」或撤销。课程管理员可以进入课程管理、改课程设置、排课、确认课次、写教学日志，也会收到补记提醒；可以移除学生，不能移除教师。指定和撤销管理员只有创建者能做。',
+        en: 'Under Collaboration in course management, the course creator can invite other teachers and make them course managers, or take that away. Managers can open course management, change settings, plan the schedule, confirm classes and write the teaching log, and they get the same reminders. They can remove students but not teachers. Only the creator can appoint or remove managers.',
       },
       {
         kind: 'p',

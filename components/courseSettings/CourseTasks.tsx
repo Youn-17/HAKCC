@@ -406,8 +406,8 @@ const CourseTasks: React.FC<CourseTasksProps> = ({ courseId, tasks, onTasksChang
   };
 
   return (
-    <div className="flex min-h-full flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="course-settings-section flex min-h-full flex-col gap-5">
+      <div className="course-settings-section-header flex flex-wrap items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-lg font-bold tracking-tight text-stone-900 dark:text-stone-100">
           <RemixIcon name="task-line" size={20} className="text-[#000080] dark:text-[#93AAFD]" />
           {t.title}
@@ -434,7 +434,7 @@ const CourseTasks: React.FC<CourseTasksProps> = ({ courseId, tasks, onTasksChang
       )}
 
       {canManage && isAdding && (
-        <div className="rounded-xl border border-stone-200 bg-stone-50 p-5 dark:border-stone-800 dark:bg-stone-900">
+        <div className="course-settings-form-panel rounded-xl border border-stone-200 bg-stone-50 p-5 dark:border-stone-800 dark:bg-stone-900">
           <TaskForm
             draft={newTask}
             onChange={setNewTask}
@@ -463,13 +463,13 @@ const CourseTasks: React.FC<CourseTasksProps> = ({ courseId, tasks, onTasksChang
           </div>
         )
       ) : (
-        <ul className="grid grid-cols-1 gap-3 2xl:grid-cols-2">
+        <ul className="course-tasks-list grid grid-cols-1 gap-3 2xl:grid-cols-2">
           {tasks.map(task => {
             const overdue = task.status === 'published' && !!task.dueDate && Date.parse(task.dueDate) < Date.now();
             return (
               <li
                 key={task.id}
-                className="rounded-xl border border-stone-200 bg-white p-5 transition-shadow hover:shadow-md hover:shadow-stone-200/60 dark:border-stone-800 dark:bg-stone-950 dark:hover:shadow-none"
+                className="course-settings-card course-task-card rounded-xl border border-stone-200 bg-white p-5 transition-shadow hover:shadow-md hover:shadow-stone-200/60 dark:border-stone-800 dark:bg-stone-950 dark:hover:shadow-none"
               >
                 {editingId === task.id ? (
                   <TaskForm

@@ -40,7 +40,11 @@ Accordingly, this release does not recommend blindly applying the archive with `
 
 No production database dump or course dataset is included. A future release can provide a verified baseline schema without exposing private content.
 
-## Upgrading to v0.3.0
+## Upgrading to v0.4.0
+
+Review the [current upgrade guide](write/UPDATES_v0.4.0.en.md) for migrations 078–085, knowledge-base processing, optional server-side OpenRouter/MinerU configuration and external data handling. The API chart backend and dependency lock have changed. Validate schema, vector-extension prerequisites and permission scope in an isolated installation first.
+
+## Previous v0.3.0 upgrade
 
 Review the [supplementary upgrade guide](write/UPDATES_v0.3.0.en.md) for migrations 074–077, course feature configuration and optional server-side Jev settings. Test schema and permissions in an isolated environment before upgrading an existing installation. No hosted database migration or deployment is part of this publication.
 

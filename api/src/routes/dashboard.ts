@@ -3,7 +3,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT, requireRole } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
-import { ensureCourseInstructor, ensureCourseMember } from '../services/accessControl';
+import { ensureCourseInstructor, ensureCourseMember, listCourseStandings, type CourseStanding } from '../services/accessControl';
 import { cleanDisplayName, emailFallbackName } from '../services/displayName';
 import { computeScaffoldingLevel, filterStudentIds, type CognitivePatterns } from '../services/learnerProfileService';
 import { extractConcepts, extractConceptsScored } from '../services/conceptExtraction';
@@ -39,6 +39,8 @@ type CourseSummary = {
   hasAi: boolean;
   hasUnreadFeedback: boolean;
   unreadFeedbackCount: number;
+  /** 调用者在这门课里的身份。教师首页靠它决定显不显示「课程管理」（只给创建者和课程管理员） */
+  viewerStanding?: Exclude<CourseStanding, 'none'>;
 };
 
 async function getCoursesByIds(courseIds: string[]): Promise<CourseRow[]> {
@@ -382,11 +384,16 @@ router.get('/teacher-overview', verifyJWT, requireRole('teacher', 'admin'), asyn
     getUnreadFeedbackCountsForTeacher(spaceRows),
   ]);
 
+  // 课内身份和 getCourseStanding 同一口径（课程管理员要求教师账号）。查不到不连累整页：
+  // 创建者照样认得出，其余的不给身份，前端就不显示「课程管理」
+  const standings = await listCourseStandings(req.user!).catch(() => new Map<string, Exclude<CourseStanding, 'none'>>());
+
   // Every course here is one this teacher owns or belongs to, so the join code
   // is theirs to see and share.
-  const courseSummaries = courseRows.map((course) =>
-    toCourseSummary(course, instructorNames, studentCounts, noteStats, aiEnabledCourseIds, unreadFeedbackCounts, true),
-  );
+  const courseSummaries = courseRows.map((course) => ({
+    ...toCourseSummary(course, instructorNames, studentCounts, noteStats, aiEnabledCourseIds, unreadFeedbackCounts, true),
+    viewerStanding: course.instructor_id === userId || req.user!.role === 'admin' ? 'owner' as const : standings.get(course.id),
+  }));
 
   res.json({
     overview: {

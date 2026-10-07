@@ -292,19 +292,28 @@ describe('学习目标', () => {
     expect(goalTitles()).toEqual(['读懂并复述论证结构']);
   });
 
-  it('课内只是普通成员：只能看，没有增删改的按钮', async () => {
+  // 2026-10-06 用户：课程管理只有创建者和课程管理员能进。以前普通成员能打开、只能看不能改
+  it('课内只是普通成员：整页说明没有权限，看不到目标列表，也没有增删改', async () => {
     await mount('goals', { standing: 'member' });
-    await waitFor(() => goalTitles().length === 3, '目标列表');
-    expect(text()).toContain('只有课程创建者和课程管理员可以修改学习目标。');
+    await waitFor(() => document.querySelector('[data-course-settings-denied]'), '没有权限的说明');
+    expect(text()).toContain('没有权限管理这门课');
+    expect(text()).toContain('课程管理只对课程创建者和课程管理员开放');
+    expect(goalTitles()).toEqual([]);
     expect(buttonWith('添加目标')).toBeNull();
-    expect(byLabel('编辑目标 读懂论证结构')).toBeNull();
-    expect(byLabel('删除目标 读懂论证结构')).toBeNull();
+    expect(buttonWith('返回首页')).not.toBeNull();
   });
 
-  it('不在这门课里：说清楚原因，不显示增删改', async () => {
+  it('不在这门课里：同样是没有权限的整页说明', async () => {
     await mount('goals', { forbidden: true });
-    await waitFor(() => text().includes('你不是这门课的成员，看不到这一页。'), '403 的说明');
+    await waitFor(() => document.querySelector('[data-course-settings-denied]'), '没有权限的说明');
     expect(buttonWith('添加目标')).toBeNull();
+  });
+
+  it('课程管理员进得来，增删改都在', async () => {
+    await mount('goals', { standing: 'manager' });
+    await waitFor(() => goalTitles().length === 3, '目标列表');
+    expect(document.querySelector('[data-course-settings-denied]')).toBeNull();
+    expect(buttonWith('添加目标')).not.toBeNull();
   });
 });
 
@@ -380,13 +389,11 @@ describe('学习任务', () => {
     expect(writes()).toEqual([]);
   });
 
-  it('课内只是普通成员：没有布置、编辑、查看提交的按钮', async () => {
+  it('课内只是普通成员：从任务页签进来也一样没有权限，看不到任务', async () => {
     await mount('tasks', { standing: 'member' });
-    await waitFor(() => text().includes('读书报告'), '任务列表');
+    await waitFor(() => document.querySelector('[data-course-settings-denied]'), '没有权限的说明');
+    expect(text()).not.toContain('读书报告');
     expect(buttonWith('布置任务')).toBeNull();
-    expect(byLabel('编辑任务 读书报告')).toBeNull();
-    expect(byLabel('查看提交 读书报告')).toBeNull();
-    expect(text()).toContain('只有课程创建者和课程管理员可以修改学习任务。');
   });
 });
 

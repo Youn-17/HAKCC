@@ -5,9 +5,10 @@
  * 但不能再指定别人 —— 否则权限会一层层扩散，创建者无从收回。
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck, Loader2, Search, UserPlus, X, Crown, Info } from 'lucide-react';
+import { ShieldCheck, Loader2, Search, UserPlus, X, Crown } from 'lucide-react';
 import { Language } from '../../types';
 import { courseSettings, type CourseMember, type CourseRole } from '../../services/apiClient';
+import RemixIcon from '../RemixIcon';
 import UserAvatar from '../UserAvatar';
 import { inputClass, labelClass } from './scheduleShared';
 
@@ -100,8 +101,8 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
   }
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div className="flex items-center gap-2.5">
+    <div className="course-settings-section max-w-4xl space-y-6">
+      <div className="course-settings-section-header flex items-center gap-2.5">
         <div className="rounded-xl border border-stone-200 bg-stone-100 p-2 text-stone-700 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-200">
           <ShieldCheck size={17} />
         </div>
@@ -115,14 +116,14 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
         </div>
       </div>
 
-      <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3.5 text-xs leading-relaxed text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">
-        <Info size={14} className="mt-0.5 shrink-0" />
-        <span>
+      <details className="course-settings-guidance">
+        <summary><RemixIcon name="shield-check-line" size={16} />{zh ? '课程管理员权限说明' : 'Course manager permissions'}<RemixIcon name="arrow-down-s-line" size={16} /></summary>
+        <p className="mt-2 text-xs leading-relaxed text-stone-600 dark:text-stone-400">
           {zh
             ? '课程管理员可以修改课程设置、填写教学安排、确认课次并撰写教学日志，也会收到课次补记提醒；可以移除学生，但不能移除教师，也不能再指定其他管理员。'
             : 'Course managers can edit course settings, plan the schedule, confirm sessions and write the teaching log, and they receive session reminders. They may remove students, but not teachers, and cannot appoint other managers.'}
-        </span>
-      </div>
+        </p>
+      </details>
 
       {error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">{error}</div>
@@ -138,9 +139,9 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
           )}
         </p>
 
-        <div className="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 dark:divide-stone-800 dark:border-stone-800">
+        <div className="course-settings-members divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 dark:divide-stone-800 dark:border-stone-800">
           {teachers.map(member => (
-            <div key={member.userId} className="flex flex-wrap items-center gap-3 px-4 py-3">
+            <div key={member.userId} className="course-settings-member flex flex-wrap items-center gap-3 px-4 py-3">
               <UserAvatar name={member.name} avatar={member.avatar} size={34} />
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-1.5 truncate text-sm font-medium text-stone-900 dark:text-stone-100">
@@ -189,6 +190,7 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
           <div className="relative">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 dark:text-stone-500" />
             <input
+              aria-label={zh ? '搜索教师' : 'Search teachers'}
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder={zh ? '输入教师姓名或邮箱搜索…' : 'Search by name or email…'}

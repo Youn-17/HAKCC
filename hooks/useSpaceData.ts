@@ -173,10 +173,17 @@ export function applyPendingGeometry(
   };
 }
 
-/**
- * Loads notes and relations for a given space from the backend.
- * Returns empty arrays (not an error) when spaceId is null.
- */
+/** Read beyond the default 200-note page; never silently organize only half a canvas. */
+export async function loadCanvasNotes(spaceId: string) {
+  const byId = new Map<string, ApiNote>();
+  for (let offset = 0; ; offset += 500) {
+    const page = await notesApi.list(spaceId, { limit: 500, offset });
+    for (const note of page.notes) byId.set(note.id, note);
+    if (page.notes.length < 500) return { notes: [...byId.values()] };
+  }
+}
+
+/** Loads the space's Notes and relations, preserving local pending geometry. */
 export function useSpaceData(spaceId: string | null): SpaceData {
   const [notes, setNotes] = useState<Note[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -243,7 +250,7 @@ export function useSpaceData(spaceId: string | null): SpaceData {
     setError(null);
     try {
       const [notesRes, relsRes] = await Promise.all([
-        notesApi.list(spaceId),
+        loadCanvasNotes(spaceId),
         relationsApi.listForSpace(spaceId),
       ]);
       mergeNotes(notesRes.notes.map(n => apiNoteToNote(n)));

@@ -38,6 +38,8 @@ interface Props {
   isStaff?: boolean;
   /** 能不能改正文：上传者本人和课程教职。.md 存新版本走 POST /notes/:id/markdown-versions，Word 走 PUT /notes/:id/document，后端都只放行这两类人 */
   canEdit?: boolean;
+  /** 从 AI 回答的来源卡片打开时跳到第几页（PDF 用浏览器自带阅读器的 #page=） */
+  initialPage?: number | null;
   lang: Language;
   onConvertToNote?: (payload: { title: string; html: string; fileName: string }) => Promise<void> | void;
   onSaveMarkdown?: (payload: { text: string; fileName: string }) => Promise<void> | void;
@@ -48,7 +50,7 @@ interface Props {
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 const FileViewerPage: React.FC<Props> = ({
-  isOpen, onClose, fileUrl, fileName, mimeType, noteId, currentUserId, courseId, isStaff = false, canEdit = false, lang,
+  isOpen, onClose, fileUrl, fileName, mimeType, noteId, currentUserId, courseId, isStaff = false, canEdit = false, initialPage, lang,
   onConvertToNote, onSaveMarkdown, onAskAi, onQuoteToNote,
 }) => {
   const zh = lang === 'zh';
@@ -495,7 +497,7 @@ const FileViewerPage: React.FC<Props> = ({
       return <div className="flex h-full items-center justify-center p-6"><video src={fileUrl} controls className="max-h-full max-w-full rounded" /></div>;
     }
     if (mimeType === 'application/pdf') {
-      return <iframe src={fileUrl} className="h-full w-full border-0" title="PDF" />;
+      return <iframe key={initialPage ?? 0} src={initialPage ? `${fileUrl}#page=${initialPage}` : fileUrl} className="h-full w-full border-0" title="PDF" />;
     }
     if (content) {
       return <pre className="h-full overflow-auto whitespace-pre-wrap p-6 font-mono text-sm">{content}</pre>;

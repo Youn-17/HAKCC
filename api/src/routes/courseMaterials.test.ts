@@ -22,7 +22,9 @@ const h = vi.hoisted(() => {
     removed: [] as string[],
     signed: [] as string[],
     materialRows: [] as Record<string, unknown>[],
-    chunkRows: [] as Record<string, unknown>[],
+    /** kb_document_vector_counts 的结果：每份文档切了几片、几片有向量 */
+    vectorCounts: [] as Record<string, unknown>[],
+    rpcCalls: [] as { fn: string; args: Record<string, unknown> }[],
     storedMaterial: { id: 'mat-1', storage_path: `materials/x/1-a.pdf` } as Record<string, unknown> | null,
     head: { status: 206, body: Buffer.from('%PDF-1.7\n'), contentRange: 'bytes 0-8/2048' } as {
       status: number; body: Buffer; contentRange?: string;
@@ -41,7 +43,6 @@ const h = vi.hoisted(() => {
         return { data: filters.course_id === COURSE_ID ? state.storedMaterial : null, error: null };
       }
       if (table === 'course_materials') return { data: state.materialRows, error: null };
-      if (table === 'kb_chunks') return { data: state.chunkRows, error: null };
       return { data: null, error: null };
     };
     const run = () => Promise.resolve(result());
@@ -66,9 +67,15 @@ const h = vi.hoisted(() => {
     }),
   };
 
+  const rpc = async (fn: string, args: Record<string, unknown>) => {
+    state.rpcCalls.push({ fn, args });
+    if (fn === 'kb_document_vector_counts') return { data: state.vectorCounts, error: null };
+    return { data: null, error: { message: `unknown function ${fn}` } };
+  };
+
   return {
     state,
-    supabase: { from, storage },
+    supabase: { from, storage, rpc },
     schedule: vi.fn(),
     ensureCourseInstructor: vi.fn(async () => {}),
   };
@@ -96,7 +103,7 @@ vi.mock('../services/kbIngest', async (importOriginal) => ({
 }));
 
 import courseSettingsRouter from './courseSettings';
-import { errorHandler } from '../middleware/errorHandler';
+import { ApiError, errorHandler } from '../middleware/errorHandler';
 
 let server: Server;
 let base = '';
@@ -134,7 +141,8 @@ beforeEach(() => {
   h.state.removed.length = 0;
   h.state.signed.length = 0;
   h.state.materialRows = [];
-  h.state.chunkRows = [];
+  h.state.vectorCounts = [];
+  h.state.rpcCalls = [];
   h.state.storedMaterial = { id: 'mat-1', storage_path: `materials/${COURSE_ID}/1-a.pdf` };
   h.state.head = { status: 206, body: Buffer.from('%PDF-1.7\n'), contentRange: 'bytes 0-8/2048' };
   h.schedule.mockClear();
@@ -168,6 +176,14 @@ describe('签发直传地址', () => {
       file_name: 'big.pdf', mime_type: 'application/pdf', file_size: 51 * 1024 * 1024,
     })).status).toBe(413);
     expect(h.state.signed).toHaveLength(0);
+  });
+
+  it('资料列表只给创建者和课程管理员：学生直接调接口也拿不到下载地址', async () => {
+    h.ensureCourseInstructor.mockRejectedValueOnce(new ApiError(403, 'Only the course instructor can perform this action'));
+    const { status, body } = await call('GET', `/courses/${COURSE_ID}/materials`);
+    expect(status).toBe(403);
+    expect(JSON.stringify(body)).not.toContain('file_url');
+    expect(h.ensureCourseInstructor).toHaveBeenCalledWith(COURSE_ID, expect.objectContaining({ id: 'teacher-1' }));
   });
 
   it('不是这门课的教师：拿不到上传地址', async () => {
@@ -244,30 +260,60 @@ describe('资料列表说清楚每份资料去了哪', () => {
   it('按知识库里的实际情况给状态', async () => {
     const base = { course_id: COURSE_ID, description: null, file_size: 10, created_at: '2026-09-28T00:00:00Z', users: null };
     h.state.materialRows = [
-      { ...base, id: 'ready', title: 'A', file_url: 'u', file_name: 'a.pdf', mime_type: 'application/pdf', text_updated_at: 't', mineru_state: 'done', kb_documents: [{ id: 'doc-ready', status: 'ready', char_count: 900 }] },
+      { ...base, id: 'ready', title: 'A', file_url: 'u', file_name: 'a.pdf', mime_type: 'application/pdf', text_updated_at: 't', mineru_state: 'done', kb_enabled: true, page_map: [[0, 1], [420, 2], [800, 7]], kb_documents: [{ id: 'doc-ready', status: 'ready', char_count: 900 }] },
       { ...base, id: 'refining', title: 'B', file_url: 'u', file_name: 'b.pdf', mime_type: 'application/pdf', text_updated_at: 't', mineru_state: 'running', kb_documents: [{ id: 'doc-refining', status: 'ready', char_count: 300 }] },
-      { ...base, id: 'no-vectors', title: 'C', file_url: 'u', file_name: 'c.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', text_updated_at: 't', mineru_state: null, kb_documents: [{ id: 'doc-novec', status: 'ready', char_count: 500 }] },
+      { ...base, id: 'no-vectors', title: 'C', file_url: 'u', file_name: 'c.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', text_updated_at: 't', mineru_state: null, kb_enabled: false, kb_documents: [{ id: 'doc-novec', status: 'ready', char_count: 500 }] },
       { ...base, id: 'waiting', title: 'D', file_url: 'u', file_name: 'd.md', mime_type: 'text/markdown', text_updated_at: null, mineru_state: null, kb_documents: [] },
       { ...base, id: 'scanned', title: 'E', file_url: 'u', file_name: 'e.pdf', mime_type: 'application/pdf', text_updated_at: 't', mineru_state: 'failed', kb_documents: [] },
       { ...base, id: 'image', title: 'F', file_url: 'u', file_name: 'f.png', mime_type: 'image/png', text_updated_at: null, mineru_state: null, kb_documents: [] },
     ];
-    h.state.chunkRows = [
-      { document_id: 'doc-ready', embedding_model: 'text-embedding-3-small' },
-      { document_id: 'doc-ready', embedding_model: 'text-embedding-3-small' },
-      { document_id: 'doc-refining', embedding_model: 'text-embedding-3-small' },
-      { document_id: 'doc-novec', embedding_model: null },
+    h.state.vectorCounts = [
+      { document_id: 'doc-ready', chunks: 2, embedded: 2 },
+      { document_id: 'doc-refining', chunks: 1, embedded: 1 },
+      { document_id: 'doc-novec', chunks: 1, embedded: 0 },
     ];
 
     const { status, body } = await call('GET', `/courses/${COURSE_ID}/materials`);
     expect(status).toBe(200);
+    // 片段数在库里按文档数好，只数当前模型的向量
+    expect(h.state.rpcCalls).toEqual([{
+      fn: 'kb_document_vector_counts', args: { p_course_id: COURSE_ID, p_model: 'voyageai/voyage-4-lite@1024' },
+    }]);
     const kb = Object.fromEntries((body.materials as any[]).map(m => [m.id, m.knowledgeBase]));
-    expect(kb.ready).toEqual({ state: 'ready', refining: false, chars: 900, chunks: 2 });
+    // 页数取页码对照表的最后一页；Word 没有页码
+    expect(kb.ready).toEqual({ state: 'ready', refining: false, chars: 900, chunks: 2, enabled: true, pages: 7 });
+    // 关掉「进入知识库」的照样列出来，标明关了；没写这一列的（085 之前）算开着
+    expect(kb['no-vectors']).toMatchObject({ enabled: false, pages: null });
+    expect(kb.waiting.enabled).toBe(true);
     expect(kb.refining).toMatchObject({ state: 'ready', refining: true });
+    // 测试里没配平台的向量 key：一片向量都没有、后台也补不了
     expect(kb['no-vectors'].state).toBe('unsearchable');
     expect(kb.waiting.state).toBe('processing');
     expect(kb.scanned.state).toBe('no_text');
     expect(kb.image.state).toBe('unsupported');
     // 旧字段（评论、批注）没有任何界面在用，不再返回
     expect(body.materials[0]).not.toHaveProperty('commentCount');
+  });
+
+  it('平台配了向量的 key：刚入库、向量还在后台算的显示「处理中」，不是「检索不到」', async () => {
+    const base = { course_id: COURSE_ID, description: null, file_size: 10, created_at: '2026-10-06T00:00:00Z', users: null };
+    h.state.materialRows = [
+      { ...base, id: 'fresh', title: 'A', file_url: 'u', file_name: 'a.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', text_updated_at: 't', mineru_state: null, kb_documents: [{ id: 'doc-fresh', status: 'ready', char_count: 900 }] },
+      { ...base, id: 'half', title: 'B', file_url: 'u', file_name: 'b.md', mime_type: 'text/markdown', text_updated_at: 't', mineru_state: null, kb_documents: [{ id: 'doc-half', status: 'ready', char_count: 900 }] },
+    ];
+    h.state.vectorCounts = [
+      { document_id: 'doc-fresh', chunks: 3, embedded: 0 },
+      { document_id: 'doc-half', chunks: 4, embedded: 1 },
+    ];
+    process.env.KB_OPENROUTER_API_KEY = 'platform-key';
+    try {
+      const { body } = await call('GET', `/courses/${COURSE_ID}/materials`);
+      const kb = Object.fromEntries((body.materials as any[]).map(m => [m.id, m.knowledgeBase]));
+      expect(kb.fresh).toMatchObject({ state: 'processing', chunks: 3 });
+      // 已经有向量的片段检索得到，算已入库
+      expect(kb.half).toMatchObject({ state: 'ready', chunks: 4 });
+    } finally {
+      process.env.KB_OPENROUTER_API_KEY = '';
+    }
   });
 });

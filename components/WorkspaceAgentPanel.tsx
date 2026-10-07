@@ -19,9 +19,10 @@ import { Loader2, X } from 'lucide-react';
 import RemixIcon from './RemixIcon';
 import type { ToolCallInfo } from './AgentToolCallDisplay';
 import AgentProcess from './AgentProcess';
+import KbSourceCards, { parseKbSources } from './KbSourceCards';
 import DiscussionDigestPanel from './DiscussionDigest';
 import { ai as aiApi, getAuthToken, workspaceAgent as workspaceAgentApi } from '../services/apiClient';
-import type { AgentConversation } from '../services/apiClient';
+import type { AgentConversation, KbSourceCard } from '../services/apiClient';
 import { useDismissible } from '../hooks/useDismissible';
 import { uploadAttachment, MAX_ATTACHMENT_BYTES } from '../services/attachmentUpload';
 import MarkdownMessage from './chatMarkdown';
@@ -32,6 +33,7 @@ import AssistantWelcome from './AssistantWelcome';
 import { useChatPreferences, ChatPreferenceControls } from '../hooks/useChatPreferences';
 import { useGrowingTextarea } from '../hooks/useGrowingTextarea';
 import { getAnswerLength } from './answerLengthPref';
+import { attachmentQuestionHint, restoreTurnAttachments } from './chatAttachments';
 import { formatThreadTime } from './noteChatHistory';
 import {
   clampPanelWidth,
@@ -78,6 +80,8 @@ export interface WorkspaceAgentPanelProps {
    */
   pendingAttachment?: { file_url: string; file_name: string; mime_type: string; text?: string } | null;
   onPendingAttachmentTaken?: () => void;
+  /** 回答下面的来源卡片：打开那份附件，PDF 跳到那一页。不给就不能点（手机端没有阅读页） */
+  onOpenKbSource?: (noteId: string, page: number | null) => void;
 }
 
 interface ChatMessage {
@@ -87,6 +91,8 @@ interface ChatMessage {
   tools?: ToolCallInfo[];
   /** 这一轮从发出到答完用了多久（「用了 3 步 · 6 秒」） */
   elapsedMs?: number;
+  /** 课程资料的来源卡片（ai_metadata.kb_sources） */
+  kbSources?: KbSourceCard[];
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +147,7 @@ async function readSSEStream(
 const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
   isOpen, onClose, courseId, spaceId, lang, aiConfigs, embedded,
   viewId, selectedNoteIds, groupId, onLocateNote, spaceNotes = [],
-  pendingAttachment, onPendingAttachmentTaken,
+  pendingAttachment, onPendingAttachmentTaken, onOpenKbSource,
 }) => {
   // -- Panel width (resizable) ------------------------------------------------
   // 默认占屏幕的一半：对话和画布各一半。以前固定 420px，AI 的回答（表格、长段落）挤在一条窄缝里
@@ -445,7 +451,8 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
   /** draw：输入框下面的「画图」，不管怎么措辞都直接出图 */
   const handleSend = useCallback(async (draw = false) => {
     const content = input.trim();
-    if ((!content && attachments.length === 0) || streaming) return;
+    // 挂了附件也要写一句问题才发（chatAttachments.ts）
+    if (!content || streaming) return;
     if (!selectedProvider || !selectedModel) { setError(t.noProvider); return; }
 
     const turnAttachments = attachments;
@@ -462,6 +469,17 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
     const tempAssistantId = `stream-${Date.now()}`;
     let streamedText = '';
     const collectedTools: ToolCallInfo[] = [];
+    // 来源卡片在第一个字之前就到了，那时回答这条消息还没建：先记着，建的时候挂上
+    let turnSources: KbSourceCard[] = [];
+    // 流开始了就是服务端接下了这一问，提问已经存进库
+    let accepted = false;
+    let failed = false;
+    // 出错时问题和附件都放回输入框，改一改或直接再发。服务端没接下的，对话里那条提问也撤掉
+    const putBack = () => {
+      if (!accepted) setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
+      setInput((prev) => (prev.trim() ? prev : content));
+      setAttachments((prev) => restoreTurnAttachments(turnAttachments, prev));
+    };
 
     try {
       const controller = new AbortController();
@@ -490,11 +508,12 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error ?? `Request failed (${res.status})`);
       }
+      accepted = true;
       if (!res.body) throw new Error('No response body');
 
       await readSSEStream(res.body.getReader(), (event) => {
         if (event === '[DONE]') return;
-        if (typeof event.error === 'string') { setDrawing(null); setError(event.error); return; }
+        if (typeof event.error === 'string') { failed = true; setDrawing(null); setError(event.error); return; }
         if (event.done === true && typeof event.conversationId === 'string') {
           const id = event.conversationId as string;
           setConversationId(id);
@@ -536,6 +555,11 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
           setActiveTools((prev) => prev.map((t) => names.includes(t.name) ? { ...t, status: 'done' as const } : t));
           return;
         }
+        if (Array.isArray(event.kbSources)) {
+          turnSources = parseKbSources(event.kbSources);
+          setMessages((prev) => prev.map((m) => m.id === tempAssistantId ? { ...m, kbSources: turnSources } : m));
+          return;
+        }
         if (event.reasoningStatus === 'thinking' && typeof event.reasoningChunk === 'string') {
           setReasoningText((prev) => prev + (event.reasoningChunk as string)); return;
         }
@@ -548,7 +572,10 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
           setMessages((prev) => {
             const existing = prev.find((m) => m.id === tempAssistantId);
             if (existing) return prev.map((m) => m.id === tempAssistantId ? { ...m, content: streamedText } : m);
-            return [...prev, { id: tempAssistantId, role: 'assistant' as const, content: streamedText }];
+            return [...prev, {
+              id: tempAssistantId, role: 'assistant' as const, content: streamedText,
+              ...(turnSources.length > 0 ? { kbSources: turnSources } : {}),
+            }];
           });
           return;
         }
@@ -566,14 +593,22 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
       // 「正在思考」那一行按「有没有 stream- 开头的消息」判断，于是从第二问起就再也不显示了。
       setMessages((prev) => prev.map((m) =>
         m.id === tempAssistantId
-          ? { ...m, id: generateId(), elapsedMs: Date.now() - turnStartedAtRef.current, ...(collectedTools.length > 0 ? { tools: [...collectedTools] } : {}) }
+          ? {
+            ...m, id: generateId(), elapsedMs: Date.now() - turnStartedAtRef.current,
+            ...(collectedTools.length > 0 ? { tools: [...collectedTools] } : {}),
+            ...(turnSources.length > 0 ? { kbSources: turnSources } : {}),
+          }
           : m,
       ));
+      if (failed) putBack();
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'Failed to send message');
-      setInput(content);
-      if (!streamedText) setMessages((prev) => prev.filter((m) => m.id !== tempAssistantId));
+      // 答到一半断了：写出的部分留着，临时 id 换成正式的，否则再问时「正在思考」不显示
+      setMessages((prev) => (streamedText
+        ? prev.map((m) => (m.id === tempAssistantId ? { ...m, id: generateId() } : m))
+        : prev.filter((m) => m.id !== tempAssistantId)));
+      putBack();
     } finally {
       setStreaming(false);
       setDrawing(null);
@@ -832,7 +867,18 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
                   : 'assistant-response'
               }`}>
                 {msg.role === 'assistant'
-                  ? <MarkdownMessage content={msg.content} resolveUrl={url => `${BASE_URL}${url.slice(4)}`} />
+                  ? (
+                    <>
+                      <MarkdownMessage content={msg.content} resolveUrl={url => `${BASE_URL}${url.slice(4)}`} />
+                      <KbSourceCards
+                        sources={msg.kbSources ?? []}
+                        content={msg.content}
+                        streaming={msg.id.startsWith('stream-')}
+                        lang={lang === 'zh' ? 'zh' : 'en'}
+                        onOpen={onOpenKbSource}
+                      />
+                    </>
+                  )
                   : msg.content}
               </div>
             </div>
@@ -896,7 +942,8 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
         )}
         <div ref={settingsRef} data-ai-composer className="assistant-composer relative">
           <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-            aria-label={t.placeholder} placeholder={t.placeholder} disabled={streaming} rows={2}
+            aria-label={t.placeholder} placeholder={attachments.length > 0 ? attachmentQuestionHint(attachments, lang) : t.placeholder}
+            disabled={streaming} rows={2}
             className="assistant-input w-full resize-none bg-transparent outline-none disabled:opacity-50"
           />
           <div className={`assistant-options ${settingsOpen ? '' : 'hidden'}`}>
@@ -962,7 +1009,8 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
               <RemixIcon name="equalizer-line" size={17} />
               <span className="assistant-settings-label">{lang === 'zh' ? '对话设置' : 'Settings'}</span>
             </button>
-            <button type="button" onClick={() => void handleSend()} disabled={streaming || (!input.trim() && attachments.length === 0)}
+            <button type="button" onClick={() => void handleSend()} disabled={streaming || !input.trim()}
+              title={!input.trim() && attachments.length > 0 ? attachmentQuestionHint(attachments, lang) : undefined}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#000080] text-white transition-all hover:bg-[#000060] active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
               aria-label={t.send}>
               {streaming ? <Loader2 size={16} className="animate-spin" /> : <RemixIcon name="arrow-up-line" size={16} />}

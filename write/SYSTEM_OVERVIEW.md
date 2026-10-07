@@ -1,6 +1,6 @@
 # HAKCC 系统说明
 
-Current feature and upgrade supplement: [English](UPDATES_v0.3.0.en.md) · [中文](UPDATES_v0.3.0.md).
+Current feature and upgrade supplement: [English](UPDATES_v0.4.0.en.md) · [中文](UPDATES_v0.4.0.md).
 公开访问：[ideaweave.tech](https://ideaweave.tech/) · [首页](../README.zh-CN.md) · [理论基础](THEORETICAL_FOUNDATIONS.md)
 
 HAKCC 将课程中的观点、讨论、证据和反思组织成可持续改进的共同知识空间。它的基本单位是 **Note**：一个可以被阅读、修订、关联和继续建构的观点对象。平台围绕课程与社区组织协作，AI 的建议需要回到学生的理解与共同体的探究中。

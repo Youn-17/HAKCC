@@ -16,6 +16,7 @@
 import { supabase } from '../config/supabase';
 import { resolveParticipantCodes, type ParticipantIdentity } from './participantCode';
 import { toCsv } from './zipWriter';
+import { REJECT_TAG_LABEL } from './feedbackLabels';
 
 export const DATASET_KEYS = [
   'notes',
@@ -689,13 +690,6 @@ export const DATASET_LABELS: Record<DatasetKey, { zh: string; en: string; descZh
   note_revisions: { zh: '笔记修订史', en: 'Note revisions', descZh: '笔记内容随时间的演化', descEn: 'Content evolution over time' },
   sessions: { zh: '课次记录', en: 'Class sessions', descZh: '一行一次课:计划与实际的开课时间、是否上课、课堂期间的建构活动统计与教学日志', descEn: 'One row per class session: planned vs. actual time, whether it was held, in-class activity counts and the teaching log' },
   support_questions: { zh: '学生求助问答', en: 'Support questions', descZh: '一行一次求助:问题、AI 回答、教师回答、提问时的处境', descEn: 'One row per help request: question, AI answer, teacher answer, and the context it was asked in' },
-};
-
-const REJECT_TAG_LABEL: Record<string, string> = {
-  misread: '误解了我的意思',
-  already_considered: '我已经考虑过了',
-  off_track: '和我的探究无关',
-  disagree: '我不认同这个判断',
 };
 
 const RELATION_LABELS: Record<string, string> = {

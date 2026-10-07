@@ -13,7 +13,8 @@ import { resolve } from 'node:path';
  * 附件跟着空间走，课程教职照旧看全部，不在课里的人什么都拿不到。
  *
  * accessControl、knowledgeBase、智能体工具和笔记对话路由都用真的，只替换数据库、鉴权、
- * 向量服务和模型调用。数据库里的检索函数按最新一版（067）的 SQL 语义模拟，末尾的静态约束把两边锁在一起。
+ * 向量服务和模型调用。数据库里的检索函数按最新一版（080 的 match_kb_chunk_vectors）的 SQL 语义模拟，
+ * 末尾的静态约束把两边锁在一起。
  * 已删附件的那一半在 knowledgeBaseDeletedNotes.test.ts。
  */
 
@@ -64,7 +65,7 @@ const h = vi.hoisted(() => {
     kb_chunks: [
       { id: 'chunk-material', document_id: 'doc-material', course_id: 'course-1', heading_path: null, content: TEXT.material, embedding: '[0.1]', score: 0.5 },
       { id: 'chunk-shared', document_id: 'doc-shared', course_id: 'course-1', heading_path: null, content: TEXT.shared, embedding: '[0.1]', score: 0.6 },
-      { id: 'chunk-a', document_id: 'doc-a', course_id: 'course-1', heading_path: '访谈', content: TEXT.groupA, embedding: '[0.1]', score: 0.7 },
+      { id: 'chunk-a', document_id: 'doc-a', course_id: 'course-1', heading_path: '访谈', content: TEXT.groupA, embedding: '[0.1]', score: 0.7, page_start: 3, page_end: 4 },
       { id: 'chunk-b', document_id: 'doc-b', course_id: 'course-1', heading_path: '方案', content: TEXT.groupB, embedding: '[0.1]', score: 0.9 },
       { id: 'chunk-other', document_id: 'doc-other', course_id: 'course-2', heading_path: null, content: TEXT.otherCourse, embedding: '[0.1]', score: 0.95 },
     ],
@@ -97,6 +98,10 @@ const h = vi.hoisted(() => {
     ignoresScope: false,
     /** 模拟还是 050 那一版：只按课程过滤，也不返回 space_id / material_id */
     legacyColumns: false,
+    /** 查询向量；null 表示这次没拿到（丢包），退到关键词 */
+    queryVector: [0.1] as number[] | null,
+    /** 重排打分；null 表示重排没拿到（超时），按向量的顺序给 */
+    rerank: null as null | ((docs: string[]) => number[]),
   };
   let nextId = 1;
 
@@ -153,12 +158,33 @@ const h = vi.hoisted(() => {
     return builder;
   };
 
-  // 最新一版（065 定范围、067 排除已删笔记）的 match_kb_chunks：课程资料（不属于任何空间）全课可见，
-  // 其余文档的空间要在 p_space_ids 里，来源笔记不能是删掉的；先过滤再按相关度取前 k 片。
-  // p_space_ids 不传等于 NULL，`= any(NULL)` 不成立
+  // 最新一版（范围同 065、已删笔记同 067，080 换成按模型取向量）的 match_kb_chunk_vectors：
+  // 课程资料（不属于任何空间）全课可见，其余文档的空间要在 p_space_ids 里，来源笔记不能是删掉的；
+  // 先过滤再按相关度取前 k 片。p_space_ids 不传等于 NULL，`= any(NULL)` 不成立。
+  // 片段上的 embedding 代表「有当前模型的向量」
+  // 085 的两个开关：课程资料可以单独关，画布附件整门课一起关（courses.kb_include_attachments）
+  const materialOn = (materialId: unknown) => (db.course_materials ?? []).find(m => m.id === materialId)?.kb_enabled !== false;
+  const attachmentsOn = (courseId: unknown) => db.courses.find(c => c.id === courseId)?.kb_include_attachments !== false;
+  const switchedOn = (d: Row, courseId: unknown) =>
+    (d.material_id == null || materialOn(d.material_id)) && (d.space_id == null || attachmentsOn(courseId));
+
   const rpc = async (fn: string, args: Record<string, any>) => {
     state.rpcCalls.push({ fn, ...args });
-    if (fn !== 'match_kb_chunks') return { data: null, error: { message: `unknown function ${fn}` } };
+    if (fn === 'match_kb_chunks_keyword') return keywordRpc(args);
+    if (fn === 'kb_course_searchable') {
+      const live = (noteId: unknown) => db.notes.some(n => n.id === noteId && n.deleted_at == null);
+      return {
+        data: db.kb_chunks.some(c => {
+          const d = db.kb_documents.find(doc => doc.id === c.document_id);
+          if (!d || c.course_id !== args.p_course_id) return false;
+          if (d.material_id != null) return materialOn(d.material_id);
+          return d.note_id != null && live(d.note_id) && attachmentsOn(args.p_course_id);
+        }),
+        error: null,
+      };
+    }
+    if (fn !== 'match_kb_chunk_vectors') return { data: null, error: { message: `unknown function ${fn}` } };
+    if (args.p_model !== 'voyageai/voyage-4-lite@1024') return { data: [], error: null };
     const allowed: unknown[] = Array.isArray(args.p_space_ids) ? args.p_space_ids : [];
     const liveNote = (noteId: unknown) => db.notes.some(n => n.id === noteId && n.deleted_at == null);
     const hits = db.kb_chunks
@@ -167,6 +193,7 @@ const h = vi.hoisted(() => {
       .filter(({ d }) => d.note_id == null || liveNote(d.note_id))
       .filter(({ d }) => state.ignoresScope || state.legacyColumns
         || (d.space_id == null && d.material_id != null) || allowed.includes(d.space_id))
+      .filter(({ d }) => state.legacyColumns || switchedOn(d, args.p_course_id))
       .sort((x, y) => Number(y.c.score) - Number(x.c.score))
       .slice(0, Math.max(1, Math.min(Number(args.p_match_count ?? 6), 20)));
     return {
@@ -177,7 +204,35 @@ const h = vi.hoisted(() => {
         heading_path: c.heading_path,
         content: c.content,
         similarity: c.score,
-        ...(state.legacyColumns ? {} : { space_id: d.space_id, material_id: d.material_id }),
+        ...(state.legacyColumns ? {} : {
+          space_id: d.space_id, material_id: d.material_id, note_id: d.note_id,
+          page_start: c.page_start ?? null, page_end: c.page_end ?? null,
+        }),
+      })),
+      error: null,
+    };
+  };
+
+  // 082 的 match_kb_chunks_keyword：范围规则和向量检索一字不差，先过滤再按分数取前 k 片。
+  // 这里用「检索词在正文里出现几个」代替 BM25 的分数
+  const keywordRpc = async (args: Record<string, any>) => {
+    const allowed: unknown[] = Array.isArray(args.p_space_ids) ? args.p_space_ids : [];
+    const terms: string[] = (args.p_terms ?? []).map((t: string) => t.replace(/^#/, ''));
+    const liveNote = (noteId: unknown) => db.notes.some(n => n.id === noteId && n.deleted_at == null);
+    const hits = db.kb_chunks
+      .filter(c => c.course_id === args.p_course_id)
+      .map(c => ({ c, d: db.kb_documents.find(d => d.id === c.document_id)!, matched: terms.filter(t => String(c.content).includes(t)).length }))
+      .filter(({ matched }) => matched > 0)
+      .filter(({ d }) => d.note_id == null || liveNote(d.note_id))
+      .filter(({ d }) => state.ignoresScope || (d.space_id == null && d.material_id != null) || allowed.includes(d.space_id))
+      .filter(({ d }) => switchedOn(d, args.p_course_id))
+      .sort((x, y) => y.matched - x.matched)
+      .slice(0, Math.max(1, Math.min(Number(args.p_match_count ?? 6), 50)));
+    return {
+      data: hits.map(({ c, d, matched }) => ({
+        chunk_id: c.id, document_id: d.id, title: d.title, heading_path: c.heading_path, content: c.content,
+        score: matched, matched_terms: matched, space_id: d.space_id, material_id: d.material_id, note_id: d.note_id,
+        page_start: c.page_start ?? null, page_end: c.page_end ?? null,
       })),
       error: null,
     };
@@ -191,6 +246,8 @@ const h = vi.hoisted(() => {
     state.failing.clear();
     state.ignoresScope = false;
     state.legacyColumns = false;
+    state.queryVector = [0.1];
+    state.rerank = null;
   };
 
   return {
@@ -217,9 +274,16 @@ vi.mock('../middleware/auth', () => ({
 }));
 vi.mock('./embeddingService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./embeddingService')>()),
-  resolveEmbeddingProvider: async () => ({ providerId: 'openai', apiKey: 'sk-test', model: 'text-embedding-3-small' }),
-  generateEmbedding: async () => [0.1],
   embedNote: async () => {},
+}));
+vi.mock('./kbEmbedding', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./kbEmbedding')>()),
+  kbEmbeddingConfigured: () => true,
+  embedKbQuery: async () => h.state.queryVector,
+}));
+vi.mock('./kbRerank', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./kbRerank')>()),
+  rerankKb: async (_query: string, docs: string[]) => (h.state.rerank ? h.state.rerank(docs) : null),
 }));
 vi.mock('./aiGateway', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./aiGateway')>()),
@@ -230,7 +294,8 @@ vi.mock('./aiProviderConfig', async (importOriginal) => ({
   decryptProviderApiKey: () => 'sk-test',
 }));
 
-import { searchKnowledgeBase } from './knowledgeBase';
+import { __resetKbPresence, searchKnowledgeBase, searchKnowledgeBaseDetailed } from './knowledgeBase';
+import { KbCitationRegistry } from './kbSources';
 import { createDefaultRegistry, type ToolContext } from './agentTools';
 import { invalidateMembershipCache, invalidateSpaceCache } from './accessControl';
 import noteConversationsRouter from '../routes/noteConversations';
@@ -245,6 +310,7 @@ const docsOf = (hits: { documentId: string }[]) => [...new Set(hits.map(hit => h
 
 beforeEach(() => {
   h.reset();
+  __resetKbPresence();
   h.aiFetch.mockClear();
   invalidateMembershipCache();
   invalidateSpaceCache();
@@ -277,11 +343,17 @@ describe('searchKnowledgeBase：附件跟着空间走，课程资料全课可见
     await searchKnowledgeBase('course-1', student('student-a'), '问题');
     await searchKnowledgeBase('course-1', teacher('co-teacher'), '问题');
 
-    expect(h.state.rpcCalls.map(call => call.p_space_ids)).toEqual([
+    // 向量和关键词两路都带同样的范围
+    const byFn = (fn: string) => h.state.rpcCalls.filter(call => call.fn === fn).map(call => call.p_space_ids);
+    expect(byFn('match_kb_chunk_vectors')).toEqual([
       ['space-shared', 'space-a'],
       ['space-shared', 'space-a', 'space-b'],
     ]);
-    expect(h.state.rpcCalls[0]).toMatchObject({ fn: 'match_kb_chunks', p_course_id: 'course-1', p_match_count: 6 });
+    expect(byFn('match_kb_chunks_keyword')).toEqual(byFn('match_kb_chunk_vectors'));
+    // 向量前 20 段做重排的候选
+    expect(h.state.rpcCalls[0]).toMatchObject({
+      fn: 'match_kb_chunk_vectors', p_course_id: 'course-1', p_model: 'voyageai/voyage-4-lite@1024', p_match_count: 20,
+    });
   });
 
   it('不在课里的人：课程资料也不给，根本不去检索', async () => {
@@ -322,6 +394,36 @@ describe('searchKnowledgeBase：附件跟着空间走，课程资料全课可见
     expect(h.state.rpcCalls[0].p_space_ids).toEqual(['space-shared']);
   });
 
+  it('重排开着：别组的附件根本进不了候选，重排之后照样没有', async () => {
+    h.state.rerank = docs => docs.map(() => 0.9);
+    const hits = await searchKnowledgeBase('course-1', student('student-a'), '实验方案和访谈记录', 20);
+
+    expect(JSON.stringify(hits)).not.toContain(h.TEXT.groupB);
+    expect(JSON.stringify(hits)).toContain(h.TEXT.groupA);
+    expect(hits.every(hit => hit.relevance === 0.9)).toBe(true);
+  });
+
+  it('查询向量没拿到、退到关键词：组 A 的学生同样拿不到组 B 的附件，教职照旧全看', async () => {
+    h.state.queryVector = null;
+
+    const hits = await searchKnowledgeBase('course-1', student('student-a'), '实验方案和访谈记录');
+    expect(h.state.rpcCalls.map(call => call.fn)).toEqual(['match_kb_chunks_keyword']);
+    expect(h.state.rpcCalls[0].p_space_ids).toEqual(['space-shared', 'space-a']);
+    expect(JSON.stringify(hits)).toContain(h.TEXT.groupA);
+    expect(JSON.stringify(hits)).not.toContain(h.TEXT.groupB);
+    expect(hits.every(hit => hit.matchedBy === 'keyword')).toBe(true);
+
+    const staff = await searchKnowledgeBase('course-1', { id: 'co-teacher', role: 'teacher' }, '实验方案和访谈记录');
+    expect(JSON.stringify(staff)).toContain(h.TEXT.groupB);
+  });
+
+  it('关键词那一路数据库函数漏了范围：API 这边照样筛掉别组的', async () => {
+    h.state.queryVector = null;
+    h.state.ignoresScope = true;
+    const hits = await searchKnowledgeBase('course-1', student('student-a'), '实验方案和访谈记录');
+    expect(JSON.stringify(hits)).not.toContain(h.TEXT.groupB);
+  });
+
   it('查不到课内身份：报 503，不当成「不在课里」也不当成「全都能看」', async () => {
     h.state.failing.add('course_members');
     await expect(searchKnowledgeBase('course-1', student('student-a'), '问题')).rejects.toMatchObject({ statusCode: 503 });
@@ -360,6 +462,24 @@ describe('智能体工具 search_course_materials 按调用者检索', () => {
 
     expect(JSON.stringify(result)).toContain(h.TEXT.groupB);
   });
+
+  it('语义检索没连上、按关键词找到的：告诉模型可能不相关，不能据此断定资料里没有', async () => {
+    h.state.queryVector = null;
+    const result = await registry.executeTool('search_course_materials', { query: '访谈记录怎么整理', limit: 5 }, context({}));
+
+    expect(JSON.stringify(result)).toContain(h.TEXT.groupA);
+    expect((result.data as any).message).toContain('按关键词找到的');
+    expect((result.data as any).results[0]).toMatchObject({ matched: 'keyword' });
+  });
+
+  it('语义检索没连上、关键词也没找到：不说「知识库里没有」', async () => {
+    h.state.queryVector = null;
+    const result = await registry.executeTool('search_course_materials', { query: 'interview protocol design', limit: 5 }, context({}));
+
+    expect((result.data as any).results).toEqual([]);
+    expect((result.data as any).message).toContain('没连上');
+    expect((result.data as any).message).not.toContain('知识库里没有找到');
+  });
 });
 
 describe('笔记 AI 对话：系统提示里的课程材料段不含别组附件', () => {
@@ -379,9 +499,72 @@ describe('笔记 AI 对话：系统提示里的课程材料段不含别组附件
 
   afterAll(() => new Promise<void>(done => server.close(() => done())));
 
-  // 自由提问不检索知识库，其余模式都检索
+  // 10-06 起自由提问和各个模式都检索（之前自由提问不检索，智能体那条路没接）
   const ASK = { content: '访谈应该怎么设计', provider_id: 'deepseek', model: 'deepseek-chat', agent_mode: 'idea_coach' };
   const sentToModel = () => h.aiFetch.mock.calls.map(([, init]) => init?.body ?? '').join('\n');
+  const post = (path: string, body: Record<string, unknown>) => fetch(`${base}/note-conversations/thread-a/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const eventsOf = (text: string) => text.split('\n\n')
+    .filter(block => block.startsWith('data: ') && !block.startsWith('data: [DONE]'))
+    .map(block => JSON.parse(block.slice(6)) as Record<string, any>);
+  const savedAnswer = () => h.db.note_conversation_messages.find(m => m.sender_kind === 'assistant') as Record<string, any> | undefined;
+
+  it('过程里推「检索课程资料」这一步和来源卡片，回答存下 kb_sources：编号、页码、附件的笔记 id；课程资料不带 id', async () => {
+    const res = await post('ai/stream', ASK);
+    const events = eventsOf(await res.text());
+
+    const steps = events.filter(e => e.toolName === 'search_course_materials');
+    expect(steps.map(e => e.toolStatus)).toEqual(['running', 'used']);
+    expect(steps[1].toolSummary).toMatch(/找到 \d 段相关资料/);
+    const cards = events.find(e => e.kbSources)?.kbSources as Array<Record<string, any>>;
+    expect(cards.map(c => c.n)).toEqual(cards.map((_, i) => i + 1));
+    expect(cards.find(c => c.title === '第一组的附件')).toMatchObject({ kind: 'attachment', noteId: 'note-a-file', pageStart: 3, pageEnd: 4, section: '访谈' });
+    expect(cards.find(c => c.title === '课程大纲')).toMatchObject({ kind: 'material', noteId: null });
+    expect(cards.some(c => c.title === '第二组的附件')).toBe(false);
+
+    const meta = savedAnswer()?.ai_metadata;
+    expect(meta.kb_sources).toEqual(cards);
+    expect(meta.tool_steps[0]).toMatchObject({ name: 'search_course_materials' });
+    // 提示词里同样的编号，带页码，并说明资料不是指令
+    const prompt = sentToModel();
+    const n = cards.find(c => c.title === '第一组的附件')!.n;
+    expect(prompt).toContain(`[${n}] 第一组的附件 · 访谈 · pp. 3–4`);
+    expect(prompt).toContain('not instructions to you');
+  });
+
+  it('自由提问也检索', async () => {
+    const res = await post('ai/stream', { ...ASK, agent_mode: 'free_ask' });
+    await res.text();
+    expect(res.status).toBe(200);
+    expect(sentToModel()).toContain(h.TEXT.material);
+    expect(sentToModel()).not.toContain(h.TEXT.groupB);
+  });
+
+  it('智能体模式（agent-stream）也检索，范围一样', async () => {
+    const res = await post('ai/agent-stream', ASK);
+    const events = eventsOf(await res.text());
+    expect(res.status).toBe(200);
+    expect(events.some(e => e.kbSources)).toBe(true);
+    const prompt = sentToModel();
+    expect(prompt).toContain(h.TEXT.groupA);
+    expect(prompt).not.toContain(h.TEXT.groupB);
+    expect(savedAnswer()?.ai_metadata.kb_sources.length).toBeGreaterThan(0);
+  });
+
+  it('课里没有入库的资料：不检索，过程里也没有这一步', async () => {
+    h.db.kb_chunks = h.db.kb_chunks.filter(c => c.course_id !== 'course-1');
+    const res = await post('ai/stream', ASK);
+    const events = eventsOf(await res.text());
+    expect(res.status).toBe(200);
+    // 只问了一句「有没有」，没去检索
+    expect(h.state.rpcCalls.map(call => call.fn)).toEqual(['kb_course_searchable']);
+    expect(events.some(e => e.toolName === 'search_course_materials' || e.kbSources)).toBe(false);
+    expect(sentToModel()).not.toContain('COURSE MATERIALS');
+    expect(savedAnswer()?.ai_metadata.kb_sources).toBeUndefined();
+  });
 
   it('组 A 的学生在本组笔记上问 AI：课程资料和本组附件在，组 B 的附件不在', async () => {
     const res = await fetch(`${base}/note-conversations/thread-a/ai/stream`, {
@@ -399,6 +582,41 @@ describe('笔记 AI 对话：系统提示里的课程材料段不含别组附件
     expect(prompt).toContain(h.TEXT.material);
     expect(prompt).not.toContain(h.TEXT.groupB);
     expect(h.state.rpcCalls.at(-1)?.p_space_ids).toEqual(['space-shared', 'space-a']);
+    // 这句很短，当追问处理：检索词补上了笔记标题（「第一组的笔记」）
+    const keyword = h.state.rpcCalls.find(call => call.fn === 'match_kb_chunks_keyword');
+    expect(keyword?.p_terms).toEqual(expect.arrayContaining(['#笔记']));
+  });
+
+  it('语义检索没连上、退到关键词：系统提示里说明这些可能不相关，不让模型断言资料里有没有', async () => {
+    h.state.queryVector = null;
+    const res = await fetch(`${base}/note-conversations/thread-a/ai/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...ASK, content: '访谈记录怎么整理' }),
+    });
+    await res.text();
+
+    expect(res.status).toBe(200);
+    const prompt = sentToModel();
+    expect(prompt).toContain('keyword match only');
+    expect(prompt).toContain(h.TEXT.groupA);
+    expect(prompt).not.toContain('say so instead of inventing');
+  });
+
+  it('重排了、一段都不够相关度门槛：不塞资料，系统提示里说检索过了没有相关段落', async () => {
+    h.state.rerank = docs => docs.map(() => 0.1);
+    const res = await fetch(`${base}/note-conversations/thread-a/ai/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ASK),
+    });
+    await res.text();
+
+    expect(res.status).toBe(200);
+    const prompt = sentToModel();
+    expect(prompt).toContain('no passage is relevant');
+    expect(prompt).not.toContain(h.TEXT.groupA);
+    expect(prompt).not.toContain(h.TEXT.material);
   });
 
   it('课程创建者在同一条线程上问：每个组的材料都在', async () => {
@@ -413,15 +631,59 @@ describe('笔记 AI 对话：系统提示里的课程材料段不含别组附件
     expect(res.status).toBe(200);
     expect(sentToModel()).toContain(h.TEXT.groupB);
   });
+
+  it('整门课关掉画布附件：只剩课程资料；资料也关掉，笔记 AI 就不再检索、过程里也没有这一步', async () => {
+    h.db.courses[0].kb_include_attachments = false;
+    expect(docsOf(await searchKnowledgeBase('course-1', teacher('owner-1'), '课程', 10))).toEqual(['doc-material']);
+
+    h.db.course_materials = [{ id: 'material-1', course_id: 'course-1', kb_enabled: false }];
+    __resetKbPresence();
+    h.state.rpcCalls.length = 0;
+    const res = await fetch(`${base}/note-conversations/thread-a/ai/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: '访谈应该怎么设计', provider_id: 'deepseek', model: 'deepseek-chat' }),
+    });
+    const text = await res.text();
+    expect(res.status).toBe(200);
+    expect(h.state.rpcCalls.map(call => call.fn)).toEqual(['kb_course_searchable']);
+    expect(text).not.toContain('search_course_materials');
+  });
+});
+
+describe('智能体工具 search_course_materials 接着这一轮的资料编号', () => {
+  it('给了 kbCitations：结果带 ref，接着自动检索的号往下编，已经有的沿用；提示模型标 [ref]', async () => {
+    h.state.rerank = docs => docs.map(() => 0.9);
+    const first = (await searchKnowledgeBaseDetailed('course-1', { id: 'student-a', role: 'student' }, '课程大纲', 1)).hits;
+    const citations = new KbCitationRegistry(first);
+    const result = await createDefaultRegistry().executeTool('search_course_materials', { query: '课程大纲 访谈', limit: 5 }, {
+      noteId: 'note-a', spaceId: 'space-a', courseId: 'course-1', userId: 'student-a', userRole: 'student',
+      noteTitle: '', noteContent: '', kbCitations: citations,
+    } as ToolContext);
+    const data = result.data as { results: Array<{ ref: number; source: string }>; message: string };
+    expect(data.results.length).toBeGreaterThan(1);
+    expect(data.results.map(r => r.ref)).toEqual(data.results.map(r => citations.sources.find(c => c.title === r.source)!.n));
+    expect(Math.max(...data.results.map(r => r.ref))).toBe(citations.sources.length);
+    expect(data.message).toContain('[6]');
+  });
+});
+
+describe('知识库开关（085）：关掉的资料、整门课关掉的附件，AI 都检索不到', () => {
+  it('老师关掉一份课程资料的「进入知识库」：这份检索不到，附件照旧', async () => {
+    h.db.course_materials = [{ id: 'material-1', course_id: 'course-1', kb_enabled: false }];
+    const hits = await searchKnowledgeBase('course-1', student('student-a'), '课程', 10);
+    expect(docsOf(hits)).toEqual(['doc-a', 'doc-shared']);
+  });
+
 });
 
 describe('防回归：范围由数据库函数执行，API 只经 searchKnowledgeBase 调它', () => {
   const migrationsDir = resolve(__dirname, '../../../supabase/migrations');
   const migrations = readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
   const sql = (file: string) => readFileSync(resolve(migrationsDir, file), 'utf-8');
-  const DEFINES = /create (or replace )?function public\.match_kb_chunks/i;
+  const DEFINES = /create (or replace )?function public\.match_kb_chunk_vectors/i;
 
-  it('最新一版 match_kb_chunks 先按 p_space_ids 过滤再取前 k 片，客户端不能直接调（上面模拟的就是这个语义）', () => {
+  it('最新一版 match_kb_chunk_vectors 先按 p_space_ids 过滤再取前 k 片，客户端不能直接调（上面模拟的就是这个语义）', () => {
     const defining = migrations.filter(file => DEFINES.test(sql(file)));
     const latest = sql(defining[defining.length - 1]);
     const body = latest.slice(latest.search(DEFINES));
@@ -432,7 +694,36 @@ describe('防回归：范围由数据库函数执行，API 只经 searchKnowledg
     // 067：来源笔记删掉的不给（上面的模拟同样排除，细节见 knowledgeBaseDeletedNotes.test.ts）
     expect(body).toContain('where n.id = d.note_id and n.deleted_at is null');
     expect(body).toMatch(/p_space_ids uuid\[\] default null/);
-    expect(body).toMatch(/revoke execute on function public\.match_kb_chunks\(uuid, extensions\.vector, integer, uuid\[\]\) from public, anon, authenticated/);
+    // 课程硬过滤，只在同一个模型的向量里比
+    expect(body).toContain('where v.course_id = p_course_id');
+    expect(body).toContain('and v.model = p_model');
+    expect(body).toMatch(/revoke execute on function public\.match_kb_chunk_vectors\(uuid, text, extensions\.halfvec, integer, uuid\[\]\) from public, anon, authenticated/);
+    // 085：两个开关也在取前 k 片之前判断（上面的模拟同样判断）
+    expect(body.indexOf('m.kb_enabled')).toBeGreaterThan(-1);
+    expect(body.indexOf('m.kb_enabled')).toBeLessThan(body.indexOf('order by'));
+    expect(body.indexOf('co.kb_include_attachments')).toBeGreaterThan(-1);
+    expect(body.indexOf('co.kb_include_attachments')).toBeLessThan(body.indexOf('order by'));
+  });
+
+  it('最新一版 match_kb_chunks_keyword（关键词兜底）范围规则和向量检索一样，先过滤再取前 k 片，客户端不能直接调', () => {
+    const KW = /create (or replace )?function public\.match_kb_chunks_keyword/i;
+    const defining = migrations.filter(file => KW.test(sql(file)));
+    const latest = sql(defining[defining.length - 1]);
+    const body = latest.slice(latest.search(KW));
+
+    expect(body).toContain('where c.course_id = p_course_id');
+    expect(body).toContain('(d.space_id is null and d.material_id is not null)');
+    expect(body).toContain('d.space_id = any(p_space_ids)');
+    expect(body).toContain('where n.id = d.note_id and n.deleted_at is null');
+    expect(body.indexOf('any(p_space_ids)')).toBeLessThan(body.indexOf('order by'));
+    expect(body).toMatch(/p_space_ids uuid\[\] default null/);
+    expect(body).toMatch(/revoke execute on function public\.match_kb_chunks_keyword\(uuid, text\[\], integer, uuid\[\]\) from public, anon, authenticated/);
+    expect(body.indexOf('m.kb_enabled')).toBeGreaterThan(-1);
+    expect(body.indexOf('co.kb_include_attachments')).toBeGreaterThan(-1);
+    expect(body.indexOf('co.kb_include_attachments')).toBeLessThan(body.indexOf('order by'));
+    const SET = /create (or replace )?function public\.kb_set_search_text/i;
+    const setters = migrations.filter(file => SET.test(sql(file)));
+    expect(sql(setters[setters.length - 1])).toMatch(/revoke execute on function public\.kb_set_search_text\(jsonb\) from public, anon, authenticated/);
   });
 
   it('kb_documents / kb_chunks 没有给客户端的读策略，之后的迁移也没有再建', () => {
@@ -444,17 +735,37 @@ describe('防回归：范围由数据库函数执行，API 只经 searchKnowledg
     for (const text of texts.slice(lastDrop)) {
       expect(text).not.toMatch(/create policy \w+ on public\.kb_(documents|chunks)/i);
     }
+    // 080 的向量表同样：打开 RLS、不建策略、收回客户端权限
+    const created = texts.findIndex(text => /create table if not exists public\.kb_chunk_vectors/.test(text));
+    expect(created).toBeGreaterThan(-1);
+    expect(texts[created]).toContain('alter table public.kb_chunk_vectors enable row level security');
+    expect(texts[created]).toMatch(/revoke all on table public\.kb_chunk_vectors from anon, authenticated/);
+    for (const text of texts.slice(created)) {
+      expect(text).not.toMatch(/create policy \w+ on public\.kb_chunk_vectors/i);
+    }
+    // 083 的检索记录同样只给后端
+    const logs = texts.findIndex(text => /create table if not exists public\.kb_retrieval_logs/.test(text));
+    expect(logs).toBeGreaterThan(-1);
+    expect(texts[logs]).toContain('alter table public.kb_retrieval_logs enable row level security');
+    expect(texts[logs]).toMatch(/revoke all on table public\.kb_retrieval_logs from anon, authenticated/);
+    for (const text of texts.slice(logs)) {
+      expect(text).not.toMatch(/create policy \w+ on public\.kb_retrieval_logs/i);
+    }
   });
 
-  it('只有 knowledgeBase.ts 调这个函数，每次都带上范围', () => {
+  it('只有 knowledgeBase.ts 调这个函数，每次都带上范围；旧的 match_kb_chunks 已经没人调', () => {
     const apiSrc = resolve(__dirname, '..');
-    const callers = (readdirSync(apiSrc, { recursive: true }) as string[])
-      .filter(file => file.endsWith('.ts') && !file.endsWith('.test.ts'))
-      .filter(file => readFileSync(resolve(apiSrc, file), 'utf-8').includes("rpc('match_kb_chunks'"));
-    expect(callers).toEqual(['services/knowledgeBase.ts']);
+    const sources = (readdirSync(apiSrc, { recursive: true }) as string[])
+      .filter(file => file.endsWith('.ts') && !file.endsWith('.test.ts'));
+    const callersOf = (fn: string) => sources.filter(file => readFileSync(resolve(apiSrc, file), 'utf-8').includes(`rpc('${fn}'`));
+    expect(callersOf('match_kb_chunk_vectors')).toEqual(['services/knowledgeBase.ts']);
+    expect(callersOf('match_kb_chunks_keyword')).toEqual(['services/knowledgeBase.ts']);
+    expect(callersOf('match_kb_chunks')).toEqual([]);
 
     const src = readFileSync(resolve(__dirname, 'knowledgeBase.ts'), 'utf-8');
-    const call = src.slice(src.indexOf("rpc('match_kb_chunks'"));
-    expect(call.slice(0, call.indexOf('});'))).toContain('p_space_ids: spaceIds');
+    for (const fn of ['match_kb_chunk_vectors', 'match_kb_chunks_keyword']) {
+      const call = src.slice(src.indexOf(`rpc('${fn}'`));
+      expect(call.slice(0, call.indexOf('});'))).toContain('p_space_ids: spaceIds');
+    }
   });
 });

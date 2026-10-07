@@ -50,7 +50,9 @@ vi.mock('../services/supabaseClient', () => {
   const channel: Record<string, unknown> = {};
   channel.on = () => channel;
   channel.subscribe = () => channel;
-  return { supabase: { channel: () => channel, removeChannel: () => undefined } };
+  // 给 AI 传文件时浏览器直传存储那一步：一律成功（签发和回读校验走下面的假后端）
+  const storage = { from: () => ({ uploadToSignedUrl: async () => ({ data: {}, error: null }) }) };
+  return { supabase: { channel: () => channel, removeChannel: () => undefined, storage } };
 });
 
 vi.mock('../contexts/AuthContext', () => ({
@@ -160,6 +162,8 @@ function createBackend() {
       state.notes.push(note);
       return json({ note }, 201);
     }
+    // 「信息」页签取修订记录；真后端没有记录时也回空数组
+    if (method === 'GET' && /^\/notes\/[^/]+\/revisions$/.test(path)) return json({ revisions: [] });
     const noteMatch = path.match(/^\/notes\/([^/]+)$/);
     if (method === 'PUT' && noteMatch) {
       const note = state.notes.find(n => n.id === noteMatch[1]);
@@ -251,6 +255,16 @@ function createBackend() {
     }
     if (method === 'GET' && /^\/spaces\/[^/]+\/view-topics$/.test(path)) {
       return json({ topics: state.viewTopics, stale: false });
+    }
+    // 给 AI 传文件：签发直传地址；直传之后回读校验，真后端在这一步抽正文
+    if (method === 'POST' && path === `/spaces/${SPACE_ID}/attachments/sign`) {
+      return json({ path: `${SPACE_ID}/${body.file_name}`, token: 'upload-token', bucket: 'note-attachments' });
+    }
+    if (method === 'POST' && path === `/spaces/${SPACE_ID}/attachments/commit`) {
+      return json({
+        attachment: { file_url: `https://files.example.test/${body.path}`, file_name: body.file_name, mime_type: body.mime_type, file_size: 16 },
+        text: '第三章讲检索练习。', textTruncated: false, textSource: 'pdf',
+      });
     }
     const imageMatch = path.match(/^\/note-conversations\/([^/]+)\/image$/);
     if (method === 'POST' && imageMatch) {
@@ -1576,6 +1590,79 @@ describe('笔记页 AI：回答长度（2026-10-05）', () => {
   });
 });
 
+/**
+ * 2026-10-07：只挂附件、不写问题时，以前替学生补一句「看看这张图，说说你看到了什么。」当成提问存进库
+ * （附的是文档也这么说）。现在要写一句才能发，和知识空间助手一样；AI 中途报错时问题和附件放回输入框。
+ */
+describe('笔记页 AI：附件要配一句问题；出错时问题和附件放回输入框', () => {
+  const Q = '这一章的主要观点是什么？';
+  /** AI 面板：包着对话区的那个 aside，里面只有一个输入框、一个回形针、一个发送键 */
+  const aiPanel = () => document.querySelector('[data-ai-scroll]')?.closest('aside') ?? null;
+  const aiInput = () => aiPanel()?.querySelector<HTMLTextAreaElement>('textarea') ?? null;
+  const sendButton = () => aiPanel()!.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!;
+  const chips = () => Array.from(aiPanel()!.querySelectorAll('button[aria-label^="移除这个附件: "]'))
+    .map(b => b.getAttribute('aria-label')!.slice('移除这个附件: '.length));
+  const streamBodies = () => backend.state.requests
+    .filter(r => r.method === 'POST' && /^\/note-conversations\/[^/]+\/ai\/(?:agent-)?stream$/.test(r.path))
+    .map(r => r.body);
+  const enabledSend = () => waitFor(() => (sendButton().disabled ? null : sendButton()), '发送键亮起');
+
+  /** 打开笔记的 AI 助手，用输入框下面的回形针传一份 PDF；返回没挂附件时输入框里的提示 */
+  async function openWithPdf() {
+    await mount();
+    await openNote('被接的观点');
+    await openAiPanel();
+    await waitFor(() => aiInput(), 'AI 输入框');
+    const plainHint = aiInput()!.placeholder;
+    const picker = aiPanel()!.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File(['%PDF-1.4 第三章'], '第三章.pdf', { type: 'application/pdf' });
+    await act(async () => {
+      Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
+      picker.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await waitFor(() => chips().includes('第三章.pdf'), '附件挂上输入框');
+    return plainHint;
+  }
+
+  it('只挂了文件、没写问题：发送键灰着、回车不发，输入框提示写一句；写了才发，存下的提问是学生自己的话', async () => {
+    const plainHint = await openWithPdf();
+    expect(aiInput()!.placeholder).toBe('想问这份文件什么？写一句再发送');
+    expect(sendButton().disabled).toBe(true);
+    await act(async () => { aiInput()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await settle(50);
+    expect(streamBodies()).toEqual([]);
+
+    await typeInto(aiInput()!, Q);
+    await click(await enabledSend());
+    await waitFor(() => streamBodies().length === 1 && !aiBusy(), '这一问答完');
+    expect(streamBodies()[0]).toMatchObject({
+      content: Q,
+      attachments: [expect.objectContaining({ file_name: '第三章.pdf', mime_type: 'application/pdf', text: '第三章讲检索练习。' })],
+    });
+    expect(backend.state.messages.filter(m => m.senderKind === 'user').map(m => m.content)).toEqual([Q]);
+    expect(chips()).toEqual([]);
+    expect(aiInput()!.placeholder).toBe(plainHint);
+  });
+
+  it('AI 一个字没答就报错：提问照旧留在对话里，问题和附件放回输入框，直接再发一次', async () => {
+    await openWithPdf();
+    backend.state.streamError = '模型暂时不可用';
+    await typeInto(aiInput()!, Q);
+    await click(await enabledSend());
+    await waitFor(() => document.body.textContent?.includes('模型暂时不可用') && !aiBusy(), '这一轮出错结束');
+
+    expect(questionBubbles(Q)).toBe(1);
+    expect(aiInput()!.value).toBe(Q);
+    expect(chips()).toEqual(['第三章.pdf']);
+
+    backend.state.streamError = null;
+    await click(await enabledSend());
+    await waitFor(() => streamBodies().length === 2 && !aiBusy(), '再发一次答完');
+    expect(streamBodies()[1]).toMatchObject({ content: Q, attachments: [expect.objectContaining({ file_name: '第三章.pdf' })] });
+    expect(chips()).toEqual([]);
+  });
+});
+
 describe('问题栏后面滚动的讨论主题（2026-10-05）', () => {
   const ticker = () => document.querySelector<HTMLElement>('[data-view-topics]');
   const card = (title: string) => noteCard(title)!.closest('.gsap-note-item') as HTMLElement;
@@ -1607,5 +1694,39 @@ describe('问题栏后面滚动的讨论主题（2026-10-05）', () => {
     expect(card('远处的观点').className).toContain('ring-amber-400');
     expect(card('被接的观点').className).not.toContain('ring-amber-400');
     expect(el!.style.transform).not.toBe(transformBefore);
+  });
+});
+
+/**
+ * 2026-10-06：笔记页从「撰写」切到「信息」再切回来，编辑区是空的，点「贡献」就把空正文 PUT 进库。
+ * 编辑器内部的各种情形在 noteEditorTabSwitch.test.ts；这里只走一遍学生的原操作，看发出去的请求。
+ */
+describe('笔记页切过页签再贡献', () => {
+  const MINE_ID = '00000000-0000-4000-8000-000000000004';
+  const MINE_HTML = '<p>植物向光生长，是因为背光一侧长得快。</p>';
+  const editorBody = () => document.querySelector<HTMLElement>('[contenteditable][data-placeholder]');
+  /** 编辑器顶栏的页签。页面上还有别的 nav，按「撰写」认出编辑器那一排 */
+  const tabButton = (label: string) => {
+    const nav = all('nav').find(n => Array.from(n.querySelectorAll('button')).some(b => b.textContent?.trim() === '撰写'));
+    return Array.from(nav?.querySelectorAll('button') ?? []).find(b => b.textContent?.trim() === label)!;
+  };
+  const putsToMine = () => noteUpdates().filter(r => r.path === `/notes/${MINE_ID}`);
+
+  it('自己的笔记：「信息」→「撰写」→「贡献」，PUT 带的是原来的正文，不是空串', async () => {
+    backend.state.notes.push(apiNote(MINE_ID, '我自己的观点', 600, 600, {
+      author_id: USER.id, users: { name: USER.name }, content: MINE_HTML,
+    }));
+    await mount();
+    await openNote('我自己的观点');
+    await waitFor(() => editorBody()?.textContent?.includes('背光一侧长得快'), '正文载入');
+
+    await click(tabButton('信息'));
+    await click(tabButton('撰写'));
+    expect(editorBody()!.innerHTML).toBe(MINE_HTML);
+
+    await click(buttonWith('贡献')!);
+    await waitFor(() => putsToMine().length > 0, '保存请求');
+    expect(putsToMine()).toHaveLength(1);
+    expect(putsToMine()[0].body).toMatchObject({ title: '我自己的观点', content: MINE_HTML });
   });
 });

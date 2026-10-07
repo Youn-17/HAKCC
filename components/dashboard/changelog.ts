@@ -32,6 +32,16 @@ export interface ChangelogEntry {
 /** 最新的排最前面。加新版本就往数组头部插。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v0.4.0', date: '2026-10-07',
+    titleZh: '课程知识库与来源追溯', titleEn: 'Course knowledge base and source tracing',
+    items: [
+      { zh: 'Note 与知识空间 AI 可以检索课程材料，回答带引用编号、来源卡片及可用页码。', en: 'Note and workspace AI can retrieve course materials with citation numbers, source cards and available page references.' },
+      { zh: '教师可以管理知识库开关、材料重新解析、检索测试与处理状态。', en: 'Teachers can manage knowledge-base switches, material re-parsing, search tests and processing status.', for: 'teacher' },
+      { zh: '附件需要配合文字问题；请求失败后保留问题和附件，便于修改后重试。', en: 'Attachments require a written question; failed requests restore the question and attachments for retry.' },
+      { zh: '历史对话按助手与课程匹配，改进来源检索、过程统计与文件生成。', en: 'Conversation reuse respects assistant and course; retrieval, process summaries and generated files are improved.' },
+    ],
+  },
+  {
     version: 'v0.3.0', date: '2026-10-06',
     titleZh: '观点演进与 AI 协作更新', titleEn: 'Idea progression and AI collaboration',
     items: [

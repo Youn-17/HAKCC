@@ -3,17 +3,10 @@ import {
   AlignmentType, Table, TableRow, TableCell, WidthType,
   BorderStyle, PageBreak, Footer, Header,
 } from 'docx';
-import type { ChartConfiguration } from 'chart.js';
+import type { ChartConfiguration, ChartItem, Plugin } from 'chart.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-
-let ChartJSNodeCanvas: any = null;
-try {
-  ChartJSNodeCanvas = require('chartjs-node-canvas').ChartJSNodeCanvas;
-} catch {
-  console.warn('[fileGenerator] chartjs-node-canvas not available — chart generation disabled. Install system deps: apt install build-essential libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev');
-}
 
 const FILES_DIR = path.join(process.cwd(), 'generated_files');
 const FILE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -254,23 +247,93 @@ export async function generateTableDoc(opts: TableDocOptions): Promise<{ fileId:
 // Chart generation
 // ---------------------------------------------------------------------------
 
-let chartCanvas: any = null;
-if (ChartJSNodeCanvas) {
-  try { chartCanvas = new ChartJSNodeCanvas({ width: 800, height: 500, backgroundColour: 'white' }); } catch { /* skip */ }
+// 用 @napi-rs/canvas 画：预编译包作为普通 npm 依赖装上，不跑安装脚本。以前的 canvas 原生模块要靠安装脚本，
+// deploy.sh 的 npm ci 带 --ignore-scripts，线上从没编出来过，图表一张都没画成。
+// 中文字体名要写进字体列表，不能指望它自己找。服务器上的中文字体是 apt 装的 fonts-noto-cjk：
+// 那是 TTC 字体集，@napi-rs/canvas 只认出第一个字面的名字 Noto Sans CJK JP，认不出 SC，两个都写上。
+const CHART_FONT_FAMILY = "'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans GB', 'Microsoft YaHei', 'DejaVu Sans', sans-serif";
+const CHART_WIDTH = 800;
+const CHART_HEIGHT = 500;
+
+type ChartRenderer = {
+  render: (config: ChartConfiguration) => Buffer;
+  rendersChinese: boolean;
+};
+
+let rendererLoad: Promise<ChartRenderer | null> | null = null;
+
+// 第一次画图时才加载：原生模块加载失败只让图表不可用，不能拖垮整个进程
+function loadChartRenderer(): Promise<ChartRenderer | null> {
+  rendererLoad ??= (async () => {
+    try {
+      const [{ createCanvas }, { Chart, registerables }] = await Promise.all([import('@napi-rs/canvas'), import('chart.js')]);
+      Chart.register(...registerables);
+      Chart.defaults.font.family = CHART_FONT_FAMILY;
+      const whiteBackground: Plugin = {
+        id: 'hakcc-white-background',
+        beforeDraw: (chart) => {
+          const { ctx, width, height } = chart;
+          ctx.save();
+          ctx.globalCompositeOperation = 'destination-over';
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, width, height);
+          ctx.restore();
+        },
+      };
+
+      // 缺字时每个字都画成同一个方块：两个不同的汉字画得一模一样，就是没有可用的中文字体
+      const glyph = (ch: string) => {
+        const canvas = createCanvas(40, 40);
+        const ctx = canvas.getContext('2d');
+        ctx.font = `28px ${CHART_FONT_FAMILY}`;
+        ctx.fillText(ch, 4, 32);
+        return Buffer.from(ctx.getImageData(0, 0, 40, 40).data);
+      };
+      const rendersChinese = !glyph('学').equals(glyph('生'));
+      if (!rendersChinese) {
+        console.warn('[fileGenerator] no Chinese font found, chart labels will show as boxes. On the server: apt install fonts-noto-cjk');
+      }
+
+      return {
+        rendersChinese,
+        render: (config) => {
+          const canvas = createCanvas(CHART_WIDTH, CHART_HEIGHT);
+          const chart = new Chart(canvas.getContext('2d') as unknown as ChartItem, {
+            ...config,
+            options: { ...config.options, responsive: false, animation: false },
+            plugins: [...(config.plugins ?? []), whiteBackground],
+          });
+          try {
+            return canvas.toBuffer('image/png');
+          } finally {
+            chart.destroy();
+          }
+        },
+      };
+    } catch (err) {
+      console.warn(`[fileGenerator] chart rendering unavailable: ${(err as Error).message}`);
+      return null;
+    }
+  })();
+  return rendererLoad;
+}
+
+/** 这台机器画出来的图里，中文是真字还是方块。部署后可在服务器上直接调用核对 */
+export async function chartsRenderChinese(): Promise<boolean> {
+  return (await loadChartRenderer())?.rendersChinese ?? false;
 }
 
 export async function generateChart(
   config: ChartConfiguration,
   fileName?: string,
-): Promise<{ fileId: string; fileName: string; base64: string }> {
-  if (!chartCanvas) throw new Error('Chart generation not available — native canvas module not installed');
+): Promise<{ fileId: string; fileName: string }> {
+  const renderer = await loadChartRenderer();
+  if (!renderer) throw new Error('Chart generation not available — @napi-rs/canvas could not be loaded');
   const { id, filePath } = makeFileId('png');
-  const buffer = await chartCanvas.renderToBuffer(config);
-  fs.writeFileSync(filePath, buffer);
+  fs.writeFileSync(filePath, renderer.render(config));
 
-  const base64 = buffer.toString('base64');
   const safeName = (fileName ?? 'chart').replace(/[^\w一-鿿-]/g, '_').slice(0, 40);
-  return { fileId: id, fileName: `${safeName}.png`, base64 };
+  return { fileId: id, fileName: `${safeName}.png` };
 }
 
 // Pre-built chart configs

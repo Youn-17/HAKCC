@@ -1,24 +1,6 @@
-/**
- * 课程里每个 AI 功能用哪个模型。
- *
- * 教师在「AI 设置」里看得到平台上所有用到 AI 的地方、谁会触发、现在用的是哪个模型，
- * 并能给每个功能单独指定一个（不指定就是「自动」）。另外能限定学生在笔记 AI 助手的
- * 下拉框里可以选哪些模型。
- *
- * 一个功能用哪个模型，按这个顺序定：
- *   1. 教师指定的（这门课还配着那家的 key、那个模型也还在启用列表里才算数）；
- *   2. 默认规则：学生在等的功能先用 DeepSeek Flash（52 人同时用实测全部成功，中位 0.2–0.7 秒；
- *      DMX 同一轮中位 10–17 秒）；生图先用 DMX（聊天里的绘图指令也走它）；
- *   3. 调用处原来的候选链。
- * 前两步只决定谁排第一。调用处原有的健康度冷却、并发满时换家、失败换下一家都照旧。
- *
- * 设置存在 teacher_ai_configs.trigger_settings.ai_models：和「AI 触发设置」同一行、
- * 同一套选行规则（最新的那条非空设置行），不需要改表。
- *
- * 这个模块只依赖模型目录和数据库，刻意不依赖 modelRouter / aiProviderConfig ——
- * 路由测试常把那两个整体换成只有几个函数的假模块。健康度排序、解密密钥留给调用处。
- */
+/* Implementation notes are described in the public update guide. */
 import { supabase } from '../config/supabase';
+import { kbEmbeddingConfigured, KB_EMBEDDING_MODEL } from './kbEmbedding';
 import {
   DMX_IMAGE_MODELS,
   MINIMAX_IMAGE_MODELS,
@@ -304,12 +286,12 @@ export const AI_FEATURES: readonly AiFeatureDef[] = [
     order: ['openai', 'dmx', 'dmxapi'],
     label: { zh: '课程资料检索（向量）', en: 'Course material retrieval (embeddings)' },
     desc: {
-      zh: '课程资料和笔记切块算向量，AI 回答前先检索课程材料。',
-      en: 'Course materials and notes are embedded so AI can look them up before answering.',
+      zh: '课程资料和知识空间里的附件切块算向量，AI 回答前先检索课程材料。',
+      en: 'Course materials and workspace attachments are embedded so AI can look them up before answering.',
     },
     fixedNote: {
-      zh: '固定用 text-embedding-3-small，走这门课的 DMX 或 OpenAI key；换模型会让已经算好的向量对不上。',
-      en: 'Always text-embedding-3-small through the course\'s DMX or OpenAI key; another model would not match the vectors already stored.',
+      zh: '固定用 voyage-4-lite（经 OpenRouter，1024 维），用平台提供的 key 计算，不用这门课的 key。笔记之间的相似检索仍走这门课的 DMX 或 OpenAI key。',
+      en: 'Always voyage-4-lite (through OpenRouter, 1024 dimensions), computed with a key the platform provides, not this course\'s key. Similarity search between notes still uses this course\'s DMX or OpenAI key.',
     },
   },
   {
@@ -798,8 +780,8 @@ export interface FeaturePlan {
 function fixedCurrent(def: AiFeatureDef, rows: readonly CourseAiRow[]): ModelRef | null {
   const keyed = rows.filter(hasProviderKey);
   if (def.kind === 'embedding') {
-    const row = keyed.find(r => r.provider_id === 'openai' || isDmx(r.provider_id));
-    return row ? { providerId: row.provider_id, model: 'text-embedding-3-small' } : null;
+    // 课程知识库用平台的 key，和这门课配了哪家无关（见 kbEmbedding）
+    return kbEmbeddingConfigured() ? { providerId: 'openrouter', model: KB_EMBEDDING_MODEL } : null;
   }
   if (def.kind === 'search') {
     return keyed.some(r => r.provider_id === 'tavily') ? { providerId: 'tavily', model: 'tavily-search' } : null;

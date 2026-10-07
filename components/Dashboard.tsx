@@ -53,6 +53,7 @@ import LoginLogPanel from './dashboard/LoginLogPanel';
 import PlatformFeedbackPanel from './dashboard/PlatformFeedbackPanel';
 import PendingSessionsPrompt from './dashboard/PendingSessionsPrompt';
 import RemixIcon from './RemixIcon';
+import { canManageCourse } from './courseStanding';
 import { buildStudentOverviewModel, buildTeacherOverviewModel } from './dashboard/overviewModel';
 import { buildTeacherKpiCards, getDashboardHeroMeta, getRoleDashboardTabs, getTeacherDashboardTabs, type DashboardTabId } from './dashboard/teacherDashboardConfig';
 import { gsap, prepareForMotion, shouldReduceMotion, useGSAP } from '../utils/gsapMotion';
@@ -317,7 +318,8 @@ const CourseCard: React.FC<{ course: Course; role: UserRole; onClick: () => void
               <button
                 onClick={(e) => { e.stopPropagation(); onSettingsClick(course); }}
                 className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[0.75rem] font-semibold transition-colors bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800"
-                title={lang === 'zh' ? '课程设置' : 'Course Settings'}
+                title={lang === 'zh' ? '课程管理' : 'Course management'}
+                aria-label={lang === 'zh' ? `课程管理 ${course.title}` : `Manage ${course.title}`}
               >
                 <RemixIcon name="settings-3-line" size={13} />
               </button>
@@ -1655,6 +1657,7 @@ function mapDashboardCourse(c: DashboardCourseSummary): Course {
     hasUnreadFeedback: c.hasUnreadFeedback,
     unreadFeedbackCount: c.unreadFeedbackCount,
     lastActivityAt: c.lastActivityAt,
+    viewerStanding: c.viewerStanding,
   };
 }
 
@@ -1956,8 +1959,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
         // 课已经建好了，排课失败不回滚：教师到课程设置的教学安排里补一次就行
         console.error('Failed to save course schedule:', scheduleError);
         alert(lang === 'zh'
-          ? '课程已创建，但教学安排未能保存，请到课程设置 → 教学安排中重新填写。'
-          : 'Course created, but the schedule was not saved. Please set it in Course Settings → Schedule.');
+          ? '课程已创建，但教学安排未能保存，请到「课程管理 → 教学安排」中重新填写。'
+          : 'Course created, but the schedule was not saved. Please set it in Course management → Schedule.');
       }
 
       setShowCreateModal(false);
@@ -2808,13 +2811,26 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onCourseSelect(course.id, course.title); }}
-                    className="min-h-[40px] rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-900 px-3.5 py-2 text-xs font-semibold text-stone-700 dark:text-stone-200 transition-colors hover:bg-stone-200 dark:hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-stone-950"
-                    aria-label={`Enter ${course.title}`}
-                  >
-                    {t.teacher.enter}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {/* 课程管理只给创建者和课程管理员（2026-10-06 用户：原来的入口太难找） */}
+                    {canManageCourse(course.viewerStanding, currentRole) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/course/${course.id}/settings`); }}
+                        className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-950 px-3.5 py-2 text-xs font-semibold text-stone-700 dark:text-stone-200 transition-all duration-200 hover:bg-stone-100 dark:hover:bg-stone-900 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-stone-400 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-stone-950 md:flex-none"
+                        aria-label={lang === 'zh' ? `课程管理 ${course.title}` : `Manage ${course.title}`}
+                      >
+                        <RemixIcon name="settings-3-line" size={14} />
+                        {lang === 'zh' ? '课程管理' : 'Manage'}
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onCourseSelect(course.id, course.title); }}
+                      className="min-h-[44px] flex-1 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-900 px-3.5 py-2 text-xs font-semibold text-stone-700 dark:text-stone-200 transition-colors hover:bg-stone-200 dark:hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-stone-950 md:flex-none"
+                      aria-label={`Enter ${course.title}`}
+                    >
+                      {t.teacher.enter}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -2828,7 +2844,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredCourses.map(course => (
-              <CourseCard key={course.id} course={course} role="teacher" onClick={() => onCourseSelect(course.id, course.title)} onSettingsClick={(currentRole === 'teacher' || currentRole === 'admin') ? (c) => navigate(`/course/${c.id}/settings`) : undefined} lang={lang} t={t} />
+              <CourseCard key={course.id} course={course} role="teacher" onClick={() => onCourseSelect(course.id, course.title)} onSettingsClick={canManageCourse(course.viewerStanding, currentRole) ? (c) => navigate(`/course/${c.id}/settings`) : undefined} lang={lang} t={t} />
             ))}
           </div>
         </section>

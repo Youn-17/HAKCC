@@ -128,7 +128,7 @@ const TeachingLogPanel: React.FC<Props> = ({ lang, courseId: initialCourseId, co
             {zh ? '这门课还没有排定教学安排。' : 'No teaching schedule for this course yet.'}
           </p>
           <p className="mt-1.5 text-xs text-stone-500 dark:text-stone-400">
-            {zh ? '在「我的课程」里打开课程设置 → 教学安排，填入上课周数和每周时段即可开始记录。' : 'Open Course Settings → Schedule to plan the term.'}
+            {zh ? '在「我的课程」里点这门课的「课程管理」→ 教学安排，填入上课周数和每周时段即可开始记录。' : 'In My Courses, open Manage on the course → Schedule to plan the term.'}
           </p>
         </div>
       ) : (

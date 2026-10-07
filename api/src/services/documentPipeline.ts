@@ -8,6 +8,7 @@
 import { supabase } from '../config/supabase';
 import { canExtractText, extractDocumentText } from './documentText';
 import { fetchMinerUMarkdown, getMinerUTask, isMinerUConfigured, submitMinerUTask } from './mineru';
+import type { PageMap } from './pageMap';
 
 const MAX_DOC_BYTES = 20 * 1024 * 1024;
 const PDF_MIME = 'application/pdf';
@@ -28,6 +29,8 @@ export interface DocumentTextResult {
   pending: boolean;
   progress?: { done: number; total: number };
   minerUError?: string | null;
+  /** 只有 PDF 有：正文第几个字起是第几页，知识库给片段标页码用 */
+  pageMap?: PageMap | null;
 }
 
 export function isPdfDocument(mime: string, name: string): boolean {
@@ -58,6 +61,8 @@ export interface CachedRender {
   mineru_task_id?: string | null;
   mineru_state?: string | null;
   mineru_error?: string | null;
+  /** 对应当前最好的那份正文（有 markdown 就是 markdown 的，否则是 plain_text 的） */
+  page_map?: PageMap | null;
 }
 
 /**
@@ -77,7 +82,7 @@ function noteRenderCache(note: DocumentNote): RenderCache {
     async load() {
       const { data } = await supabase
         .from('document_renders')
-        .select('markdown, plain_text, text_source, mineru_task_id, mineru_state, mineru_error')
+        .select('markdown, plain_text, text_source, mineru_task_id, mineru_state, mineru_error, page_map')
         .eq('note_id', note.id)
         .maybeSingle();
       return (data as CachedRender | null) ?? null;
@@ -125,10 +130,11 @@ export async function refreshDocumentText(note: DocumentNote): Promise<DocumentT
     mineru_task_id: null,
     mineru_state: null,
     mineru_error: null,
+    page_map: extracted?.pageMap?.length ? extracted.pageMap : null,
   });
   // PDF 按新文件重新提交 MinerU；其余格式抽出来的就是最终正文
   if (isPdfDocument(mime, name) && isMinerUConfigured()) return resolveDocumentTextWith(note, cache);
-  return { text: extracted?.text ?? '', source: extracted?.source ?? 'none', pending: false };
+  return { text: extracted?.text ?? '', source: extracted?.source ?? 'none', pending: false, pageMap: extracted?.pageMap ?? null };
 }
 
 export async function resolveDocumentTextWith(note: DocumentFile, cache: RenderCache): Promise<DocumentTextResult> {
@@ -141,7 +147,7 @@ export async function resolveDocumentTextWith(note: DocumentFile, cache: RenderC
     // markdown 现在有三个来源：MinerU 解析的 PDF、mammoth 转的 Word、学生编辑过的。
     // 标签要如实反映来源，不能一律当成 mineru。
     const source = (cached.text_source as DocumentTextResult['source']) ?? 'mineru';
-    return { text: cached.markdown, source, pending: false };
+    return { text: cached.markdown, source, pending: false, pageMap: cached.page_map ?? null };
   }
   if (!note.file_url) return { text: '', source: 'none', pending: false };
 
@@ -149,11 +155,13 @@ export async function resolveDocumentTextWith(note: DocumentFile, cache: RenderC
 
   // 本地兜底正文：只算一次
   let plain = cached?.plain_text ?? null;
+  let plainPageMap: PageMap | null = cached?.markdown ? null : (cached?.page_map ?? null);
   if (plain === null && canExtractText(mime, name)) {
     try {
       const extracted = await extractDocumentText(await fetchAttachment(note.file_url), mime, name);
       plain = extracted?.text ?? '';
-      await save({ plain_text: plain, text_source: extracted?.source ?? 'none' });
+      plainPageMap = extracted?.pageMap?.length ? extracted.pageMap : null;
+      await save({ plain_text: plain, text_source: extracted?.source ?? 'none', page_map: plainPageMap });
     } catch (err: any) {
       console.warn('[DocPipeline] local extract failed:', err?.message);
       plain = '';
@@ -167,6 +175,7 @@ export async function resolveDocumentTextWith(note: DocumentFile, cache: RenderC
       text: plain ?? '',
       source: (cached?.text_source as DocumentTextResult['source']) ?? 'plain',
       pending: false,
+      pageMap: plainPageMap,
     };
   }
 
@@ -175,25 +184,26 @@ export async function resolveDocumentTextWith(note: DocumentFile, cache: RenderC
 
   // 失败过就不再重试：同一份文件重复提交只会重复失败，还耗额度
   if (state === 'failed') {
-    return { text: plain ?? '', source: 'pdf', pending: false, minerUError: cached?.mineru_error ?? null };
+    return { text: plain ?? '', source: 'pdf', pending: false, minerUError: cached?.mineru_error ?? null, pageMap: plainPageMap };
   }
 
   try {
     if (!taskId) {
       taskId = await submitMinerUTask(note.file_url);
       await save({ mineru_task_id: taskId, mineru_state: 'pending', mineru_error: null });
-      return { text: plain ?? '', source: 'pdf', pending: true };
+      return { text: plain ?? '', source: 'pdf', pending: true, pageMap: plainPageMap };
     }
 
     const task = await getMinerUTask(taskId);
     if (task.state === 'done' && task.fullZipUrl) {
-      const markdown = await fetchMinerUMarkdown(task.fullZipUrl);
-      await save({ markdown, text_source: 'mineru', mineru_state: 'done', mineru_error: null });
-      return { text: markdown, source: 'mineru', pending: false };
+      const { markdown, pageMap } = await fetchMinerUMarkdown(task.fullZipUrl);
+      const markdownPageMap = pageMap.length ? pageMap : null;
+      await save({ markdown, text_source: 'mineru', mineru_state: 'done', mineru_error: null, page_map: markdownPageMap });
+      return { text: markdown, source: 'mineru', pending: false, pageMap: markdownPageMap };
     }
     if (task.state === 'failed') {
       await save({ mineru_state: 'failed', mineru_error: task.errMsg ?? '解析失败' });
-      return { text: plain ?? '', source: 'pdf', pending: false, minerUError: task.errMsg ?? null };
+      return { text: plain ?? '', source: 'pdf', pending: false, minerUError: task.errMsg ?? null, pageMap: plainPageMap };
     }
 
     await save({ mineru_state: task.state });
@@ -201,11 +211,12 @@ export async function resolveDocumentTextWith(note: DocumentFile, cache: RenderC
       text: plain ?? '',
       source: 'pdf',
       pending: true,
+      pageMap: plainPageMap,
       progress: task.totalPages ? { done: task.extractedPages ?? 0, total: task.totalPages } : undefined,
     };
   } catch (err: any) {
     // MinerU 挂了不该让文档打不开：如实返回兜底正文，下一次请求再试
     console.error('[DocPipeline] MinerU failed:', err?.message);
-    return { text: plain ?? '', source: 'pdf', pending: false, minerUError: err?.message ?? 'MinerU 不可用' };
+    return { text: plain ?? '', source: 'pdf', pending: false, minerUError: err?.message ?? 'MinerU 不可用', pageMap: plainPageMap };
   }
 }

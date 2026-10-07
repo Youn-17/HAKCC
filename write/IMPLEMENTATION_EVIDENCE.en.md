@@ -1,9 +1,9 @@
 # Implementation evidence
 
-Current feature and upgrade supplement: [English](UPDATES_v0.3.0.en.md) · [中文](UPDATES_v0.3.0.md).
+Current feature and upgrade supplement: [English](UPDATES_v0.4.0.en.md) · [中文](UPDATES_v0.4.0.md).
 [System guide](SYSTEM_OVERVIEW.en.md) · [Development record](../evidence/DEVELOPMENT_RECORD.md)
 
-Current snapshot: `9f1e83a0ba93bb4a0fbdedf4d7e4d641fc9f7b70` plus inspected working-tree changes, dated 2026-10-06. The linked update supplement documents the new paths; file hashes identify the exact publication. These paths are present in the public release. Historical module documents may describe older behavior; the linked source and tests take precedence.
+Current snapshot: `c25f8555184e94701b8c7daef05a2b28673ed329` plus inspected working-tree changes, dated 2026-10-07. The linked update supplement documents the new paths; file hashes identify the exact publication. These paths are present in the public release. Historical module documents may describe older behavior; the linked source and tests take precedence.
 
 | Documented mechanism | Principal source | Evidence scope |
 | --- | --- | --- |

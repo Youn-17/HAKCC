@@ -13,8 +13,8 @@ import { resolve } from 'node:path';
  * 删掉的附件还会被重新写回知识库。
  *
  * 现在删除接口顺手清掉知识库里那份，后台入库前后都核一次，检索函数（067）只认没删的笔记。
- * 迁移和 API 分开上线，两种状态都要对：state.migration 为 '065' 时检索函数是现在线上那版，
- * 只能靠 API 清干净；'067' 时数据库兜底。
+ * 迁移和 API 分开上线，两种状态都要对：state.migration 为 '065' 时检索函数不看 deleted_at，
+ * 只能靠 API 清干净；'067' 时数据库兜底（080 换成 match_kb_chunk_vectors 之后照旧兜底）。
  *
  * 路由、accessControl、kbIngest、knowledgeBase、智能体工具都用真的，只替换数据库、鉴权、
  * 解析、向量服务和模型调用。数据库按 SQL 语义模拟（含 kb_chunks 的外键和级联），
@@ -86,7 +86,7 @@ const h = vi.hoisted(() => {
   });
 
   const db = seed();
-  type Point = 'parse' | 'upsert' | 'embed';
+  type Point = 'parse' | 'upsert' | 'chunks';
   const state = {
     user: { id: 'student-a', role: 'student' } as { id: string; role: string },
     /** 检索函数按哪一版迁移算：'065' 是现在线上那版，'067' 排除来源笔记已删的文档 */
@@ -144,6 +144,8 @@ const h = vi.hoisted(() => {
     const execute = async (): Promise<{ data: Row[] | null; error: { message: string } | null }> => {
       // 入库先按 course_id + note_id 查旧文档，紧接着 upsert：删除落在这两步之前
       if (table === 'kb_documents' && op === 'select') await fire('upsert');
+      // 文档行已经写了、片段还没写：删除落在这里
+      if (table === 'kb_chunks' && op === 'insert') await fire('chunks');
       if (state.failing.has(`${table}:${op}`)) return { data: null, error: { message: 'connection reset' } };
       if (op !== 'select') state.writes.push(`${table}:${op}`);
       if (op === 'insert') {
@@ -215,10 +217,24 @@ const h = vi.hoisted(() => {
     return builder;
   };
 
-  // match_kb_chunks：课程资料（不属于任何空间）全课可见，附件的空间要在 p_space_ids 里；
-  // 067 起来源笔记还得没删。都是先过滤、再按相关度取前 k 片
+  // match_kb_chunk_vectors（080）：课程资料（不属于任何空间）全课可见，附件的空间要在 p_space_ids 里；
+  // 067 起来源笔记还得没删。都是先过滤、再按相关度取前 k 片。片段上的 embedding 代表「有当前模型的向量」
   const rpc = async (fn: string, args: Record<string, any>) => {
-    if (fn !== 'match_kb_chunks') return { data: null, error: { message: `unknown function ${fn}` } };
+    // 关键词那一路：这里的用例都走向量，关键词对不上任何片段
+    if (fn === 'match_kb_chunks_keyword') return { data: [], error: null };
+    // 085：这门课有没有检索得到的片段（这里没有开关，只看删没删）
+    if (fn === 'kb_course_searchable') {
+      const live = (noteId: unknown) => db.notes.some(n => n.id === noteId && n.deleted_at == null);
+      return {
+        data: db.kb_chunks.some(c => {
+          const d = db.kb_documents.find(doc => doc.id === c.document_id);
+          return c.course_id === args.p_course_id && !!d && (d.material_id != null || live(d.note_id));
+        }),
+        error: null,
+      };
+    }
+    if (fn !== 'match_kb_chunk_vectors') return { data: null, error: { message: `unknown function ${fn}` } };
+    if (args.p_model !== 'voyageai/voyage-4-lite@1024') return { data: [], error: null };
     const allowed: unknown[] = Array.isArray(args.p_space_ids) ? args.p_space_ids : [];
     const liveNote = (noteId: unknown) => db.notes.some(n => n.id === noteId && n.deleted_at == null);
     const hits = db.kb_chunks
@@ -267,9 +283,9 @@ const h = vi.hoisted(() => {
       return textOf(note.id);
     }),
     refreshText: vi.fn(async (note: { id: string }) => textOf(note.id)),
-    embed: vi.fn(async () => {
-      await fire('embed');
-      return [0.1];
+    /** 入库写完片段后叫后台补向量。这里当场补上：片段有了当前模型的向量，检索就找得到 */
+    kick: vi.fn(() => {
+      for (const c of db.kb_chunks) c.embedding ??= '[0.1]';
     }),
     aiFetch: vi.fn(async (_url: string, _init?: { body?: string }) => ({
       ok: true,
@@ -289,9 +305,18 @@ vi.mock('../middleware/auth', () => ({
 }));
 vi.mock('./embeddingService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./embeddingService')>()),
-  resolveEmbeddingProvider: async () => ({ providerId: 'openai', apiKey: 'sk-test', model: 'text-embedding-3-small' }),
-  generateEmbedding: h.embed,
   embedNote: async () => {},
+}));
+vi.mock('./kbEmbedding', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./kbEmbedding')>()),
+  kbEmbeddingConfigured: () => true,
+  embedKbQuery: async () => [0.1],
+}));
+vi.mock('./kbVectorJob', () => ({ kickKbVectors: h.kick }));
+// 重排没拿到：按向量的顺序给（这里测的是删除，不是排序）
+vi.mock('./kbRerank', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./kbRerank')>()),
+  rerankKb: async () => null,
 }));
 vi.mock('./documentPipeline', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./documentPipeline')>()),
@@ -337,7 +362,7 @@ beforeEach(() => {
   h.reset();
   h.resolveText.mockClear();
   h.refreshText.mockClear();
-  h.embed.mockClear();
+  h.kick.mockClear();
   h.aiFetch.mockClear();
   invalidateMembershipCache();
   invalidateSpaceCache();
@@ -428,10 +453,10 @@ describe('删掉附件：知识库里那份跟着清掉，迁移 067 之前也�
 });
 
 describe('后台入库不把删掉的附件写回去', () => {
-  const RACES: [label: string, point: 'parse' | 'upsert' | 'embed'][] = [
+  const RACES: [label: string, point: 'parse' | 'upsert' | 'chunks'][] = [
     ['解析期间（还没开始写知识库）', 'parse'],
     ['查完没删、写知识库之前', 'upsert'],
-    ['向量化期间（文档行已写、片段还没写）', 'embed'],
+    ['写片段之前（文档行已写、片段还没写）', 'chunks'],
   ];
 
   it.each(RACES)('上传后马上删，删除落在%s：跑完之后知识库里没有它', async (_label, point) => {
@@ -453,7 +478,7 @@ describe('后台入库不把删掉的附件写回去', () => {
     expect(h.db.kb_documents.map(d => d.id).sort()).toEqual(['doc-material', 'doc-paper', 'doc-slides']);
   });
 
-  it('解析期间就删了：知识库一行不写，向量接口一次不调', async () => {
+  it('解析期间就删了：知识库一行不写，也不叫后台补向量', async () => {
     as('student-a');
     h.state.at = { point: 'parse', run: async () => { await del('note-upload'); } };
 
@@ -462,7 +487,7 @@ describe('后台入库不把删掉的附件写回去', () => {
 
     expect(h.state.at).toBeNull();
     expect(h.state.writes.filter(w => w === 'kb_documents:upsert' || w === 'kb_chunks:insert')).toEqual([]);
-    expect(h.embed).not.toHaveBeenCalled();
+    expect(h.kick).not.toHaveBeenCalled();
   });
 
   it('对照：没人删的时候，同一条链路照常入库', async () => {
@@ -471,6 +496,10 @@ describe('后台入库不把删掉的附件写回去', () => {
 
     expect(kbDoc('note-upload')).toMatchObject({ status: 'ready', space_id: 'space-shared' });
     expect(await found()).toContain(h.TEXT.upload);
+    // 关键词检索的词序列随片段一起写（082）
+    const chunks = h.db.kb_chunks.filter(c => c.document_id === kbDoc('note-upload')!.id);
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.every(c => typeof c.search_text === 'string' && Number(c.search_len) > 0)).toBe(true);
   });
 
   it('删掉之后 MinerU 轮询的下一轮：不再解析，也不再入库', async () => {
@@ -524,23 +553,40 @@ describe('防回归：检索函数和删除接口都认 deleted_at', () => {
   const migrationsDir = resolve(__dirname, '../../../supabase/migrations');
   const migrations = readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
   const sql = (file: string) => readFileSync(resolve(migrationsDir, file), 'utf-8');
-  const DEFINES = /create (or replace )?function public\.match_kb_chunks/i;
+  const DEFINES = /create (or replace )?function public\.match_kb_chunk_vectors/i;
   const defining = migrations.filter(file => DEFINES.test(sql(file)));
   const latest = sql(defining[defining.length - 1]);
   const body = latest.slice(latest.search(DEFINES));
 
-  it('最新一版 match_kb_chunks 在取前 k 片之前排除已删的来源笔记，课程资料照旧（上面模拟 067 的就是这个语义）', () => {
+  it('最新一版 match_kb_chunk_vectors 在取前 k 片之前排除已删的来源笔记，课程资料照旧（上面模拟 067 的就是这个语义）', () => {
     expect(body).toContain('d.note_id is null');
     expect(body).toContain('where n.id = d.note_id and n.deleted_at is null');
     expect(body.indexOf('n.deleted_at is null')).toBeLessThan(body.indexOf('order by'));
     // 其余照 065：调用者身份执行、找得到 pgvector、只给 service_role
     expect(body).toMatch(/language sql stable security invoker\s+set search_path = public, extensions/);
-    expect(body).toMatch(/revoke execute on function public\.match_kb_chunks\(uuid, extensions\.vector, integer, uuid\[\]\) from public, anon, authenticated/);
-    expect(body).toMatch(/grant execute on function public\.match_kb_chunks\(uuid, extensions\.vector, integer, uuid\[\]\) to service_role/);
+    expect(body).toMatch(/revoke execute on function public\.match_kb_chunk_vectors\(uuid, text, extensions\.halfvec, integer, uuid\[\]\) from public, anon, authenticated/);
+    expect(body).toMatch(/grant execute on function public\.match_kb_chunk_vectors\(uuid, text, extensions\.halfvec, integer, uuid\[\]\) to service_role/);
   });
 
-  it('同一份迁移清掉之前删掉的附件在知识库里的残留', () => {
-    expect(latest).toMatch(/delete from public\.kb_documents d\s+using public\.notes n\s+where n\.id = d\.note_id\s+and n\.deleted_at is not null/);
+  it('关键词兜底（082）同样在取前 k 片之前排除已删的来源笔记', () => {
+    const KW = /create (or replace )?function public\.match_kb_chunks_keyword/i;
+    const files = migrations.filter(file => KW.test(sql(file)));
+    const text = sql(files[files.length - 1]);
+    const kw = text.slice(text.search(KW));
+    expect(kw).toContain('where n.id = d.note_id and n.deleted_at is null');
+    expect(kw.indexOf('n.deleted_at is null')).toBeLessThan(kw.indexOf('order by'));
+  });
+
+  it('后台补向量的待办也跳过来源笔记已删的文档：不为马上要清掉的东西花钱', () => {
+    const MISSING = /create (or replace )?function public\.kb_chunks_missing_vectors/i;
+    const files = migrations.filter(file => MISSING.test(sql(file)));
+    const text = sql(files[files.length - 1]);
+    const missing = text.slice(text.search(MISSING));
+    expect(missing).toContain('where n.id = d.note_id and n.deleted_at is null');
+  });
+
+  it('067 清掉了之前删掉的附件在知识库里的残留', () => {
+    expect(sql('067_kb_exclude_deleted_notes.sql')).toMatch(/delete from public\.kb_documents d\s+using public\.notes n\s+where n\.id = d\.note_id\s+and n\.deleted_at is not null/);
   });
 
   it('API 里软删除笔记只有 DELETE /notes/:id 一处，它在写 deleted_at 之后清知识库', () => {

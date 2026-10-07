@@ -12,7 +12,7 @@ import type { AddressInfo } from 'node:net';
  * 空间 AI 检索到的一直是上传时那一版。
  *
  * 路由挂在真实的 Express 上，accessControl、kbIngest、documentPipeline、knowledgeBase 都用真的，
- * 只替换数据库、存储（连同下载文件的 fetch）、鉴权和向量接口。
+ * 只替换数据库、存储（连同下载文件的 fetch）、鉴权和后台补向量。
  */
 
 const h = vi.hoisted(() => {
@@ -88,8 +88,8 @@ const h = vi.hoisted(() => {
     fetched: [] as string[],
     failFetch: false,
   };
-  const embedding = {
-    provider: null as null | { model: string },
+  /** 入库写新片段那一步：可以让它停在这里，模拟一轮入库还没跑完 */
+  const chunkWrite = {
     calls: 0,
     gate: Promise.resolve() as Promise<void>,
   };
@@ -173,7 +173,13 @@ const h = vi.hoisted(() => {
       },
       maybeSingle: async () => ({ data: execute().map(view)[0] ?? null, error: null }),
       then: (ok: (v: unknown) => unknown, fail?: (e: unknown) => unknown) =>
-        Promise.resolve().then(() => ({ data: execute().map(view), error: null })).then(ok, fail),
+        Promise.resolve().then(async () => {
+          if (table === 'kb_chunks' && op === 'insert') {
+            chunkWrite.calls += 1;
+            await chunkWrite.gate;
+          }
+          return { data: execute().map(view), error: null };
+        }).then(ok, fail),
     };
     return builder;
   };
@@ -206,12 +212,11 @@ const h = vi.hoisted(() => {
     storage.objects.set(V1_PATH, { body: OLD_TEXT, contentType: 'text/markdown' });
     storage.fetched.length = 0;
     storage.failFetch = false;
-    embedding.provider = null;
-    embedding.calls = 0;
-    embedding.gate = Promise.resolve();
+    chunkWrite.calls = 0;
+    chunkWrite.gate = Promise.resolve();
   };
 
-  return { db, state, storage, embedding, from, bucket, serveStorage, reset, doc, BUCKET, V1, OLD_TEXT };
+  return { db, state, storage, chunkWrite, from, bucket, serveStorage, reset, doc, BUCKET, V1, OLD_TEXT };
 });
 
 vi.mock('../config/supabase', () => ({
@@ -235,13 +240,8 @@ vi.mock('../services/experimentCondition', () => ({
 }));
 vi.mock('../services/embeddingService', () => ({
   embedNote: async () => {},
-  resolveEmbeddingProvider: async () => h.embedding.provider,
-  generateEmbedding: async () => {
-    h.embedding.calls += 1;
-    await h.embedding.gate;
-    return [0.1, 0.2, 0.3];
-  },
 }));
+vi.mock('../services/kbVectorJob', () => ({ kickKbVectors: () => {} }));
 vi.mock('../services/metricsService', () => ({ updateHeatScore: async () => {}, getSpaceMetricsSummary: async () => ({}) }));
 // 真的 kbIngest，只把 scheduleKbRefresh 包一层，好拿到每一轮跑完的时刻
 vi.mock('../services/kbIngest', async (importOriginal) => {
@@ -290,8 +290,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  // 哪个用例中途失败留下了卡住的向量化，放行，别拖住下一个用例的队列
-  h.embedding.gate = Promise.resolve();
+  // 哪个用例中途失败留下了卡住的片段写入，放行，别拖住下一个用例的队列
+  h.chunkWrite.gate = Promise.resolve();
   await settle();
   vi.restoreAllMocks();
 });
@@ -396,16 +396,15 @@ describe('新版本短到不入库', () => {
 });
 
 describe('连着存了几版', () => {
-  it('上一轮还在向量化时又存了两版：等它跑完再按最新的文件跑一轮，库里只剩最后一版', async () => {
+  it('上一轮还在写片段时又存了两版：等它跑完再按最新的文件跑一轮，库里只剩最后一版', async () => {
     as('student-a');
-    h.embedding.provider = { model: 'test-embedding' };
     let release!: () => void;
-    h.embedding.gate = new Promise<void>(done => { release = done; });
+    h.chunkWrite.gate = new Promise<void>(done => { release = done; });
 
     const v2 = await saveVersion('note-md', V2_TEXT, V1, 'v2.md');
     expect(v2.status).toBe(200);
-    // 第一轮已经删掉了旧片段，正卡在向量化上
-    await vi.waitFor(() => expect(h.embedding.calls).toBe(1));
+    // 第一轮已经删掉了旧片段，正卡在写新片段上
+    await vi.waitFor(() => expect(h.chunkWrite.calls).toBe(1));
 
     const v3 = await saveVersion('note-md', V3_TEXT, v2.body.file_url, 'v3.md');
     const v4 = await saveVersion('note-md', V4_TEXT, v3.body.file_url, 'v4.md');
@@ -425,9 +424,8 @@ describe('连着存了几版', () => {
 
   it('刚上传、上传后那一轮还没入完库就存了新版本：两轮排队，库里只有新版本', async () => {
     as('student-a');
-    h.embedding.provider = { model: 'test-embedding' };
     let release!: () => void;
-    h.embedding.gate = new Promise<void>(done => { release = done; });
+    h.chunkWrite.gate = new Promise<void>(done => { release = done; });
 
     const upload = await send('POST', '/spaces/space-shared/attachments', {
       file_name: '新笔记.md', mime_type: 'text/markdown', data_url: markdown(OLD_TEXT),
@@ -438,7 +436,7 @@ describe('连着存了几版', () => {
     });
     expect(created.status).toBe(201);
     const { note: fresh } = await created.json() as { note: { id: string } };
-    await vi.waitFor(() => expect(h.embedding.calls).toBe(1));
+    await vi.waitFor(() => expect(h.chunkWrite.calls).toBe(1));
 
     expect((await saveVersion(fresh.id, V2_TEXT, attachment.file_url, 'v2.md')).status).toBe(200);
     release();

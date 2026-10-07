@@ -45,6 +45,7 @@ export async function ingestNoteIntoKb(
     mimeType: note.mime_type,
     textSource: text.source,
     content: text.text,
+    pageMap: text.pageMap ?? null,
     createdBy: note.author_id ?? null,
   });
   // 删除撞在入库途中：删除接口先清了知识库，这里又写了回去。写完再看一眼，删了就清掉
@@ -56,12 +57,16 @@ export async function ingestNoteIntoKb(
  * MinerU 是异步的，提交完不会有人通知我们。上传后隔一段时间回来看几次，
  * 拿到结构化 Markdown 就重新入库。
  *
- * 退避的间隔按实测定：一篇论文大约几十秒。总共约 8 分钟，够绝大多数文档；
- * 还没好的那些，等学生打开 AI 侧栏时前端会接着轮询。
- * 不做持久化任务队列 —— 为一天几十份文档养一个队列不划算，
- * 进程重启由下面的 sweep 兜底。
+ * 退避的间隔按实测定：一篇论文大约几十秒。总共约 8 分钟，够绝大多数文档。
+ * 还没好的那些靠定时扫描（startKbParseSweep）：解析状态记在数据库里，每 10 分钟扫一遍接着轮询，
+ * 进程重启也不丢。原来只在启动时扫一次：课程资料没有前端会接着轮询，超过 8 分钟的
+ * 那份要等到下次重启才有人管。
  */
 const POLL_DELAYS_MS = [25_000, 45_000, 90_000, 180_000, 240_000];
+const SWEEP_INTERVAL_MS = 10 * 60_000;
+
+/** 正在轮询的文档（附件笔记 id 或课程资料 id）。定时扫描碰到它们就跳过，同一份不跑两条轮询 */
+const activePolls = new Set<string>();
 
 async function loadNoteForIngest(noteId: string) {
   const { data } = await supabase
@@ -88,6 +93,8 @@ async function runIngestPass(noteId: string): Promise<{ pending: boolean }> {
  * 失败了学生的上传本身不该受影响。
  */
 function schedulePasses(id: string, pass: (id: string) => Promise<{ pending: boolean }>): void {
+  if (activePolls.has(id)) return;
+  activePolls.add(id);
   void (async () => {
     try {
       const first = await pass(id);
@@ -105,6 +112,8 @@ function schedulePasses(id: string, pass: (id: string) => Promise<{ pending: boo
       }
     } catch (err: any) {
       console.error('[KB] background ingest failed:', id, err?.message);
+    } finally {
+      activePolls.delete(id);
     }
   })();
 }
@@ -179,7 +188,7 @@ export async function dropNoteFromKb(noteId: string): Promise<void> {
 // 所以解析缓存存在 course_materials 自己的同名列上。解析和 MinerU 的推进
 // 走的仍是 documentPipeline 里同一份逻辑，入库走同一个 ingestDocument。
 
-const MATERIAL_RENDER_COLUMNS = 'markdown, plain_text, text_source, mineru_task_id, mineru_state, mineru_error';
+const MATERIAL_RENDER_COLUMNS = 'markdown, plain_text, text_source, mineru_task_id, mineru_state, mineru_error, page_map';
 
 export function materialRenderCache(materialId: string): RenderCache {
   return {
@@ -220,6 +229,7 @@ async function runMaterialIngestPass(materialId: string): Promise<{ pending: boo
       mimeType: material.mime_type as string | null,
       textSource: text.source,
       content: text.text,
+      pageMap: text.pageMap ?? null,
       createdBy: (material.uploaded_by as string | null) ?? null,
     });
   }
@@ -230,6 +240,37 @@ export function scheduleMaterialKbIngest(materialId: string): void {
   schedulePasses(materialId, runMaterialIngestPass);
 }
 
+/** 这份文档（附件笔记 id 或课程资料 id）上传后的那几轮解析是不是还在跑 */
+export function isIngestRunning(id: string): boolean {
+  return activePolls.has(id);
+}
+
+/**
+ * 老师点「重新解析」：清掉这份资料的解析缓存（正文、MinerU 任务、页码对照表），从头再读一遍、重新切片入库。
+ * 用在 MinerU 当时没跑成、退回了本地读的正文，或者文件读得不对想再试一次。
+ * 知识库里的旧片段先留着，新正文入库时整份替换；新正文和旧的一字不差也重新切（页码可能变了），所以清掉内容哈希。
+ * 正在跑的那一轮不打断：调用方先看 isIngestRunning。
+ */
+export async function reparseMaterial(materialId: string): Promise<void> {
+  const { error } = await supabase
+    .from('course_materials')
+    .update({
+      markdown: null,
+      plain_text: null,
+      text_source: null,
+      mineru_task_id: null,
+      mineru_state: null,
+      mineru_error: null,
+      page_map: null,
+      text_updated_at: null,
+    })
+    .eq('id', materialId);
+  if (error) throw new Error(`course_materials: ${error.message}`);
+  const { error: docError } = await supabase.from('kb_documents').update({ content_hash: null }).eq('material_id', materialId);
+  if (docError) throw new Error(`kb_documents: ${docError.message}`);
+  scheduleMaterialKbIngest(materialId);
+}
+
 /**
  * 教师在资料列表上看到的「这份资料去了哪」。
  *
@@ -238,9 +279,9 @@ export function scheduleMaterialKbIngest(materialId: string): void {
  */
 export type MaterialKbState =
   | 'unsupported'   // 格式不在解析范围内（图片、音视频、PPT、Excel……）：只存文件
-  | 'processing'    // 还在解析或入库
+  | 'processing'    // 还在解析、入库，或者片段已入库、向量还在后台算
   | 'ready'         // 已入库，AI 能检索到
-  | 'unsearchable'  // 已入库，但没有一片拿到向量，检索不到
+  | 'unsearchable'  // 已入库，但没有一片有向量、后台也补不了（平台没配向量的 key），检索不到
   | 'no_text'       // 解析过了，没读出可用的正文（扫描版 PDF、空文档）
   | 'failed';       // 入库时出错
 
@@ -248,7 +289,7 @@ const MINERU_BUSY = new Set(['pending', 'running', 'converting']);
 
 export function materialKbState(
   material: { mime_type: string | null; file_name: string | null; text_updated_at: string | null; mineru_state: string | null },
-  doc: { status: string; chunks: number; embedded: number } | null,
+  doc: { status: string; chunks: number; embedded: number; pending?: boolean } | null,
 ): { state: MaterialKbState; refining: boolean } {
   // 本地抽的正文已经入库、MinerU 还在做结构化解析：能用，好了会自动替换
   const refining = MINERU_BUSY.has(material.mineru_state ?? '');
@@ -259,7 +300,9 @@ export function materialKbState(
     if (doc.status === 'failed') return { state: 'failed', refining: false };
     if (doc.status !== 'ready') return { state: 'processing', refining };
     if (doc.chunks === 0) return { state: 'no_text', refining };
-    return { state: doc.embedded === 0 ? 'unsearchable' : 'ready', refining };
+    // 向量在后台补（kbVectorJob），刚入库的那一两分钟一片都没有是正常的
+    if (doc.embedded === 0) return { state: doc.pending ? 'processing' : 'unsearchable', refining };
+    return { state: 'ready', refining };
   }
   if (!material.text_updated_at || MINERU_BUSY.has(material.mineru_state ?? '')) {
     return { state: 'processing', refining: false };
@@ -300,4 +343,15 @@ export async function sweepPendingDocuments(limit = 20): Promise<number> {
   const total = ids.length + materialIds.length;
   if (total) console.log(`[KB] sweep: 续跑 ${total} 份解析中的文档`);
   return total;
+}
+
+let sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 进程启动后调一次：之后每 10 分钟扫一遍还在解析中的文档（启动时那一遍由调用方自己跑） */
+export function startKbParseSweep(): void {
+  if (sweepTimer) return;
+  sweepTimer = setInterval(() => {
+    void sweepPendingDocuments().catch(err => console.error('[KB] sweep failed:', err?.message));
+  }, SWEEP_INTERVAL_MS);
+  sweepTimer.unref?.();
 }

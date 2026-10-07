@@ -59,6 +59,14 @@ function createBackend() {
     listFails: false,
     /** 设了它，回答说完前半句就停在这里 */
     streamGate: null as Promise<void> | null,
+    /** 设了它，第一个字之前停在这里（「正在思考」） */
+    streamHeadGate: null as Promise<void> | null,
+    /** 设了它，提问请求直接被拒（限流、没配 AI 等），流根本没开始 */
+    streamReject: null as { status: number; error: string } | null,
+    /** 设了它，一个字没答就推一条 error，照样收尾（真后端最后一家也失败时就是这样） */
+    streamFailure: null as string | null,
+    /** 设了它，说完前半句（过了 streamGate）连接就断了 */
+    streamDrop: false,
     seq: 0,
   };
 
@@ -86,13 +94,23 @@ function createBackend() {
       return json({ messages: state.messages[messages[1]] ?? [] });
     }
     if (method === 'POST' && path === `/workspace-agent/${COURSE}/stream`) {
+      if (state.streamReject) return json({ error: state.streamReject.error }, state.streamReject.status);
       const encoder = new TextEncoder();
       const id = body.conversation_id ?? `c-created-${++state.seq}`;
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
           const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${typeof obj === 'string' ? obj : JSON.stringify(obj)}\n\n`));
+          if (state.streamHeadGate) await state.streamHeadGate;
+          if (state.streamFailure) {
+            send({ error: state.streamFailure });
+            send({ done: true, conversationId: id });
+            send('[DONE]');
+            controller.close();
+            return;
+          }
           send({ token: '这是' });
           if (state.streamGate) await state.streamGate;
+          if (state.streamDrop) { controller.error(new TypeError('network error')); return; }
           send({ token: 'AI 的回答' });
           send({ done: true, conversationId: id });
           send('[DONE]');
@@ -562,5 +580,122 @@ describe('回答时一步步显示在做什么（2026-10-05 用户：等的时�
     expect(done.textContent).toContain('用了 1 步');
     await click(done.querySelector('button'));
     expect(done.textContent).toContain('找到 5 条相关笔记');
+  });
+});
+
+/**
+ * 2026-10-07：从阅读页「问知识空间助手」带着文件打开面板，学生直接按发送，后端回 400「content is required」，
+ * 面板清掉的附件也不放回来。现在附件要配一句问题才能发；出错时问题和附件都放回输入框。
+ */
+describe('附件要配一句问题；出错时问题和附件放回输入框', () => {
+  const PDF = { file_url: 'https://files.test/ch3.pdf', file_name: '第三章.pdf', mime_type: 'application/pdf', text: '第三章讲检索练习。' };
+  const IMG = { file_url: 'https://files.test/board.png', file_name: 'board.png', mime_type: 'image/png' };
+  const textarea = () => container.querySelector('textarea')!;
+  const sendButton = () => byLabel('发送') as HTMLButtonElement;
+  const chips = () => [...container.querySelectorAll('[aria-label^="移除: "]')].map(b => b.getAttribute('aria-label')!.slice('移除: '.length));
+  /** 对话区（标着 aria-busy 的那一块） */
+  const conversationText = () => container.querySelector('[aria-busy]')?.textContent ?? '';
+  const type = async (value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea(), value);
+      textarea().dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+
+  beforeEach(() => { backend.state.conversations = []; });
+
+  it('带着文件打开、还没写问题：发送键灰着、回车也不发，输入框提示写一句；写了才发，带着附件', async () => {
+    const taken = vi.fn();
+    await mount({ pendingAttachment: PDF, onPendingAttachmentTaken: taken });
+    expect(taken).toHaveBeenCalled();
+    expect(chips()).toEqual(['第三章.pdf']);
+    expect(textarea().placeholder).toBe('想问这份文件什么？写一句再发送');
+    expect(sendButton().disabled).toBe(true);
+    expect(sendButton().title).toBe('想问这份文件什么？写一句再发送');
+
+    await act(async () => { textarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await flush(10);
+    await type('   ');
+    expect(sendButton().disabled).toBe(true);
+    await act(async () => { textarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await flush(10);
+    expect(streamRequests()).toEqual([]);
+
+    await type('这一章的主要观点是什么？');
+    expect(sendButton().disabled).toBe(false);
+    await click(sendButton());
+    await flush(10);
+    expect(streamRequests()).toHaveLength(1);
+    expect(streamRequests()[0].body).toMatchObject({ content: '这一章的主要观点是什么？', attachments: [PDF] });
+    // 答完了：附件不再挂着，提示回到平常的样子
+    expect(conversationText()).toContain('这是AI 的回答');
+    expect(chips()).toEqual([]);
+    expect(textarea().placeholder).toBe('向 AI 助手提问关于工作台笔记的问题…');
+  });
+
+  it('请求被拒（服务端没接下）：对话里那条提问撤掉，问题和附件放回输入框；再发一次照样带着附件', async () => {
+    backend.state.streamReject = { status: 429, error: 'Too many requests. Please wait a moment.' };
+    await mount({ pendingAttachment: PDF });
+    await type('这一章的主要观点是什么？');
+    await click(sendButton());
+    await flush(10);
+
+    expect(panelText()).toContain('Too many requests');
+    expect(conversationText()).not.toContain('这一章的主要观点是什么？');
+    expect(textarea().value).toBe('这一章的主要观点是什么？');
+    expect(chips()).toEqual(['第三章.pdf']);
+
+    backend.state.streamReject = null;
+    await click(sendButton());
+    await flush(10);
+    expect(streamRequests()).toHaveLength(2);
+    expect(streamRequests()[1].body).toMatchObject({ content: '这一章的主要观点是什么？', attachments: [PDF] });
+    expect(conversationText().split('这一章的主要观点是什么？')).toHaveLength(2);
+    expect(conversationText()).toContain('这是AI 的回答');
+    expect(chips()).toEqual([]);
+  });
+
+  it('AI 一个字没答就报错（提问已存进库）：提问留在对话里，问题和附件放回输入框', async () => {
+    backend.state.streamFailure = '所有模型暂时都不可用';
+    await mount({ pendingAttachment: IMG });
+    expect(textarea().placeholder).toBe('想问这张图什么？写一句再发送');
+    await type('图里的箭头是什么意思？');
+    await click(sendButton());
+    await flush(10);
+
+    expect(streamRequests()[0].body.attachments).toEqual([IMG]);
+    expect(panelText()).toContain('所有模型暂时都不可用');
+    expect(conversationText()).toContain('图里的箭头是什么意思？');
+    expect(textarea().value).toBe('图里的箭头是什么意思？');
+    expect(chips()).toEqual(['board.png']);
+    expect(sendButton().disabled).toBe(false);
+  });
+
+  it('答到一半断网：写出的部分留着，问题和附件放回去；再问时照样显示「正在思考」', async () => {
+    let releaseDrop!: () => void;
+    backend.state.streamGate = new Promise<void>(r => { releaseDrop = r; });
+    backend.state.streamDrop = true;
+    await mount({ pendingAttachment: PDF });
+    await type('第一问');
+    await click(sendButton());
+    expect(conversationText()).toContain('这是');
+    releaseDrop();
+    await flush(10);
+
+    expect(panelText()).toContain('network error');
+    expect(conversationText()).toContain('第一问');
+    expect(conversationText()).toContain('这是');
+    expect(textarea().value).toBe('第一问');
+    expect(chips()).toEqual(['第三章.pdf']);
+
+    backend.state.streamDrop = false;
+    backend.state.streamGate = null;
+    let releaseHead!: () => void;
+    backend.state.streamHeadGate = new Promise<void>(r => { releaseHead = r; });
+    await click(sendButton());
+    expect(container.querySelector('[data-agent-process="waiting"]')?.textContent).toContain('正在思考');
+    releaseHead();
+    await flush(10);
+    expect(conversationText()).toContain('这是AI 的回答');
   });
 });

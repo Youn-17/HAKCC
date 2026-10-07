@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.0 — 2026-10-07
+
+- Integrate scoped course-material retrieval into Note and workspace AI with numbered source cards and available PDF page references.
+- Add teacher knowledge-base inclusion switches, material re-parsing, search tests and processing/retrieval summaries.
+- Add bounded vector jobs, keyword fallback, reranking and contextual follow-up queries.
+- Require a typed question with attachments; restore failed sends and match reused conversations to assistant and course.
+- Improve canvas pagination, process counts and backend report/chart generation.
+- Update bilingual public guides and generic server configuration; retain all existing figures and fictional demonstrations.
+- Include compatible security patches in the public lockfiles: proxy-addr 2.0.8 and Capacitor Android/iOS 8.4.3. These changes do not deploy or rebuild existing installations.
+
+See [feature and upgrade notes](write/UPDATES_v0.4.0.en.md) and [executed validation](evidence/RELEASE_VALIDATION.md). Historical migrations 078–085 require installation-specific review; this publication does not deploy the hosted application.
+
 ## v0.3.0 — 2026-10-06
 
 - Add branch/time knowledge maps, filtered construction timelines and timestamp-based sequence replay.

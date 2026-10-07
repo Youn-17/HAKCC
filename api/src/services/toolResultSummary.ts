@@ -35,6 +35,7 @@ function countOf(data: unknown): number | null {
 
 const ZH: Record<string, (n: number | null, d: unknown) => string> = {
   search_notes: n => (n === 0 ? '没找到相关笔记' : `找到 ${n} 条相关笔记`),
+  search_course_materials: n => (n === 0 ? '没有相关段落' : `找到 ${n} 段相关资料`),
   read_note: () => '读完了',
   get_note_context: n => (n === null ? '取到上下文' : n === 0 ? '还没有 Build-on 关系' : `找到 ${n} 条 Build-on 关系`),
   compare_notes: n => (n ? `比对了 ${n} 条` : '比对完成'),
@@ -49,6 +50,7 @@ const ZH: Record<string, (n: number | null, d: unknown) => string> = {
 
 const EN: Record<string, (n: number | null, d: unknown) => string> = {
   search_notes: n => (n === 0 ? 'no matching notes' : `${n} notes found`),
+  search_course_materials: n => (n === 0 ? 'no relevant passages' : `${n} relevant passages`),
   read_note: () => 'read',
   get_note_context: n => (n === null ? 'context loaded' : n === 0 ? 'no Build-on links yet' : `${n} Build-on links found`),
   compare_notes: n => (n ? `compared ${n}` : 'compared'),

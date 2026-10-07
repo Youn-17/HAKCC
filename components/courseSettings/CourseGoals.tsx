@@ -38,7 +38,7 @@ const TRANSLATIONS = {
   en: {
     title: 'Learning Goals',
     addGoal: 'Add goal',
-    usage: 'Goals are used by Lesson Prep: when it drafts a lesson plan, the first five goals in this list are given to the AI. Students do not see this list yet.',
+    usage: 'Lesson Prep references the first five goals by priority. Goals are not currently shown to students.',
     readOnly: 'Only the course creator and course managers can change the goals.',
     emptyStaff: 'No learning goals yet.',
     emptyReadOnly: 'This course has no learning goals yet.',
@@ -61,7 +61,7 @@ const TRANSLATIONS = {
   zh: {
     title: '学习目标',
     addGoal: '添加目标',
-    usage: '学习目标用在备课助手：生成教案时，列表里排在前面的 5 条会交给 AI 参考。学生端目前不显示学习目标。',
+    usage: '备课助手参考优先级最高的前 5 项目标；学生端暂不展示。',
     readOnly: '只有课程创建者和课程管理员可以修改学习目标。',
     emptyStaff: '还没有学习目标。',
     emptyReadOnly: '这门课还没有设置学习目标。',
@@ -270,8 +270,8 @@ const CourseGoals: React.FC<CourseGoalsProps> = ({ courseId, goals, onGoalsChang
   };
 
   return (
-    <div className="flex min-h-full max-w-4xl flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="course-settings-section flex min-h-full max-w-4xl flex-col gap-5">
+      <div className="course-settings-section-header flex flex-wrap items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-lg font-bold tracking-tight text-stone-900 dark:text-stone-100">
           <RemixIcon name="focus-3-line" size={20} className="text-[#000080] dark:text-[#93AAFD]" />
           {t.title}
@@ -296,7 +296,7 @@ const CourseGoals: React.FC<CourseGoalsProps> = ({ courseId, goals, onGoalsChang
       )}
 
       {canManage && isAdding && (
-        <div className="rounded-xl border border-stone-200 bg-stone-50 p-5 dark:border-stone-800 dark:bg-stone-900">
+        <div className="course-settings-form-panel rounded-xl border border-stone-200 bg-stone-50 p-5 dark:border-stone-800 dark:bg-stone-900">
           <GoalForm
             draft={newGoal}
             onChange={setNewGoal}
@@ -324,11 +324,12 @@ const CourseGoals: React.FC<CourseGoalsProps> = ({ courseId, goals, onGoalsChang
           </div>
         )
       ) : (
-        <ul className="space-y-3">
+        <ul className="course-goals-list space-y-3">
           {sortedGoals.map(goal => (
             <li
               key={goal.id}
-              className="rounded-xl border border-stone-200 bg-white p-5 transition-shadow hover:shadow-md hover:shadow-stone-200/60 dark:border-stone-800 dark:bg-stone-950 dark:hover:shadow-none"
+              data-priority={goal.priority}
+              className="course-settings-card course-goal-card rounded-xl border border-stone-200 bg-white p-5 transition-shadow hover:shadow-md hover:shadow-stone-200/60 dark:border-stone-800 dark:bg-stone-950 dark:hover:shadow-none"
             >
               {editingId === goal.id ? (
                 <GoalForm

@@ -20,9 +20,9 @@ Teacher-side course configuration. No provider secret is displayed.
 
 ### Public update panel
 
-![Public v0.3.0 update notes](../public/manual/ui-changelog.jpg)
+![Public v0.4.0 update notes](../public/manual/ui-changelog.jpg)
 
-The update panel was recaptured with the local mock service on 6 October 2026. It shows the sanitized public release history. The workspace and assistant screenshots also reflect updated interface assets; the three looping GIFs retain their earlier baseline demonstrations.
+The update panel was recaptured with the local mock service on 7 October 2026 and inspected for the v0.4.0 release. It shows the sanitized public release history. The workspace and assistant screenshots retain the previous interface examples; the three looping GIFs retain their earlier baseline demonstrations. They do not demonstrate every new knowledge-base interaction.
 
 ## Animated demonstrations
 

@@ -277,6 +277,8 @@ export interface Course {
   hasUnreadFeedback?: boolean;
   unreadFeedbackCount?: number;
   lastActivityAt?: string | null;
+  /** 我在这门课里的身份（教师首页的列表带回）。只有 owner / manager 显示「课程管理」 */
+  viewerStanding?: 'owner' | 'manager' | 'member';
 }
 
 export type Language = 'en' | 'zh';
@@ -684,6 +686,10 @@ export interface CourseMaterial {
     refining: boolean;
     chars: number;
     chunks: number;
+    /** 「进入知识库」开关：关掉的文件和片段都在，只是 AI 检索不到（085） */
+    enabled: boolean;
+    /** PDF 的页数；其他格式为 null */
+    pages: number | null;
   };
   createdAt: string;
 }

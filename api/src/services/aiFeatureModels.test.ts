@@ -112,7 +112,14 @@ describe('featureChoice：谁排第一', () => {
     for (const id of ['embedding', 'web_search', 'pdf_parse', 'turing_test'] as const) {
       expect(featureChoice(id, FULL)).toBeNull();
     }
-    expect(planFeature('embedding', FULL).current).toEqual({ providerId: 'dmx', model: 'text-embedding-3-small', source: 'fixed' });
+    // 课程知识库的向量用平台的 OpenRouter key：配了就是 voyage-4-lite，和这门课配了哪家无关；没配就没有
+    expect(planFeature('embedding', FULL).current).toBeNull();
+    process.env.KB_OPENROUTER_API_KEY = 'platform-key';
+    try {
+      expect(planFeature('embedding', []).current).toEqual({ providerId: 'openrouter', model: 'voyageai/voyage-4-lite', source: 'fixed' });
+    } finally {
+      process.env.KB_OPENROUTER_API_KEY = '';
+    }
     expect(planFeature('web_search', FULL).current).toEqual({ providerId: 'tavily', model: 'tavily-search', source: 'fixed' });
     expect(planFeature('web_search', FULL.filter(r => r.provider_id !== 'tavily')).current).toBeNull();
   });

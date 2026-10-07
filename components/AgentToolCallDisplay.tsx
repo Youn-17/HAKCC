@@ -40,7 +40,7 @@ export const TOOL_META: Record<string, { icon: string; zh: string; en: string }>
   get_learner_insights: { icon: 'user-search-line', zh: '获取学生洞察', en: 'Get learner insights' },
   save_teaching_insight: { icon: 'save-line', zh: '保存教学洞察', en: 'Save teaching insight' },
   generate_image: { icon: 'image-ai-line', zh: '生成配图', en: 'Generate image' },
-  search_course_materials: { icon: 'book-2-line', zh: '检索课程材料', en: 'Search course materials' },
+  search_course_materials: { icon: 'book-2-line', zh: '检索课程资料', en: 'Search course materials' },
   // 笔记页「自由提问」那条路：联网搜索、回答前先找相关内容
   tavily_search: { icon: 'global-line', zh: '联网搜索', en: 'Web search' },
   prepare_context: { icon: 'search-eye-line', zh: '查找相关内容', en: 'Look for related material' },

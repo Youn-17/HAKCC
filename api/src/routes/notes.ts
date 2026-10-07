@@ -35,6 +35,7 @@ import {
   withMdVersion,
 } from '../services/noteMetadata';
 
+
 const router = Router();
 
 const NOTE_TYPES = ['note', 'drawing', 'attachment', 'video', 'link', 'view', 'riseabove'];
@@ -104,11 +105,7 @@ function embeddedAuthorProfiles(rows: Array<Record<string, unknown>>): Map<strin
   return map;
 }
 
-/**
- * 人名/头像缓存。香港到爱尔兰一次往返 285ms，而这些几乎不变；
- * 学生每次开画布都为了取授课教师的名字付一次往返，很不值。
- * 代价是改名后最多 60 秒才生效。
- */
+/* Implementation notes are described in the public update guide. */
 const profileCache = new TtlCache<ProfileSummary>(60_000, 5000);
 /** profiles 和 users 两张表都查不到的 id。只用于跳过重复查询。 */
 const absentProfiles = new TtlCache<true>(60_000, 5000);
@@ -422,12 +419,12 @@ router.get('/spaces/:spaceId/notes', verifyJWT, async (req: Request, res: Respon
   const notesQuery = supabase
     .from('notes')
     // author_profile 和 note_feedbacks 都嵌进来：各自单独查都要多付一次
-    // 香港→爱尔兰 285ms 的往返。必须是单个字符串字面量，
     // 用 + 拼接会让 supabase-js 的类型推断退化成 GenericStringError。
     .select(NOTES_SELECT, { count: 'exact' })
     .eq('space_id', spaceId)
     .is('deleted_at', null)
     .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
     .range(offset, offset + limit - 1)
     .then(r => r, e => ({ data: null, count: null, error: e }));
 

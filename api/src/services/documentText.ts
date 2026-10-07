@@ -20,7 +20,11 @@ export type ExtractedText = {
   /** 原文被截断过就为 true，提示词里会说明，免得 AI 拿半篇当全篇下结论。 */
   truncated: boolean;
   source: 'pdf' | 'docx' | 'plain';
+  /** PDF 才有：正文第几个字起是第几页（见 pageMap.ts），知识库给片段标页码用 */
+  pageMap?: PageMap;
 };
+
+import { joinPages, type PageMap } from './pageMap';
 
 const TEXTUAL = /^(text\/|application\/(json|xml|x-yaml|yaml))/i;
 const TEXTUAL_EXT = /\.(txt|md|markdown|csv|tsv|json|ya?ml|log)$/i;
@@ -68,6 +72,16 @@ export async function extractDocumentText(
       const { PDFParse } = await import('pdf-parse');
       const parser = new PDFParse({ data: new Uint8Array(buffer) });
       const result = await withTimeout(parser.getText(), 'PDF');
+      if (Array.isArray(result?.pages) && result.pages.length) {
+        // 逐页拼正文，顺带记下每页从哪个字开始。每页先按 clip 的规矩收拾好，clip 就只剩截断，位置不会再挪
+        const pages = result.pages.map(p => ({
+          num: p.num,
+          text: String(p.text ?? '').replace(/^--\s*\d+\s+of\s+\d+\s*--$/gm, '').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(),
+        }));
+        const joined = joinPages(pages);
+        const { text, truncated } = clip(joined.text);
+        return text ? { text, truncated, source: 'pdf', pageMap: joined.pageMap.filter(([offset]) => offset < text.length) } : null;
+      }
       // pdf-parse 会在末尾附上 "-- 1 of 3 --" 这样的页码行，对 AI 是噪音
       const raw = String(result?.text ?? '').replace(/^--\s*\d+\s+of\s+\d+\s*--$/gm, '');
       const { text, truncated } = clip(raw);

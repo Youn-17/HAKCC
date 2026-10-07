@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { CalendarClock, Loader2, Info } from 'lucide-react';
 import { Language } from '../../types';
 import { courseSessions, type CourseSession, type CourseType, type ScheduleSlot } from '../../services/apiClient';
@@ -19,6 +19,7 @@ function today(): string {
 }
 
 const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
+  const formId = useId();
   const zh = lang === 'zh';
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -102,8 +103,8 @@ const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <div className="flex items-center gap-2.5">
+    <div className="course-settings-section course-schedule-section max-w-3xl space-y-6">
+      <div className="course-settings-section-header flex items-center gap-2.5">
         <div className="rounded-xl border border-stone-200 bg-stone-100 p-2 text-stone-700 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-200">
           <CalendarClock size={17} />
         </div>
@@ -117,71 +118,75 @@ const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label className={labelClass}>{zh ? '课程类型' : 'Course Type'}</label>
-          <div className="flex flex-wrap gap-2">
-            {COURSE_TYPES.map(type => (
-              <button
-                key={type.value}
-                type="button"
-                onClick={() => setCourseType(courseType === type.value ? null : type.value)}
-                className={`rounded-lg border px-3.5 py-2 text-sm font-medium transition-all duration-200 ${
-                  courseType === type.value
-                    ? 'border-[#000080] bg-[#000080]/5 text-[#000080] dark:border-[#93AAFD] dark:bg-[#93AAFD]/10 dark:text-[#93AAFD]'
-                    : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-900'
-                }`}
-              >
-                {zh ? type.zh : type.en}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className={labelClass}>{zh ? '课时' : 'Credit Hours'} <span className="text-rose-500">*</span></label>
-          <input
-            type="number" min={1} max={500} step={0.5}
-            value={creditHours}
-            onChange={e => setCreditHours(e.target.value)}
-            placeholder={estimated > 0 ? String(estimated) : ''}
-            className={inputClass}
-          />
-          {estimated > 0 && (
-            <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-              {zh ? `按当前安排约 ${estimated} 学时` : `≈ ${estimated} hours by current schedule`}
-              {creditHours.trim() === '' && (
-                <button type="button" onClick={() => setCreditHours(String(estimated))} className="ml-2 underline underline-offset-2">
-                  {zh ? '用这个值' : 'Use this'}
+      <fieldset className="course-settings-form-panel">
+        <legend>{zh ? '基本安排' : 'Course details'}</legend>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className={labelClass}>{zh ? '课程类型' : 'Course Type'}</label>
+            <div className="flex flex-wrap gap-2">
+              {COURSE_TYPES.map(type => (
+                <button
+                  key={type.value}
+                  type="button"
+                  aria-pressed={courseType === type.value}
+                  onClick={() => setCourseType(courseType === type.value ? null : type.value)}
+                  className={`rounded-lg border px-3.5 py-2 text-sm font-medium transition-all duration-200 ${
+                    courseType === type.value
+                      ? 'border-[#000080] bg-[#000080]/5 text-[#000080] dark:border-[#93AAFD] dark:bg-[#93AAFD]/10 dark:text-[#93AAFD]'
+                      : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-900'
+                  }`}
+                >
+                  {zh ? type.zh : type.en}
                 </button>
-              )}
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor={`${formId}-hours`} className={labelClass}>{zh ? '课时' : 'Credit Hours'} <span className="text-rose-500">*</span></label>
+            <input
+              id={`${formId}-hours`} type="number" min={1} max={500} step={0.5}
+              value={creditHours}
+              onChange={e => setCreditHours(e.target.value)}
+              placeholder={estimated > 0 ? String(estimated) : ''}
+              className={inputClass}
+            />
+            {estimated > 0 && (
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                {zh ? `按当前安排约 ${estimated} 学时` : `≈ ${estimated} hours by current schedule`}
+                {creditHours.trim() === '' && (
+                  <button type="button" onClick={() => setCreditHours(String(estimated))} className="ml-2 underline underline-offset-2">
+                    {zh ? '用这个值' : 'Use this'}
+                  </button>
+                )}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor={`${formId}-weeks`} className={labelClass}>{zh ? '持续周数' : 'Total Weeks'} <span className="text-rose-500">*</span></label>
+            <input
+              id={`${formId}-weeks`} type="number" min={1} max={52}
+              value={totalWeeks}
+              onChange={e => setTotalWeeks(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label htmlFor={`${formId}-start`} className={labelClass}>{zh ? '开课日期' : 'Start Date'} <span className="text-rose-500">*</span></label>
+            <input id={`${formId}-start`} type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`${inputClass} sm:max-w-xs`} />
+            <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+              {zh ? '从这一天所在的那一周开始，按下面的时段逐周排课' : 'Sessions repeat weekly from this week onward'}
             </p>
-          )}
-        </div>
+          </div>
 
-        <div>
-          <label className={labelClass}>{zh ? '持续周数' : 'Total Weeks'} <span className="text-rose-500">*</span></label>
-          <input
-            type="number" min={1} max={52}
-            value={totalWeeks}
-            onChange={e => setTotalWeeks(e.target.value)}
-            className={inputClass}
-          />
         </div>
-
-        <div className="sm:col-span-2">
-          <label className={labelClass}>{zh ? '开课日期' : 'Start Date'} <span className="text-rose-500">*</span></label>
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`${inputClass} sm:max-w-xs`} />
-          <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-            {zh ? '从这一天所在的那一周开始，按下面的时段逐周排课' : 'Sessions repeat weekly from this week onward'}
-          </p>
-        </div>
-
-        <div className="sm:col-span-2">
-          <label className={labelClass}>{zh ? '每周上课时段' : 'Weekly Time Slots'}</label>
-          <ScheduleSlotsEditor slots={slots} onChange={setSlots} zh={zh} />
-        </div>
-      </div>
+      </fieldset>
+      <fieldset className="course-settings-form-panel course-schedule-slots">
+        <legend>{zh ? '每周上课时段' : 'Weekly time slots'}</legend>
+        <ScheduleSlotsEditor slots={slots} onChange={setSlots} zh={zh} />
+      </fieldset>
 
       {confirmed > 0 && (
         <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs leading-relaxed text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">

@@ -1,11 +1,13 @@
 import { Agent, setGlobalDispatcher } from 'undici';
 import app from './app';
-import { sweepPendingDocuments } from './services/kbIngest';
+import { startKbParseSweep, sweepPendingDocuments } from './services/kbIngest';
+import { startKbVectorJob } from './services/kbVectorJob';
+import { startDmxKeepWarm } from './services/dmxKeepWarm';
+import { fillMissingSearchText } from './services/knowledgeBase';
 import { purgeExpiredLoginLogs, LOGIN_LOG_RETENTION_DAYS } from './routes/loginLogs';
 import { warmNoteSanitizer } from './services/noteHtml';
 
 // 出站 HTTP 连接池。Node 自带 fetch 默认空闲 4 秒就关连接、建连超时 10 秒。
-// 从香港到 DMX（www.dmxapi.cn）TCP 建连 1–4s、TLS 再 5–6s，压测里 16 路并发下
 // 建连直接撞 10s 超时（ConnectTimeoutError）；Kimi 也要 2–4s。把连接养着复用，
 // 一个班的请求就不必每次重新握手。同一个全局 symbol，Node 内置的 fetch 也会读到。
 setGlobalDispatcher(new Agent({
@@ -43,6 +45,13 @@ app.listen(PORT, () => {
   setTimeout(() => {
     void sweepPendingDocuments().catch(err =>
       console.error('[HAKCC API] KB sweep failed:', err?.message));
+    // 解析中的文档每 10 分钟再扫一遍；课程知识库缺的向量在后台补：先补一轮，之后每 2 分钟扫一次
+    startKbParseSweep();
+    startKbVectorJob();
+    // 082 之前入库的片段补上关键词检索词；平台有人用时给 DMX 的连接保温（AI 对话大多走 DMX）
+    void fillMissingSearchText().catch(err =>
+      console.error('[HAKCC API] KB keyword backfill failed:', err?.message));
+    startDmxKeepWarm();
   }, 15_000);
 
   // 登录记录只留 180 天（隐私政策里承诺的期限）。每天清一次，启动后一分钟先清一遍。

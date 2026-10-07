@@ -38,13 +38,20 @@ router.get('/spaces/:spaceId/relations', verifyJWT, async (req: Request, res: Re
 
   await ensureSpaceAccess(spaceId, req.user!);
 
-  const { data, error } = await supabase
-    .from('relations')
-    .select('*, users!creator_id(name)')
-    .eq('space_id', spaceId);
+  const rows: Record<string, unknown>[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase
+      .from('relations')
+      .select('*, users!creator_id(name)')
+      .eq('space_id', spaceId)
+      .order('id')
+      .range(offset, offset + 499);
+    if (error) throw new ApiError(500, error.message);
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < 500) break;
+  }
 
-  if (error) throw new ApiError(500, error.message);
-  res.json({ relations: (data ?? []).map((r: Record<string, unknown>) => relationToApi(r, true)) });
+  res.json({ relations: rows.map((r: Record<string, unknown>) => relationToApi(r, true)) });
 });
 
 // GET /api/notes/:noteId/relations

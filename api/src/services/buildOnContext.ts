@@ -1,17 +1,6 @@
 import { supabase } from '../config/supabase';
 
-/**
- * Build-on 关系的读取与排版，给「知识空间 AI 助手」用。
- *
- * 为什么要单独做：助手面对的是整个空间，不是某一条笔记。它的「当前笔记」是一条合成的
- * 工作区笔记（id 就是空间 id），所以只认当前笔记的 get_note_context 永远查不到关系，
- * 系统提示里又只有每条笔记的标题和摘要——助手于是说「看不到 Build-on 关系」。
- * 现在关系直接排进系统提示，工具也能按笔记 id 查。
- *
- * 方向：relations 表里 source 是后写的那条（在 Build-on 别人），target 是被 Build-on 的原笔记；
- * 线上 131 条关系无一例外 source 比 target 新。relation_type 只有 extend / clarify / question /
- * challenge / evidence / synthesize 六种，没有 'build_on' 这个值——任何一条关系都算 Build-on。
- */
+/* Implementation notes are described in the public update guide. */
 
 export interface BuildOnLink {
   /** 在 Build-on 的那条（后写的） */
@@ -48,17 +37,18 @@ export interface SpaceBuildOnGraph {
   links: BuildOnLink[];
   /** 这些关系涉及的笔记标题，含 known 里给的 */
   titles: Map<string, string>;
+  /** 有查询出错时的原因。这时 links 不全，不能当成「没有关系」告诉用户 */
+  error?: string;
+  /** 读满了 SPACE_RELATIONS_LIMIT 条：更早的可能没读到，按 links 数出的条数、链长只会偏小 */
+  truncated?: boolean;
 }
 
-/**
- * 读一个空间里的全部关系。known 是调用方已经查过、确定没被删的笔记（id → 标题），
- * 端点都在其中的就不用再查；不在其中的补查一次，同时核对有没有被删、是不是本空间的。
- */
+/* Implementation notes are described in the public update guide. */
 export async function fetchSpaceBuildOnGraph(
   spaceId: string,
   known: Map<string, string> = new Map(),
 ): Promise<SpaceBuildOnGraph> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('relations')
     .select('source_note_id, target_note_id, relation_type, created_at')
     .eq('space_id', spaceId)
@@ -69,13 +59,15 @@ export async function fetchSpaceBuildOnGraph(
     .filter(r => r.source_note_id && r.target_note_id);
   const titles = new Map(known);
   const missing = [...new Set(rows.flatMap(r => [r.source_note_id, r.target_note_id]))].filter(id => !titles.has(id));
+  let lookupError: string | undefined;
   if (missing.length > 0) {
-    const { data: found } = await supabase
+    const { data: found, error: notesError } = await supabase
       .from('notes')
       .select('id, title')
       .in('id', missing)
       .eq('space_id', spaceId)
       .is('deleted_at', null);
+    lookupError = notesError?.message;
     for (const n of (found ?? []) as Array<{ id: string; title: string | null }>) {
       titles.set(n.id, n.title ?? 'Untitled');
     }
@@ -83,7 +75,11 @@ export async function fetchSpaceBuildOnGraph(
   const links = rows
     .filter(r => titles.has(r.source_note_id) && titles.has(r.target_note_id))
     .map(r => ({ sourceId: r.source_note_id, targetId: r.target_note_id, type: r.relation_type }));
-  return { links, titles };
+  const graph = { links, titles, ...((data ?? []).length >= SPACE_RELATIONS_LIMIT ? { truncated: true } : {}) };
+  const failure = error?.message ?? lookupError;
+  if (!failure) return graph;
+  console.warn(`[buildOnContext] reading Build-on relations of space ${spaceId} failed: ${failure}`);
+  return { ...graph, error: failure };
 }
 
 // ── 排版 ─────────────────────────────────────────────────────
@@ -103,6 +99,37 @@ export function buildOnStats(links: BuildOnLink[], ids: string[]): BuildOnStats 
     .map(id => ({ id, count: incoming.get(id) ?? 0 }))
     .sort((a, b) => b.count - a.count);
   return { builtOn, notBuiltOn: ids.filter(id => !incoming.has(id)) };
+}
+
+/**
+ * 最长的一条 Build-on 链有几级：C Build-on B、B Build-on A 算 2 级。一条笔记可以同时 Build-on 好几条，
+ * 按最长的那条路算；从根往下一层层数（广度优先）会被「D 也直接 Build-on 了 A」这样的近路算短。
+ * 后写的才 Build-on 先写的，不会成环；万一成环，走到链上已有的笔记就停。
+ */
+export function longestBuildOnChain(links: BuildOnLink[]): number {
+  const builtOn = new Map<string, string[]>();
+  for (const l of links) {
+    const targets = builtOn.get(l.sourceId);
+    if (targets) targets.push(l.targetId);
+    else builtOn.set(l.sourceId, [l.targetId]);
+  }
+  const lengthFrom = new Map<string, number>();
+  const onPath = new Set<string>();
+  const chainFrom = (id: string): number => {
+    const known = lengthFrom.get(id);
+    if (known !== undefined) return known;
+    onPath.add(id);
+    let best = 0;
+    for (const target of builtOn.get(id) ?? []) {
+      if (!onPath.has(target)) best = Math.max(best, 1 + chainFrom(target));
+    }
+    onPath.delete(id);
+    lengthFrom.set(id, best);
+    return best;
+  };
+  let longest = 0;
+  for (const id of builtOn.keys()) longest = Math.max(longest, chainFrom(id));
+  return longest;
 }
 
 export interface BuildOnPromptInput {

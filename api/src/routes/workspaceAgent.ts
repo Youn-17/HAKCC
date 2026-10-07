@@ -27,6 +27,7 @@ import {
   getAgentModeToolNames,
   normalizeConversationAgentMode,
   getConversationAgentSpec,
+  IMAGE_TURN_RULES,
 } from '../services/noteAgentCatalog';
 import { runAgentLoopStream, type AgentStreamEvent } from '../services/agentLoop';
 import {
@@ -55,6 +56,9 @@ import { lengthInstruction, lengthPlanMetadata, maxTokensFor, parseAnswerLength,
 import { streamDrawTurn } from '../services/drawTurn';
 import { detectQuestionLanguage, languageDirective } from '../services/finalAnswer';
 import { fetchSpaceBuildOnGraph, formatBuildOnSection } from '../services/buildOnContext';
+import { fetchAiInteractionData, formatAiInteractionSection } from '../services/aiInteractionContext';
+import { announceKbRetrieval, KB_STEP_NAME, startKbRetrieval, type KbToolStep } from '../services/kbSources';
+import { attachImagesToLastUserMessage, imageAttachmentsToParts, isVisionModel, pickVisionModel } from '../services/visionMessages';
 
 const router = Router();
 // 学生问一句，答案两三百字就够；8192 让模型有时写成小论文，流式要吐一分多钟。
@@ -259,10 +263,8 @@ const WORKSPACE_IDENTITY = [
   'Help users analyze participation patterns, find connections across notes, plan lessons, and understand the community knowledge landscape.',
   'The Build-on links between notes are written out below, after the note list. Use them to answer who built on whom, which ideas are built on most, and which notes nobody has built on yet. Never say you cannot see Build-on relations; if the list says there are none, say there are none.',
   'Notes are numbered in the list; to read one in full, or to see its own Build-on links, call read_note or get_note_context with its note_id.',
-  'IMPORTANT: You can generate real downloadable Word (.docx) files using generate_summary_doc and export_notes tools.',
-  'You can also generate data analysis charts (PNG images) and reports using analyze_engagement and compare_periods tools.',
-  'When the user asks for a document, report, or analysis, ALWAYS use these tools — never say you cannot generate files.',
-  'After calling the tool, present the download link using markdown: [filename](download_url). For charts, use: ![description](chart_url)',
+  'The AI feedback cards and the AI content inserted into notes (how many, how students responded, which scaffolds they chose) are also written out below from the platform\'s own records. Include them when summarising the discussion or how AI was used; never say these figures are unavailable or have to be added from the back end.',
+  'You cannot create downloadable files or data charts here (generate_image draws pictures; it cannot plot real data). If asked for a Word file, a report or a chart, say so and give the content in your reply instead, with a table for any figures. Never write a download link for a file that was not made.',
   'Be concise, evidence-oriented, and grounded in the actual workspace data.',
   'When referencing notes, mention them by title so the user can find them.',
 ].join(' ');
@@ -384,6 +386,18 @@ function attachmentContextNote(
     .join('');
 }
 
+/**
+ * 接到发给模型的最后一条提问后面。buildAgentContext 的 userMessage 只拿去判断过度依赖，
+ * 发给模型的消息来自 history：以前附件正文只交给了 userMessage，模型从来没读到过。
+ */
+function withAttachmentNote<T extends { role: string; content: string }>(messages: T[], note: string): T[] {
+  const lastUser = messages.map(m => m.role).lastIndexOf('user');
+  if (!note || lastUser < 0) return messages;
+  const next = [...messages];
+  next[lastUser] = { ...next[lastUser], content: next[lastUser].content + note };
+  return next;
+}
+
 router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request, res: Response) => {
   const { courseId } = req.params;
   if (!courseId) throw new ApiError(400, 'courseId is required');
@@ -442,6 +456,9 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   const space = await resolveAccessibleSpace(String(courseId), space_id, standing, req);
 
   // Resolve or create conversation for persistence
+  // 接着聊的对话要是自己的、这门课的、知识空间助手的，和读消息那条路由同一个口径。
+  // 原来只看是不是自己的：拿别门课的、或学生首页 AI 对话的对话 id 来问，这一轮会写进那段对话、
+  // 把那段的历史读进来，对话记录跨课程、跨助手混在一起（10-07 修）。对不上就新开一段
   let convId = conversation_id;
   if (convId) {
     const { data: existingConv } = await supabase
@@ -449,6 +466,8 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
       .select('id')
       .eq('id', convId)
       .eq('user_id', req.user!.id)
+      .eq('agent_type', 'workspace')
+      .eq('course_id', courseId)
       .maybeSingle();
     if (!existingConv) convId = undefined;
   }
@@ -551,6 +570,19 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     ];
   }
 
+  // 课程资料：和下面装上下文、读 Build-on 同时检索（kbSources.ts）。按提问的人检索，别组空间里的附件进不来。
+  // history 最后一条就是这一问
+  const zhQuestion = detectQuestionLanguage(content) === 'zh';
+  const kbRun = startKbRetrieval({
+    courseId: String(courseId),
+    viewer: req.user!,
+    question: content.trim(),
+    earlierQuestions: history.filter(m => m.role === 'user').map(m => m.content).slice(0, -1),
+    contextTitle: null,
+    zh: zhQuestion,
+    source: 'workspace_ai',
+  });
+
   // 工具按课内身份给：教师工具能读全班的数据，凭学生验证码入课的教师账号在这门课里是学生
   const userRole: AgentRole = !isCourseStaff(standing)
     ? 'student'
@@ -564,6 +596,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
 
   // Build the workspace "note" context (a summary of all notes)
   const workspaceNote = buildWorkspaceNote(space, workspaceNotes, String(courseId));
+  const attachmentNote = attachmentContextNote(attachments);
 
   const agentContext = await buildAgentContext({
     note: workspaceNote,
@@ -574,7 +607,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     courseId: String(courseId),
     spaceId: space.id,
     toolNames,
-    userMessage: content.trim() + attachmentContextNote(attachments),
+    userMessage: content.trim() + attachmentNote,
   });
 
   // Enhance the system prompt with workspace-specific identity and note listing
@@ -596,8 +629,8 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
 
   // 笔记之间谁 Build-on 谁：提示词里原先只有标题和摘要，助手于是「看不到」关系。
   // 查不出来（库慢、出错）就不写这一段，照常回答，别因此整轮失败。
-  const buildOnSection = workspaceNotes.length > 0
-    ? await fetchSpaceBuildOnGraph(space.id, new Map(allNotes.map(n => [n.id, n.title])))
+  const buildOnPromise = workspaceNotes.length > 0
+    ? fetchSpaceBuildOnGraph(space.id, new Map(allNotes.map(n => [n.id, n.title])))
       .then(graph => formatBuildOnSection({
         listed: workspaceNotes.map(n => ({ id: n.id, title: n.title })),
         links: graph.links,
@@ -606,7 +639,21 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         totalNotes: isNarrowed ? undefined : totalNotes,
       }))
       .catch((err: Error) => { console.error('[workspace-agent] build-on context failed:', err.message); return ''; })
-    : '';
+    : Promise.resolve('');
+  // AI 反馈和 AI 内容插入的记录（2026-10-06）：以前助手总结时只能说「后台埋点，工具未返回」。
+  // 教职看全部、按人分；其他人看自己的和画布上本来就公开的。查不出来同样不写这一段
+  const viewerIsStaff = isCourseStaff(standing);
+  const aiInteractionPromise = fetchAiInteractionData(space.id, {
+    noteIds: isNarrowed ? workspaceNotes.map(n => n.id) : null,
+    withNames: viewerIsStaff,
+  })
+    .then(data => formatAiInteractionSection(data, {
+      viewerId: req.user!.id,
+      isStaff: viewerIsStaff,
+      selectedCount: isNarrowed ? workspaceNotes.length : undefined,
+    }))
+    .catch((err: Error) => { console.error('[workspace-agent] AI interaction context failed:', err.message); return ''; });
+  const [buildOnSection, aiInteractionSection] = await Promise.all([buildOnPromise, aiInteractionPromise]);
 
   // 按提问语言写死回复语言。不写死的话，模型会先用英文推理一轮 ——
   // 而推理过程在界面上是显示出来的（「深度思考中…」），中文课堂里
@@ -618,14 +665,15 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   );
 
   const lengthPlan = await lengthPlanPromise;
-  const workspaceSystemPrompt = [
+  // 课程资料那一段等推流开始、过程里显示了「检索课程资料」之后再拼进来
+  const promptBeforeMaterials = [
     WORKSPACE_IDENTITY,
     langRule,
     agentContext.systemPrompt,
     noteListSection,
     buildOnSection,
-    lengthInstruction(lengthPlan),
-  ].filter(Boolean).join('\n\n');
+    aiInteractionSection,
+  ];
 
   // Set up SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -642,7 +690,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   let continuations = 0;
   let truncated = false;
   // 每一步的结果和用时，存进回答里：回看历史时也能看到「用了几步」
-  const toolSteps: Array<{ name: string; summary?: string; ms?: number }> = [];
+  const toolSteps: KbToolStep[] = [];
 
   const keepaliveTimer = setInterval(() => {
     try { res.write(': keepalive\n\n'); } catch {}
@@ -650,7 +698,6 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
 
   // DMX 'auto' 在这里走 fast 梯队，不走 agent 梯队：课堂里几十人同时问，
   // gpt-5.5 / claude-opus 这类思考型模型带着工具循环一轮常常超过 90s 网关超时，
-  // 压测 26 人同时问 77% 失败、成功者中位 162s。学生要的是几秒内开始回答。
   // 原厂 key 仍选它最新的模型（deepseek-v4-pro / glm-5.2）。
   const resolveModelFor = (pid: string, requested: string, enabled: unknown): string =>
     requested === 'auto'
@@ -664,9 +711,10 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   // 一个班几十人同时问，都落在同一家（前端默认第一家）就撞那家的并发上限排队直到超时，
   // 而别家的额度整节课都空着 —— 压测里 52 人同选智谱只有 13% 成功，分到五家可到 ~90%。
   // 只在**一个字都没吐出来**之前切换：已经开始回答就不换，避免回答前后不是一个模型。
-  type Candidate = { providerId: string; model: string; apiKey: string; endpointUrl: string | null };
+  type Candidate = { providerId: string; model: string; apiKey: string; endpointUrl: string | null; enabledModels: string[] };
   const candidates: Candidate[] = [{
     providerId: provider_id, model: resolvedModel, apiKey, endpointUrl: config.endpoint_url ?? null,
+    enabledModels: Array.isArray(config.enabled_models) ? config.enabled_models as string[] : [],
   }];
   {
     const { data: others } = await supabase
@@ -676,7 +724,6 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
       .neq('provider_id', provider_id)
       .not('api_key_encrypted', 'is', null);
     const usable = (others ?? []).filter(r => r.provider_id !== 'tavily' && r.api_key_encrypted);
-    // 自有厂商按空闲路数排，DMX 永远垫底：从香港出去 DMX 建连+握手要 6–10s，
     // 是最慢的一条路，只配当溢出车道（与 modelRouter 的原厂优先策略一致）。
     const ordered = orderConfigsByHealth(usable).sort((a, b) => {
       const da = isDmxProvider(a.provider_id as string) ? 1 : 0;
@@ -691,7 +738,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         ? pickModel('fast')
         : (pickNativeModel(pid, enabled) ?? enabled[0]);
       if (!alt) continue;
-      candidates.push({ providerId: pid, model: alt, apiKey: decryptProviderApiKey(r.api_key_encrypted as string), endpointUrl: (r.endpoint_url as string) ?? null });
+      candidates.push({ providerId: pid, model: alt, apiKey: decryptProviderApiKey(r.api_key_encrypted as string), endpointUrl: (r.endpoint_url as string) ?? null, enabledModels: enabled });
     }
   }
 
@@ -707,11 +754,38 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     }
   }
 
+  // 这一轮带了图：每家换成它看得懂图的型号，看得见图的排前面（同 support.ts）。
+  // 纯文本模型会把图片块直接忽略，学生以为 AI 看见了，其实没有。
+  const carriesImage = imageAttachmentsToParts(attachments).length > 0;
+  if (carriesImage) {
+    const before = candidates[0];
+    const seeing = candidates
+      .map(c => ({ ...c, model: pickVisionModel(c.providerId, c.model, c.enabledModels) ?? c.model }))
+      .sort((a, b) => Number(isVisionModel(b.providerId, b.model)) - Number(isVisionModel(a.providerId, a.model)));
+    candidates.splice(0, candidates.length, ...seeing);
+    if (candidates[0].providerId !== before.providerId || candidates[0].model !== before.model) {
+      res.write(`data: ${JSON.stringify({ modelSwitched: candidates[0].model, providerId: candidates[0].providerId, reason: 'vision' })}\n\n`);
+    }
+  }
+
   let usedProvider = provider_id;
   let usedModel = resolvedModel;
 
   try {
-    const loopMessages = agentContext.messages.map((m) => ({
+    const kb = await announceKbRetrieval(
+      event => res.write(`data: ${JSON.stringify(event)}\n\n`), kbRun, toolSteps, allToolsUsed, zhQuestion,
+    );
+    let sentSources = kb?.citations.sources.length ?? 0;
+    const workspaceSystemPrompt = [
+      ...promptBeforeMaterials,
+      kb?.section ?? '',
+      carriesImage ? IMAGE_TURN_RULES : '',
+      lengthInstruction(lengthPlan),
+    ].filter(Boolean).join('\n\n');
+    // 助手这一轮再查课程资料：查到的段落接着自动检索的编号往下编，来源卡片一起列
+    const turnToolContext = kb ? { ...toolContext, kbCitations: kb.citations } : toolContext;
+
+    const baseMessages = agentContext.messages.map((m) => ({
       role: m.role,
       content: m.content,
       tool_call_id: m.tool_call_id,
@@ -721,6 +795,8 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         function: { name: tc.function?.name ?? '', arguments: tc.function?.arguments ?? '{}' },
       })),
     }));
+    // 附件正文和图片只进这一轮的模型输入。回答语言上面已按提问本身定了，附件是英文资料也不改
+    const loopMessages = attachImagesToLastUserMessage(withAttachmentNote(baseMessages, attachmentNote), attachments);
 
     for (let ci = 0; ci < candidates.length; ci++) {
       const cand = candidates[ci];
@@ -737,7 +813,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         systemPrompt: workspaceSystemPrompt,
         messages: loopMessages,
         tools,
-        executeToolFn: (name, args) => agentRegistry.executeTool(name, args, toolContext),
+        executeToolFn: (name, args) => agentRegistry.executeTool(name, args, turnToolContext),
         // 按目标字数留足余量；会先思考的模型（DeepSeek）思考也算在里面，再多留
         maxTokens: Math.max(WORKSPACE_MAX_TOKENS, maxTokensFor(lengthPlan.target, thinkingLikely(cand.providerId, cand.model))),
         maxIterations: WORKSPACE_MAX_ITERATIONS,
@@ -770,6 +846,11 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
                 toolSummary: summary,
                 toolDurationMs: ms,
               })}\n\n`);
+              // 又查到新的课程资料：来源卡片整份重发
+              if (event.toolName === KB_STEP_NAME && kb && kb.citations.sources.length > sentSources) {
+                sentSources = kb.citations.sources.length;
+                res.write(`data: ${JSON.stringify({ kbSources: kb.citations.sources })}\n\n`);
+              }
               break;
             }
             case 'token':
@@ -815,6 +896,8 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         iterations: agentIterations,
         answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
         tool_steps: toolSteps,
+        // 来源卡片：回答里的 [n] 对应哪份资料、哪一节、第几页
+        kb_sources: kb?.citations.sources.length ? kb.citations.sources : undefined,
         elapsed_ms: Date.now() - turnStartedAt,
         provider_id: usedProvider,
         model: usedModel,

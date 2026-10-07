@@ -52,6 +52,7 @@ import {
   fetchSpaceBuildOnGraph,
   formatBuildOnSection,
   isNoteId,
+  longestBuildOnChain,
 } from './buildOnContext';
 
 const link = (sourceId: string, targetId: string, type = 'extend') => ({ sourceId, targetId, type });
@@ -142,6 +143,26 @@ describe('buildOnStats', () => {
     const stats = buildOnStats([link('b', 'a'), link('c', 'a'), link('d', 'b')], ['a', 'b', 'c', 'd']);
     expect(stats.builtOn).toEqual([{ id: 'a', count: 2 }, { id: 'b', count: 1 }]);
     expect(stats.notBuiltOn).toEqual(['c', 'd']);
+  });
+});
+
+describe('longestBuildOnChain', () => {
+  it('数最长那条链有几级；一条笔记同时 Build-on 好几条时按最长的路算，不按离得最近的算', () => {
+    // d → c → b → a 是 3 级；d → a、c → a 这两条近路不能把它算短
+    const links = [link('b', 'a'), link('c', 'b'), link('c', 'a'), link('d', 'c'), link('d', 'a')];
+    expect(longestBuildOnChain(links)).toBe(3);
+  });
+
+  it('没有关系是 0，一条关系是 1，两条并排的关系仍是 1', () => {
+    expect(longestBuildOnChain([])).toBe(0);
+    expect(longestBuildOnChain([link('b', 'a')])).toBe(1);
+    expect(longestBuildOnChain([link('b', 'a'), link('c', 'a')])).toBe(1);
+  });
+
+  it('关系成环（库里没有，后写的才 Build-on 先写的）也能停下来', () => {
+    const n = longestBuildOnChain([link('a', 'b'), link('b', 'c'), link('c', 'a')]);
+    expect(n).toBeGreaterThanOrEqual(2);
+    expect(n).toBeLessThanOrEqual(3);
   });
 });
 

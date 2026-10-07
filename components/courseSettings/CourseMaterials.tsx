@@ -2,11 +2,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Upload, FileText, Film, FileImage, Music, Download, Trash2,
-  Loader2, File, X
+  Loader2, File, X, RefreshCw
 } from 'lucide-react';
 import { Language, CourseMaterial } from '../../types';
 import { courseSettings } from '../../services/apiClient';
+import RemixIcon from '../RemixIcon';
 import { supabase } from '../../services/supabaseClient';
+import CourseKnowledgeBase, { KbSwitch } from './CourseKnowledgeBase';
 
 interface CourseMaterialsProps {
   courseId: string;
@@ -26,7 +28,7 @@ const TRANSLATIONS = {
     whereTitle: 'Where uploaded materials go',
     where: [
       'The file is stored on the platform and can be downloaded from this list.',
-      'PDF, Word (.docx) and text files are read in the background and added to this course\'s AI knowledge base. The note AI searches it before answering, and the canvas AI can search it with its course-materials tool. Images, audio, video, PowerPoint and Excel files are stored only.',
+      'PDF, Word (.docx) and text files are read in the background and added to this course\'s AI knowledge base. When students ask the AI in a note, it searches the knowledge base first, and the answer lists the passages it cites, with page numbers for PDFs. Images, audio, video, PowerPoint and Excel files are stored only.',
       'Students do not see this list. To let students read a file themselves, upload it with Attachment in a knowledge space.',
     ],
     dragDrop: 'Drag and drop a file here, or click to browse',
@@ -45,12 +47,18 @@ const TRANSLATIONS = {
     kb: {
       ready: (n: number) => `In the AI knowledge base · ${n} passages`,
       refining: 'The PDF is still being parsed for structure; the knowledge base updates when that finishes.',
-      unsearchable: 'Stored in the knowledge base, but the AI cannot search it: none of this course\'s AI providers can do retrieval (it needs OpenAI or DMX).',
+      unsearchable: 'Stored in the knowledge base, but the AI cannot search it yet: the platform\'s retrieval service is not set up. Please tell the platform administrator.',
       processing: 'Reading the file; it joins the AI knowledge base when done.',
       no_text: 'No text could be read, so the AI cannot use it (common with scanned PDFs). The file can still be downloaded.',
-      failed: 'Adding it to the knowledge base failed. Delete it and upload again to retry.',
+      failed: 'Adding it to the knowledge base failed. Use Re-parse to try again.',
       unsupported: 'This format is not added to the AI knowledge base. The file is stored for download only.',
     } as Record<Exclude<KbState, 'ready'>, string> & { ready: (n: number) => string; refining: string },
+    kbSwitch: 'In the knowledge base',
+    kbOff: 'Switched off: the AI cannot find this material. The file can still be downloaded.',
+    reparse: 'Re-parse',
+    reparseHint: 'Read the file again from scratch and replace its passages in the knowledge base',
+    actionFailed: 'Could not change it: ',
+    pages: (n: number) => `${n} pages`,
   },
   zh: {
     title: '课程资料',
@@ -58,7 +66,7 @@ const TRANSLATIONS = {
     whereTitle: '上传的资料去了哪里',
     where: [
       '文件存在平台上，可以在这个列表里下载。',
-      'PDF、Word（.docx）和文本文件会在后台读出正文，进入本课程的 AI 知识库：学生在笔记里问 AI 时，AI 会先检索它；画布 AI 也可以用「检索课程材料」查它。图片、音视频、PPT 和 Excel 只存文件。',
+      'PDF、Word（.docx）和文本文件会在后台读出正文，进入本课程的 AI 知识库：学生在笔记里问 AI 时，AI 会先检索它，回答下面列出引用的段落，PDF 还写明第几页。图片、音视频、PPT 和 Excel 只存文件。',
       '学生看不到这个列表。要让学生自己阅读原文，请在知识空间里用「附件」上传。',
     ],
     dragDrop: '拖拽文件到此处，或点击选择文件',
@@ -77,12 +85,18 @@ const TRANSLATIONS = {
     kb: {
       ready: (n: number) => `已进入 AI 知识库 · ${n} 段`,
       refining: 'PDF 还在做结构化解析，完成后知识库里的内容会自动更新。',
-      unsearchable: '已存入知识库，但 AI 检索不到：这门课配置的 AI 服务都不能做检索（需要 OpenAI 或 DMX）。',
+      unsearchable: '已存入知识库，但 AI 还检索不到：平台的检索服务没有配置好，请告诉平台管理员。',
       processing: '正在读取正文，完成后进入 AI 知识库。',
       no_text: '没有读出正文，AI 用不上（扫描版 PDF 常见）。文件仍可下载。',
-      failed: '进入知识库时出错。删除后重新上传可以重试。',
+      failed: '进入知识库时出错，可以点「重新解析」再试。',
       unsupported: '这种格式不进 AI 知识库，只存文件供下载。',
     } as Record<Exclude<KbState, 'ready'>, string> & { ready: (n: number) => string; refining: string },
+    kbSwitch: '进入知识库',
+    kbOff: '已关闭：AI 检索不到这份资料，文件仍可下载。',
+    reparse: '重新解析',
+    reparseHint: '从头再读一遍文件，替换它在知识库里的段落',
+    actionFailed: '没改成：',
+    pages: (n: number) => `${n} 页`,
   },
 };
 
@@ -107,6 +121,8 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
     file: null as File | null,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** 正在改开关或重新解析的资料 */
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
 
   // 解析在后台跑（PDF 走 MinerU 要几十秒到几分钟，服务端最多等约 10 分钟），
   // 期间隔一会儿刷新一次状态。回调走 ref：父组件每次渲染都给一个新函数，
@@ -214,8 +230,28 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
     }
   };
 
+  const withPending = async (materialId: string, action: () => Promise<unknown>) => {
+    setPendingIds(prev => new Set(prev).add(materialId));
+    setError(null);
+    try {
+      await action();
+      onRefresh();
+    } catch (err) {
+      setError(`${t.actionFailed}${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setPendingIds(prev => {
+        const next = new Set(prev);
+        next.delete(materialId);
+        return next;
+      });
+    }
+  };
+
   const kbLine = (kb: CourseMaterial['knowledgeBase']) => {
     if (!kb) return null;
+    if (kb.enabled === false && kb.state !== 'unsupported') {
+      return <p className="mt-2 text-xs leading-relaxed text-stone-400 dark:text-stone-500">{t.kbOff}</p>;
+    }
     const tone = kb.state === 'ready'
       ? 'text-emerald-700 dark:text-emerald-400'
       : kb.state === 'processing'
@@ -238,9 +274,9 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
   };
 
   return (
-    <div className="flex min-h-full flex-col gap-4">
+    <div className="course-settings-section flex min-h-full flex-col gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="course-settings-section-header flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
           <FileText size={20} className="text-[#000080] dark:text-[#93AAFD]" />
           {t.title}
@@ -254,13 +290,15 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
         </button>
       </div>
 
-      {/* 资料的去处。以前界面上什么都没说，文件其实哪儿也没去。 */}
-      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 dark:border-stone-800 dark:bg-stone-900">
-        <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">{t.whereTitle}</p>
-        <ul className="mt-1.5 max-w-[65ch] list-disc space-y-1 pl-5 text-sm leading-relaxed text-stone-600 dark:text-stone-400">
+      <p className="course-settings-section-hint">{lang === 'zh'
+        ? '课程资料仅供教师管理；供学生阅读的文件请上传至知识空间。'
+        : 'Course materials are managed by teachers. Upload files to a knowledge space for student reading.'}</p>
+      <details className="course-settings-guidance">
+        <summary><RemixIcon name="information-line" size={16} />{lang === 'zh' ? '资料用途与可见范围' : 'Material use and visibility'}<RemixIcon name="arrow-down-s-line" size={16} /></summary>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-stone-600 dark:text-stone-400">
           {t.where.map(line => <li key={line}>{line}</li>)}
         </ul>
-      </div>
+      </details>
 
       {error && (
         <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
@@ -270,11 +308,12 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
 
       {/* Upload Modal */}
       {showUpload && (
-        <div className="bg-stone-50 dark:bg-stone-900 rounded-xl p-4 space-y-4 border border-stone-200 dark:border-stone-800">
+        <div className="course-settings-form-panel bg-stone-50 dark:bg-stone-900 rounded-xl p-4 space-y-4 border border-stone-200 dark:border-stone-800">
           <div className="flex items-center justify-between">
             <h4 className="font-semibold text-stone-900 dark:text-stone-100">{t.uploadTitle}</h4>
             <button
               onClick={closeUpload}
+              aria-label={t.cancel}
               className="p-1 hover:bg-stone-200 dark:hover:bg-stone-800 rounded"
             >
               <X size={18} className="text-stone-500 dark:text-stone-400" />
@@ -283,10 +322,14 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
 
           {/* File Drop Area */}
           <div
+            role="button"
+            tabIndex={0}
+            aria-label={t.dragDrop}
+            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInputRef.current?.click(); } }}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-stone-200 dark:border-stone-700 rounded-xl p-8 text-center cursor-pointer hover:border-[#000080]/40 hover:bg-[#000080]/[0.03] dark:hover:border-[#93AAFD]/40 dark:hover:bg-[#93AAFD]/[0.06] transition-colors"
+            className="course-settings-dropzone border-2 border-dashed border-stone-200 dark:border-stone-700 rounded-xl p-8 text-center cursor-pointer hover:border-[#000080]/40 hover:bg-[#000080]/[0.03] dark:hover:border-[#93AAFD]/40 dark:hover:bg-[#93AAFD]/[0.06] transition-colors"
           >
             <input
               ref={fileInputRef}
@@ -344,6 +387,12 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
         </div>
       )}
 
+      <CourseKnowledgeBase
+        courseId={courseId}
+        lang={lang}
+        refreshKey={materials.map(m => `${m.id}:${m.knowledgeBase?.state}:${m.knowledgeBase?.enabled}:${m.knowledgeBase?.chunks}`).join('|')}
+      />
+
       {/* Materials List */}
       {materials.length === 0 ? (
         <div className="flex min-h-[22rem] flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed border-stone-200 bg-stone-50 px-6 py-12 text-center dark:border-stone-800 dark:bg-stone-900">
@@ -351,11 +400,11 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
           <p className="max-w-sm text-sm leading-relaxed text-stone-500 dark:text-stone-400">{t.emptyState}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+        <div className="course-materials-list grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {materials.map((material) => (
             <div
               key={material.id}
-              className="bg-white dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-xl p-4 hover:shadow-md transition-shadow"
+              className="course-settings-card course-material-card bg-white dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-xl p-4 hover:shadow-md transition-shadow"
             >
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 p-3 bg-stone-100 dark:bg-stone-800 rounded-lg">
@@ -369,8 +418,29 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
                   <div className="flex items-center gap-3 mt-2 text-xs text-stone-400 dark:text-stone-500">
                     <span className="truncate">{material.fileName}</span>
                     {material.fileSize ? <span className="flex-shrink-0">{formatFileSize(material.fileSize)}</span> : null}
+                    {material.knowledgeBase?.pages ? <span className="flex-shrink-0">{t.pages(material.knowledgeBase.pages)}</span> : null}
                   </div>
                   {kbLine(material.knowledgeBase)}
+                  {material.knowledgeBase && material.knowledgeBase.state !== 'unsupported' && (
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3">
+                      <KbSwitch
+                        checked={material.knowledgeBase.enabled !== false}
+                        disabled={pendingIds.has(material.id)}
+                        label={t.kbSwitch}
+                        onChange={next => void withPending(material.id, () => courseSettings.setMaterialKb(courseId, material.id, next))}
+                      />
+                      <button
+                        type="button"
+                        title={t.reparseHint}
+                        disabled={pendingIds.has(material.id) || material.knowledgeBase.state === 'processing'}
+                        onClick={() => void withPending(material.id, () => courseSettings.reparseMaterial(courseId, material.id))}
+                        className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-1 text-xs font-medium text-stone-500 transition-colors hover:text-[#000080] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000080]/40 disabled:cursor-not-allowed disabled:opacity-50 dark:text-stone-400 dark:hover:text-[#93AAFD]"
+                      >
+                        {pendingIds.has(material.id) ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                        {t.reparse}
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <a
@@ -387,6 +457,7 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
                     onClick={() => handleDelete(material.id)}
                     className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors"
                     title={lang === 'zh' ? '删除' : 'Delete'}
+                    aria-label={`${lang === 'zh' ? '删除资料' : 'Delete material'}: ${material.title}`}
                   >
                     <Trash2 size={16} className="text-rose-500 dark:text-rose-400" />
                   </button>

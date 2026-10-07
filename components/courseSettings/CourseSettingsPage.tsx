@@ -7,11 +7,13 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Target, FolderOpen, FileText, CalendarClock, ShieldCheck, Loader2, Pencil, Check, Lock } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil, Check, Lock } from 'lucide-react';
+import RemixIcon from '../RemixIcon';
+import '../../styles/courseSettings.css';
 import { Language, CourseGoal, CourseMaterial, CourseTask } from '../../types';
 import { ApiClientError, courseSettings, courses as coursesApi, type Course, type CourseRole } from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
-import { isCourseStaff } from '../courseStanding';
+import { canManageCourse, isCourseStaff } from '../courseStanding';
 import CourseGoals from './CourseGoals';
 import CourseMaterials from './CourseMaterials';
 import CourseTasks from './CourseTasks';
@@ -21,12 +23,12 @@ import { courseTypeLabel } from './scheduleShared';
 
 type SettingsTab = 'goals' | 'materials' | 'tasks' | 'schedule' | 'access';
 
-const TABS: { id: SettingsTab; icon: React.ElementType; zh: string; en: string; descZh: string; descEn: string }[] = [
-  { id: 'goals', icon: Target, zh: '学习目标', en: 'Learning Goals', descZh: '这门课要达成什么', descEn: 'What this course aims for' },
-  { id: 'materials', icon: FolderOpen, zh: '课程资料', en: 'Materials', descZh: '阅读材料与参考文献', descEn: 'Readings and references' },
-  { id: 'tasks', icon: FileText, zh: '学习任务', en: 'Assignments', descZh: '布置给学生的任务', descEn: 'Work assigned to students' },
-  { id: 'schedule', icon: CalendarClock, zh: '教学安排', en: 'Schedule', descZh: '上课时间与课次记录', descEn: 'Class times and session records' },
-  { id: 'access', icon: ShieldCheck, zh: '协作与权限', en: 'Collaboration', descZh: '谁能一起管理这门课', descEn: 'Who can manage this course' },
+const TABS: { id: SettingsTab; icon: string; zh: string; en: string; descZh: string; descEn: string }[] = [
+  { id: 'goals', icon: 'focus-3-line', zh: '学习目标', en: 'Learning Goals', descZh: '目标与优先级', descEn: 'Goals and priorities' },
+  { id: 'materials', icon: 'folder-open-line', zh: '课程资料', en: 'Materials', descZh: '阅读材料与参考文献', descEn: 'Readings and references' },
+  { id: 'tasks', icon: 'task-line', zh: '学习任务', en: 'Assignments', descZh: '任务发布与提交', descEn: 'Assignments and submissions' },
+  { id: 'schedule', icon: 'calendar-schedule-line', zh: '教学安排', en: 'Schedule', descZh: '上课时间与课次记录', descEn: 'Class times and session records' },
+  { id: 'access', icon: 'shield-user-line', zh: '协作与权限', en: 'Collaboration', descZh: '教师协作与管理权限', descEn: 'Teachers and permissions' },
 ];
 
 const isTab = (v: string | null): v is SettingsTab => TABS.some(t => t.id === v);
@@ -57,7 +59,7 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
   const activeTab: SettingsTab = isTab(tabParam) ? tabParam : 'goals';
 
   const [course, setCourse] = useState<Course | null>(null);
-  const [stats, setStats] = useState<{ studentCount: number; spaceCount: number; noteCount: number } | null>(null);
+  const [stats, setStats] = useState<{ studentCount: number; teacherCount?: number; spaceCount: number; noteCount: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<CourseGoal[]>([]);
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
@@ -176,11 +178,42 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
   const title = course?.title ?? '';
   const typeLabel = courseTypeLabel(course?.course_type, zh);
 
+  // 只有课程创建者和课程管理员进得来（2026-10-06 用户）。课内的普通成员（包括凭学生验证码入课的教师账号）
+  // 和不在课里的人，都只看到这一页，不再是「能看不能改」。课内身份没拿到（接口都出错）时照旧显示，各页签自己报错
+  const denied = !loading && (forbidden || (standing !== null && !canManageCourse(standing, user?.role ?? 'student')));
+  if (denied) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-stone-50 px-5 dark:bg-stone-900">
+        <div role="alert" data-course-settings-denied className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-8 text-center dark:border-stone-800 dark:bg-stone-950">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-stone-100 text-stone-500 dark:bg-stone-900 dark:text-stone-400">
+            <Lock size={20} />
+          </div>
+          <h1 className="mt-4 text-lg font-bold tracking-tight text-stone-950 dark:text-stone-100">
+            {zh ? '没有权限管理这门课' : 'You cannot manage this course'}
+          </h1>
+          <p className="mt-2 text-sm leading-relaxed text-stone-500 dark:text-stone-400">
+            {zh
+              ? '课程管理只对课程创建者和课程管理员开放。需要管理权限，请联系这门课的创建者。'
+              : 'Course management is open only to the course creator and course managers. Ask the creator of this course for access.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            className="mt-6 inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-[#000080] px-4 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#000080]/90 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-[#000080]/40 focus:ring-offset-2"
+          >
+            <ArrowLeft size={16} />
+            {zh ? '返回首页' : 'Back to the dashboard'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-[100dvh] bg-stone-50 dark:bg-stone-900">
+    <div className="course-settings-page min-h-[100dvh] bg-stone-50 dark:bg-stone-900">
       {/* 顶栏 */}
-      <header className="sticky top-0 z-20 border-b border-stone-200 bg-stone-50/85 backdrop-blur-md dark:border-stone-800 dark:bg-stone-900/85">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-5 py-3.5 sm:px-8">
+      <header className="course-settings-header sticky top-0 z-20 border-b border-stone-200 bg-stone-50/85 backdrop-blur-md dark:border-stone-800 dark:bg-stone-900/85">
+        <div className="course-settings-header-inner mx-auto flex max-w-[1600px] items-center gap-3 px-5 py-3.5 sm:px-8">
           <button
             type="button"
             onClick={() => navigate('/dashboard')}
@@ -192,7 +225,7 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
 
           <div className="min-w-0 flex-1">
             <p className="text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-stone-400 dark:text-stone-500">
-              {zh ? '课程设置' : 'Course Settings'}
+              {zh ? '课程管理' : 'Course management'}
             </p>
             {editingTitle ? (
               <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -236,8 +269,8 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
                   </span>
                 )}
                 {course?.verification_code && (
-                  <span className="shrink-0 rounded-md border border-stone-200 bg-white px-2 py-0.5 font-mono text-xs font-semibold text-stone-600 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-300">
-                    {course.verification_code}
+                  <span className="course-settings-code shrink-0 rounded-md border border-stone-200 bg-white px-2 py-0.5 font-mono text-xs font-semibold text-stone-600 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-300">
+                    <span className="course-settings-code-label">{zh ? '课程码' : 'Code'}</span>{course.verification_code}
                   </span>
                 )}
                 {!loading && (canRename ? (
@@ -259,12 +292,13 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
           </div>
 
           {stats && (
-            <div className="hidden shrink-0 items-center gap-5 text-right sm:flex">
+            <div className="course-settings-stats hidden shrink-0 items-center gap-5 text-right sm:flex">
               {([
+                [zh ? '教师' : 'Teachers', stats.teacherCount ?? '—'],
                 [zh ? '学生' : 'Students', stats.studentCount],
                 [zh ? '知识空间' : 'Spaces', stats.spaceCount],
                 [zh ? '笔记' : 'Notes', stats.noteCount],
-              ] as [string, number][]).map(([label, value]) => (
+              ] as [string, number | string][]).map(([label, value]) => (
                 <div key={label}>
                   <p className="text-lg font-semibold leading-tight tracking-tight text-stone-900 dark:text-stone-100">{value}</p>
                   <p className="text-[0.6875rem] text-stone-500 dark:text-stone-400">{label}</p>
@@ -275,31 +309,31 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 sm:py-8">
-        <div className="flex min-h-[calc(100dvh-9.5rem)] flex-col gap-6 lg:flex-row lg:gap-8">
+      <div className="course-settings-layout mx-auto max-w-[1600px] px-5 py-6 sm:px-8 sm:py-8">
+        <div className="course-settings-body flex min-h-[calc(100dvh-9.5rem)] flex-col gap-6 lg:flex-row lg:gap-8">
           {/* 分区导航：窄屏横排，宽屏靠左竖排 */}
-          <nav className="-mx-5 flex shrink-0 gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:w-60 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+          <nav aria-label={zh ? '课程管理分区' : 'Course management sections'} className="course-settings-nav -mx-5 flex shrink-0 gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:w-60 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
             {TABS.map(tab => {
-              const Icon = tab.icon;
               const active = activeTab === tab.id;
               const count = counts[tab.id];
               return (
                 <button
                   key={tab.id}
                   type="button"
+                  aria-current={active ? 'page' : undefined}
                   onClick={() => setSearchParams({ tab: tab.id }, { replace: true })}
-                  className={`group flex shrink-0 items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200 active:scale-[0.99] lg:w-full ${
+                  className={`course-settings-nav-item group flex shrink-0 items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200 active:scale-[0.99] lg:w-full ${
                     active
                       ? 'border-[#000080]/20 bg-[#000080]/[0.06] dark:border-[#93AAFD]/25 dark:bg-[#93AAFD]/[0.10]'
                       : 'border-transparent hover:bg-stone-100 dark:hover:bg-stone-800/70'
                   }`}
                 >
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors ${
+                  <span className={`course-settings-nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors ${
                     active
                       ? 'border-[#000080]/20 bg-white text-[#000080] dark:border-[#93AAFD]/25 dark:bg-stone-950 dark:text-[#93AAFD]'
                       : 'border-stone-200 bg-white text-stone-500 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-400'
                   }`}>
-                    <Icon size={16} />
+                    <RemixIcon name={tab.icon} size={18} />
                   </span>
                   <span className="min-w-0">
                     <span className={`flex items-center gap-1.5 text-sm font-semibold tracking-tight ${
@@ -307,12 +341,12 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
                     }`}>
                       {zh ? tab.zh : tab.en}
                       {count !== null && count > 0 && (
-                        <span className="rounded bg-stone-200/80 px-1.5 text-[0.6875rem] font-medium text-stone-600 dark:bg-stone-800 dark:text-stone-300">
+                        <span className="course-settings-nav-count rounded bg-stone-200/80 px-1.5 text-[0.6875rem] font-medium text-stone-600 dark:bg-stone-800 dark:text-stone-300">
                           {count}
                         </span>
                       )}
                     </span>
-                    <span className="hidden text-xs text-stone-500 dark:text-stone-400 lg:block">
+                    <span className="course-settings-nav-description hidden text-xs text-stone-500 dark:text-stone-400 lg:block">
                       {zh ? tab.descZh : tab.descEn}
                     </span>
                   </span>
@@ -322,8 +356,8 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
           </nav>
 
           {/* 内容区 */}
-          <main className="flex min-w-0 flex-1 flex-col">
-            <div className="flex flex-1 flex-col rounded-2xl border border-stone-200 bg-white p-6 shadow-sm shadow-stone-200/50 dark:border-stone-800 dark:bg-stone-950 dark:shadow-none sm:p-8">
+          <main className="course-settings-main flex min-w-0 flex-1 flex-col">
+            <div className="course-settings-content flex flex-1 flex-col rounded-2xl border border-stone-200 bg-white p-6 shadow-sm shadow-stone-200/50 dark:border-stone-800 dark:bg-stone-950 dark:shadow-none sm:p-8">
               {loading ? (
                 <div className="space-y-3 py-6">
                   {[0, 1, 2].map(i => (

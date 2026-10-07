@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { canCreateCourseSpace, ideaGraphGroup, isCourseStaff, taskBoardGroup } from './courseStanding';
+import { canCreateCourseSpace, canManageCourse, ideaGraphGroup, isCourseStaff, taskBoardGroup } from './courseStanding';
 
 const GROUPS = [
   { id: 'group-a', memberIds: ['student-a', 'teacher-joined'] },
@@ -21,6 +21,21 @@ describe('isCourseStaff：课内身份以后端为准', () => {
     expect(isCourseStaff(null, 'teacher')).toBe(true);
     expect(isCourseStaff(undefined, 'admin')).toBe(true);
     expect(isCourseStaff(null, 'student')).toBe(false);
+  });
+});
+
+describe('canManageCourse：「课程管理」入口只给创建者、课程管理员和平台管理员（2026-10-06）', () => {
+  it('创建者、课程管理员进得去；课内普通成员（含凭学生验证码入课的教师账号）进不去', () => {
+    expect(canManageCourse('owner', 'teacher')).toBe(true);
+    expect(canManageCourse('manager', 'teacher')).toBe(true);
+    expect(canManageCourse('member', 'teacher')).toBe(false);
+    expect(canManageCourse('member', 'student')).toBe(false);
+  });
+
+  it('不知道课内身份时不按平台身份猜：教师账号也不显示入口；平台管理员照样能进', () => {
+    expect(canManageCourse(undefined, 'teacher')).toBe(false);
+    expect(canManageCourse(null, 'teacher')).toBe(false);
+    expect(canManageCourse(undefined, 'admin')).toBe(true);
   });
 });
 

@@ -161,6 +161,44 @@ function allowsTeacherModes(user: AuthUser, standing: CourseStanding): boolean {
   return user.role === 'admin' || (user.role === 'teacher' && isCourseStaff(standing));
 }
 
+/**
+ * 个人助手的身份和规则，只点这一轮真的给了的工具：生成 Word、数据分析、save_teaching_insight
+ * 都只注册给教师，也只挂在备课 / 学情分析两个模式上。以前这里写死「你有这些工具，必须调用，
+ * 不许说做不了文件」，学生的「AI 对话」和教师的其他模式也照收，模型就可能自称做好了 Word、
+ * 编出下载链接（2026-10-06 改）。图表不许诺：服务器上的 canvas 原生模块没装上时画不出图，
+ * 工具结果里有 chartUrl 才放图。
+ */
+function personalSystemAddition(toolNames: string[]): string {
+  const offered = (...names: string[]) => names.filter((name) => toolNames.includes(name));
+  const docTools = offered('generate_summary_doc', 'export_notes');
+  const dataTools = offered('analyze_engagement', 'compare_periods');
+  const rules = ['NEVER use emoji or emoticons. Write clean, professional text only.'];
+
+  rules.push(docTools.length > 0
+    ? `${docTools.join(' and ')} create real downloadable Word (.docx) files. When the user asks for a document, report, Word file, or export, you MUST call ${docTools.length > 1 ? 'one of them' : 'it'} immediately instead of suggesting manual copy-paste.`
+    : 'You cannot create downloadable files here. If asked for a Word file, a report or an export, say so and give the content in your reply instead.');
+  rules.push(dataTools.length > 0
+    ? `When the user asks for data analysis, you MUST call ${dataTools.join(' or ')}. They return the figures; present them in a markdown table. They do not always make a chart, so never promise one.`
+    : `You cannot plot charts of real data here${offered('generate_image').length > 0 ? ' (generate_image draws pictures; it cannot plot data)' : ''}. If asked for a chart, say so and give the figures in a markdown table instead.`);
+  rules.push(docTools.length + dataTools.length > 0
+    ? 'Link only what a tool result returns: a Word file as [fileName](downloadUrl) or [reportFileName](reportUrl), a chart as ![description](chartUrl). If the URL is not in the result, that file or chart was not made: say so instead of writing a link.'
+    : 'Never write a download link for a file that was not made.');
+  rules.push('Use markdown tables with | pipe syntax when presenting tabular data.');
+  if (offered('save_teaching_insight').length > 0) {
+    rules.push('You have a save_teaching_insight tool. Call it only when the TEACHER states a decision, plan, or observation in their own words. Do not save your own analysis or lesson drafts as insights, and never spend a separate turn on it: if you do call it, include it in the same turn as your other tool calls. Saved insights appear in the Lesson Prep, Analytics, and Assessment modules.');
+  }
+  rules.push('Gather data in as few turns as possible: issue all the tool calls you need in one turn (they run together), then answer. Do not repeat a call whose result you already have.');
+
+  return [
+    'You are a personal AI assistant for Knowledge Building education.',
+    'You help with lesson planning, research, idea development, and pedagogical questions.',
+    'You can access notes from the user\'s courses when a course context is provided.',
+    'Be helpful, concise, and ground your answers in Knowledge Building principles when relevant.',
+    'CRITICAL RULES:',
+    ...rules.map((rule, i) => `${i + 1}. ${rule}`),
+  ].join(' ');
+}
+
 // ---------------------------------------------------------------------------
 // GET /personal-agent/configs — aggregate AI configs from all user's courses
 // ---------------------------------------------------------------------------
@@ -296,22 +334,24 @@ router.delete('/personal-agent/conversations/:convId', verifyJWT, async (req: Re
 // ---------------------------------------------------------------------------
 
 router.get('/personal-agent/conversations/:convId/messages', verifyJWT, async (req: Request, res: Response) => {
-  // Verify ownership
+  // 自己的、个人助手的对话；知识空间助手的对话走它自己的路由
   const { data: conv } = await supabase
     .from('agent_conversations')
     .select('id')
     .eq('id', req.params.convId)
     .eq('user_id', req.user!.id)
+    .eq('agent_type', 'personal')
     .single();
   if (!conv) throw new ApiError(404, 'Conversation not found');
 
+  // 最近的 100 条，翻回正序。原来正序取 100 条，对话一长读回来的是开头那 100 条，最近说的反而看不到（10-07 修）
   const { data } = await supabase
     .from('agent_messages')
     .select('id, role, content, tools_used, ai_metadata, created_at')
     .eq('conversation_id', req.params.convId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(100);
-  res.json({ messages: data ?? [] });
+  res.json({ messages: [...(data ?? [])].reverse() });
 });
 
 // ---------------------------------------------------------------------------
@@ -508,11 +548,13 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
     // conversation_id comes from the request body. Unverified, it lets a caller
     // append forged user/assistant turns to somebody else's private agent
     // thread; fall back to a fresh conversation when it is not theirs.
+    // 也得是个人助手的对话：知识空间助手的对话 id 拿来这里问，会写进那段、读进它的历史（10-07 修）
     const { data: existingConv } = await supabase
       .from('agent_conversations')
       .select('id')
       .eq('id', convId)
       .eq('user_id', userId)
+      .eq('agent_type', 'personal')
       .maybeSingle();
     if (!existingConv) convId = undefined;
   }
@@ -557,8 +599,12 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
   }
 
   // Build agent context with personal-agent-specific system prompt additions
+  // 检索课程资料查的是 context.courseId（取 key 的那门课）：只有学生选了课、而且就是这门课时才给，
+  // 选「不关联课程」时不能去翻自动挑来取 key 的那门课的资料
+  const coursePicked = Boolean(contextCourseId) && contextCourseId === resolvedCourseId;
   const tools = agentRegistry.getToolsForRole(effectiveRole).filter(
-    (t) => modeToolNames.includes(t.function.name),
+    (t) => modeToolNames.includes(t.function.name)
+      && (t.function.name !== 'search_course_materials' || coursePicked),
   );
   const toolNames = tools.map((t) => t.function.name);
 
@@ -584,22 +630,6 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
     userMessage: content.trim(),
   });
 
-  // Prepend personal agent identity to the system prompt
-  const personalSystemAddition = [
-    'You are a personal AI assistant for Knowledge Building education.',
-    'You help with lesson planning, research, idea development, and pedagogical questions.',
-    'You can access notes from the user\'s courses when a course context is provided.',
-    'CRITICAL RULES:',
-    '1. NEVER use emoji or emoticons. Write clean, professional text only.',
-    '2. You have generate_summary_doc and export_notes tools that create REAL downloadable Word (.docx) files. When the user asks for any document, report, Word file, or export, you MUST call these tools immediately. NEVER say you cannot generate files or suggest manual copy-paste.',
-    '3. You have analyze_engagement and compare_periods tools that generate REAL chart images (PNG) and Word reports. When the user asks for data analysis, you MUST call these tools.',
-    '4. After calling a file-generation tool, extract the downloadUrl from the result and present it as a markdown link: [filename](downloadUrl). For charts, use: ![description](chartUrl)',
-    '5. Use markdown tables with | pipe syntax when presenting tabular data.',
-    'Be helpful, concise, and ground your answers in Knowledge Building principles when relevant.',
-    '6. You have a save_teaching_insight tool. Call it only when the TEACHER states a decision, plan, or observation in their own words. Do not save your own analysis or lesson drafts as insights, and never spend a separate turn on it: if you do call it, include it in the same turn as your other tool calls. Saved insights appear in the Lesson Prep, Analytics, and Assessment modules.',
-    '7. Gather data in as few turns as possible: issue all the tool calls you need in one turn (they run together), then answer. Do not repeat a call whose result you already have.',
-  ].join(' ');
-
   // Inject cross-module context for teachers
   let crossModuleCtx = '';
   if ((effectiveRole === 'teacher' || effectiveRole === 'admin') && resolvedCourseId) {
@@ -613,9 +643,10 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
     } catch { /* non-critical */ }
   }
 
+  const identity = personalSystemAddition(toolNames);
   const systemPrompt = crossModuleCtx
-    ? `${personalSystemAddition}\n\n${crossModuleCtx}\n\n${agentContext.systemPrompt}`
-    : `${personalSystemAddition}\n\n${agentContext.systemPrompt}`;
+    ? `${identity}\n\n${crossModuleCtx}\n\n${agentContext.systemPrompt}`
+    : `${identity}\n\n${agentContext.systemPrompt}`;
 
   // ── Lifecycle: start run for chat ──
   let chatRunId: string | null = null;

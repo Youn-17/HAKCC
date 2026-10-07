@@ -1,5 +1,5 @@
 import 'express-async-errors';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -118,6 +118,7 @@ const h = vi.hoisted(() => {
       in: (col: string, values: unknown[]) => { filters.push(r => values.includes(r[col])); return builder; },
       is: (col: string, value: unknown) => { filters.push(r => (r[col] ?? null) === value); return builder; },
       not: (col: string, _op: string, value: unknown) => { filters.push(r => (r[col] ?? null) !== value); return builder; },
+      or: () => builder,
       order: (col: string, opts?: { ascending?: boolean }) => { sort = { col, asc: opts?.ascending !== false }; return builder; },
       limit: (n: number) => { max = n; return builder; },
       single: async () => run('single'),
@@ -520,6 +521,41 @@ describe('GET /personal-agent/configs：每门课带课内身份和 teacherModes
   });
 });
 
+describe('对话：只认自己的个人助手对话，读消息取最近的', () => {
+  const at = (i: number) => new Date(Date.UTC(2026, 9, 1, 0, 0, i)).toISOString();
+
+  it('读消息：长对话返回最近的 100 条，按旧到新排好；知识空间助手的对话 404', async () => {
+    as('student-a', 'student');
+    h.db.agent_conversations = [
+      { id: 'conv-p', user_id: 'student-a', agent_type: 'personal' },
+      { id: 'conv-w', user_id: 'student-a', agent_type: 'workspace', course_id: 'course-1' },
+    ];
+    h.db.agent_messages = Array.from({ length: 130 }, (_, i) => ({
+      id: `m${i}`, conversation_id: 'conv-p', role: i % 2 ? 'assistant' : 'user', content: `第 ${i} 条`, created_at: at(i),
+    }));
+    const read = (id: string) => fetch(`${base}/personal-agent/conversations/${id}/messages`).then(async r => ({ status: r.status, body: await r.json() }));
+
+    const { status, body } = await read('conv-p');
+    expect(status).toBe(200);
+    expect(body.messages).toHaveLength(100);
+    expect(body.messages[0].id).toBe('m30');
+    expect(body.messages.at(-1).id).toBe('m129');
+    expect((await read('conv-w')).status).toBe(404);
+  });
+
+  it('接着聊带的是知识空间助手的对话 id：不往那段里写，新开一段个人助手对话', async () => {
+    as('student-a', 'student');
+    h.db.agent_conversations = [{ id: 'conv-w', user_id: 'student-a', agent_type: 'workspace', course_id: 'course-1' }];
+    const { status } = await ask({ conversation_id: 'conv-w' });
+    expect(status).toBe(200);
+    const created = h.state.inserts.filter(i => i.table === 'agent_conversations').map(i => i.payload as Record<string, unknown>);
+    expect(created).toEqual([expect.objectContaining({ agent_type: 'personal', user_id: 'student-a' })]);
+    const written = h.state.inserts.filter(i => i.table === 'agent_messages').map(i => (i.payload as { conversation_id: string }).conversation_id);
+    expect(written.length).toBeGreaterThan(0);
+    expect(written).not.toContain('conv-w');
+  });
+});
+
 describe('画图指令：不经对话模型，直接出图（默认 DMX）', () => {
   const events = (text: string) => text.split('\n\n')
     .filter(chunk => chunk.startsWith('data: ') && !chunk.includes('[DONE]'))
@@ -583,5 +619,104 @@ describe('顺序锁：以后改这个路由也不能绕过', () => {
     const body = helper.slice(0, helper.indexOf('\n}\n'));
     expect(body).toContain(".from('spaces')");
     expect(body).toContain('ensureSpaceAccess(');
+  });
+});
+
+/**
+ * 2026-10-06：系统提示开头写死「你有 generate_summary_doc、export_notes 能做真的 Word，
+ * 有 analyze_engagement、compare_periods 能出 PNG 图表，必须调用，不许说做不了文件」，还点了 save_teaching_insight。
+ * 这五个只注册给教师，也只挂在备课 / 学情分析两个模式上：学生的「AI 对话」和教师的其他模式都拿不到，
+ * 模型照着提示词就可能自称做好了 Word、编出下载链接。
+ * 这里换成真的工具注册表和真的 buildAgentContext，按身份和模式核对：发给模型的提示词里点名的每个工具，
+ * 都在同一次调用的工具清单里；清单里的也都写进了提示词。
+ */
+describe('提示词里点名的工具，这个身份在这个模式下都真的拿得到', () => {
+  type Tool = { type: string; function: { name: string; description: string; parameters: object } };
+  type Role = 'student' | 'teacher' | 'admin';
+  const STUDENT_MODES = ['idea_coach', 'gap_finder', 'connection_scout', 'evidence_broker', 'rise_above_coach'];
+  const TEACHER_FILE_TOOLS = ['generate_summary_doc', 'export_notes', 'analyze_engagement', 'compare_periods', 'save_teaching_insight'];
+  const fakeTools = h.getToolsForRole.getMockImplementation()!;
+  const fakeContext = h.buildAgentContext.getMockImplementation()!;
+  let toolsFor: (role: Role) => Tool[] = () => [];
+  let realContext: typeof fakeContext = fakeContext;
+  let everyToolName: string[] = [];
+
+  beforeAll(async () => {
+    const tools = await vi.importActual<typeof import('../services/agentTools')>('../services/agentTools');
+    const registry = tools.createDefaultRegistry();
+    toolsFor = role => registry.getToolsForRole(role) as Tool[];
+    everyToolName = [...new Set((['student', 'teacher', 'admin'] as const).flatMap(r => toolsFor(r).map(t => t.function.name)))];
+    const context = await vi.importActual<typeof import('../services/agentContext')>('../services/agentContext');
+    realContext = context.buildAgentContext as unknown as typeof fakeContext;
+  });
+
+  beforeEach(() => {
+    h.getToolsForRole.mockImplementation(role => toolsFor(role as Role));
+    h.buildAgentContext.mockImplementation(realContext);
+  });
+
+  afterEach(() => {
+    h.getToolsForRole.mockImplementation(fakeTools);
+    h.buildAgentContext.mockImplementation(fakeContext);
+  });
+
+  /** 问一句要 Word 和图表的话，取发给模型的完整提示词、同一次调用给的工具、提示词点名的工具 */
+  async function sent(userId: string, platformRole: string, mode: string) {
+    as(userId, platformRole);
+    const res = await ask({ agent_mode: mode, content: '把这门课的讨论整理成 Word 报告，附一张参与度图表' });
+    expect(res.status).toBe(200);
+    const { systemPrompt, tools } = h.runAgentLoopStream.mock.lastCall![0];
+    return {
+      systemPrompt,
+      offered: tools.map(t => t.function.name),
+      named: everyToolName.filter(name => new RegExp(`\\b${name}\\b`).test(systemPrompt)),
+    };
+  }
+
+  it.each([
+    ...STUDENT_MODES.map(mode => ['学生', mode, 'student-a', 'student', 'student']),
+    ['凭学生验证码入课的教师账号', 'idea_coach', 'teacher-joined', 'teacher', 'student'],
+    ...[...STUDENT_MODES, 'lesson_planner', 'teaching_analyst'].map(mode => ['课程教师', mode, 'owner-1', 'teacher', 'teacher']),
+    ['平台管理员', 'teaching_analyst', 'platform-admin', 'admin', 'admin'],
+  ])('%s用 %s', async (_who, mode, userId, platformRole, role) => {
+    const { offered, named } = await sent(userId, platformRole, mode);
+
+    expect(h.getToolsForRole).toHaveBeenLastCalledWith(role);
+    // 清单里的工具都写进了提示词：核对的是完整的提示词，不是一段假的
+    expect(offered.length).toBeGreaterThan(0);
+    expect(named).toEqual(expect.arrayContaining(offered));
+    expect(named.filter(name => !offered.includes(name))).toEqual([]);
+  });
+
+  it('学生首页「AI 对话」：选了课才给「检索课程资料」，选「不关联课程」不给（不能去翻自动挑来取 key 的那门课）', async () => {
+    as('student-a', 'student');
+    await ask({ agent_mode: 'idea_coach' });
+    expect(h.runAgentLoopStream.mock.lastCall![0].tools.map(t => t.function.name)).toContain('search_course_materials');
+    await ask({ agent_mode: 'idea_coach', context_course_id: null });
+    expect(h.runAgentLoopStream.mock.lastCall![0].tools.map(t => t.function.name)).not.toContain('search_course_materials');
+  });
+
+  it.each([
+    ['学生', 'student-a', 'student'],
+    ['课程教师', 'owner-1', 'teacher'],
+  ])('%s用观点澄清：一个文件 / 图表工具都不给也不点，直说做不了，不许写没做出来的下载链接', async (_who, userId, platformRole) => {
+    const { systemPrompt, offered } = await sent(userId, platformRole, 'idea_coach');
+
+    expect(offered.filter(name => TEACHER_FILE_TOOLS.includes(name))).toEqual([]);
+    expect(systemPrompt).toContain('You cannot create downloadable files here.');
+    expect(systemPrompt).toContain('You cannot plot charts of real data here (generate_image draws pictures; it cannot plot data).');
+    expect(systemPrompt).toContain('Never write a download link for a file that was not made.');
+  });
+
+  it.each(['lesson_planner', 'teaching_analyst'])('课程教师用 %s 照旧：五个工具都给、都点到、要 Word 就得调；图表不打包票，结果里有链接才放', async mode => {
+    const { systemPrompt, offered, named } = await sent('owner-1', 'teacher', mode);
+
+    expect(offered).toEqual(expect.arrayContaining(TEACHER_FILE_TOOLS));
+    expect(named).toEqual(expect.arrayContaining(TEACHER_FILE_TOOLS));
+    expect(systemPrompt).toContain('generate_summary_doc and export_notes create real downloadable Word (.docx) files.');
+    expect(systemPrompt).toContain('you MUST call analyze_engagement or compare_periods.');
+    expect(systemPrompt).toContain('a chart as ![description](chartUrl). If the URL is not in the result, that file or chart was not made');
+    expect(systemPrompt).not.toMatch(/PNG|produce charts/i);
+    expect(systemPrompt).not.toContain('You cannot create downloadable files');
   });
 });

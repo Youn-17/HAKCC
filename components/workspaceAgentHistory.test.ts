@@ -117,6 +117,16 @@ describe('messagesFromApi：存下来的消息还原成对话', () => {
     const out = messagesFromApi([msg('1', 'user', '问'), msg('2', 'assistant', '  '), msg('3', 'assistant', '答')]);
     expect(out.map(m => m.id)).toEqual(['1', '3']);
   });
+
+  it('回答存着来源卡片（kb_sources）：读回来照样列出；没有的不带这一项', () => {
+    const card = { n: 1, title: '论文.pdf', section: '方法', pageStart: 3, pageEnd: 4, excerpt: '访谈提纲', kind: 'attachment', noteId: 'note-1', relevance: 0.8 };
+    const out = messagesFromApi([
+      { ...msg('1', 'assistant', '见 [1]'), ai_metadata: { kb_sources: [card, { title: '缺编号的不要' }] } } as AgentMessage,
+      msg('2', 'assistant', '没有资料'),
+    ]);
+    expect(out[0].kbSources).toEqual([card]);
+    expect(out[1]).not.toHaveProperty('kbSources');
+  });
 });
 
 describe('面板宽度', () => {

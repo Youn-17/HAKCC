@@ -841,6 +841,8 @@ export interface DashboardCourseSummary {
   hasAi: boolean;
   hasUnreadFeedback: boolean;
   unreadFeedbackCount: number;
+  /** 教师首页才有：我在这门课里的身份 */
+  viewerStanding?: CourseRole;
 }
 
 export interface DashboardNotificationSummary {
@@ -1913,12 +1915,69 @@ export interface NoteConversationMessage {
   sender?: { id: string; name: string; avatar?: string };
 }
 
+/** 课程管理 → 课程资料里的知识库概况 */
+export interface KbOverview {
+  includeAttachments: boolean;
+  materials: { total: number; enabled: number; chunks: number };
+  attachments: {
+    items: Array<{
+      noteId: string;
+      title: string;
+      spaceName: string | null;
+      status: string;
+      chunks: number;
+      embedded: number;
+      pages: number | null;
+      textSource: string | null;
+      updatedAt: string;
+    }>;
+    chunks: number;
+  };
+  /** AI 现在检索得到的片段，和其中算好向量的 */
+  searchable: { chunks: number; embedded: number };
+  retrievals: { days: number; total: number; bySource: Record<string, number>; lastAt: string | null };
+}
+
+export interface KbSearchTestResult {
+  semantic: boolean;
+  reranked: boolean;
+  ms: number;
+  hits: Array<{
+    n: number;
+    title: string;
+    section: string | null;
+    pageStart: number | null;
+    pageEnd: number | null;
+    kind: 'attachment' | 'material';
+    relevance: number | null;
+    similarity: number | null;
+    matchedBy: 'vector' | 'keyword';
+    excerpt: string;
+  }>;
+}
+
+/** 笔记 AI 回答下面的来源卡片（ai_metadata.kb_sources）：回答里的 [n] 对应哪份资料、哪一节、第几页 */
+export interface KbSourceCard {
+  n: number;
+  title: string;
+  section: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  excerpt: string;
+  kind: 'attachment' | 'material';
+  /** 附件所在的笔记，点开原文用；课程资料为 null */
+  noteId: string | null;
+  relevance: number | null;
+}
+
 export interface NoteConversationAIStreamEvent {
   token?: string;
   reasoningStatus?: 'thinking' | 'answering' | 'done';
   reasoningChars?: number;
   toolStatus?: 'running' | 'used';
   toolNames?: string[];
+  /** 检索到的课程资料，回答开始写之前推来 */
+  kbSources?: KbSourceCard[];
   error?: string;
   userMessage?: NoteConversationMessage;
   assistantMessage?: NoteConversationMessage;
@@ -2325,6 +2384,22 @@ export const courseSettings = {
 
   deleteMaterial: (courseId: string, materialId: string) =>
     request<{ message: string }>('DELETE', `/courses/${courseId}/materials/${materialId}`),
+
+  // ── 课程知识库（第 3 步，api/src/routes/courseKnowledgeBase.ts）──────────
+  /** 这份资料进不进 AI 检索；关掉只是检索不到，文件和片段都留着 */
+  setMaterialKb: (courseId: string, materialId: string, enabled: boolean) =>
+    request<{ kbEnabled: boolean }>('PATCH', `/courses/${courseId}/materials/${materialId}/kb`, { enabled }),
+  /** 清掉解析缓存，从头再读一遍、重新切片入库 */
+  reparseMaterial: (courseId: string, materialId: string) =>
+    request<{ state: 'processing' }>('POST', `/courses/${courseId}/materials/${materialId}/reparse`),
+  /** 知识空间里上传的附件进不进这门课的 AI 检索（整门课一个开关） */
+  setKbAttachments: (courseId: string, enabled: boolean) =>
+    request<{ includeAttachments: boolean }>('PUT', `/courses/${courseId}/kb/attachments`, { enabled }),
+  kbOverview: (courseId: string) =>
+    request<KbOverview>('GET', `/courses/${courseId}/kb/overview`),
+  /** 老师输入一个问题，看 AI 会拿到哪几段（不记进检索记录） */
+  kbSearchTest: (courseId: string, query: string) =>
+    request<KbSearchTestResult>('POST', `/courses/${courseId}/kb/search-test`, { query }),
 
   // Material comments
   listMaterialComments: (courseId: string, materialId: string) =>

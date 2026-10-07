@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
-import { searchKnowledgeBase } from '../services/knowledgeBase';
+import { announceKbRetrieval, KB_STEP_NAME, startNoteKbRetrieval, type KbToolStep } from '../services/kbSources';
 import {
   buildConversationToolDefinitions,
   clampToolLimit,
@@ -793,6 +793,13 @@ router.post('/note-conversations/:threadId/ai', verifyJWT, async (req: Request, 
   res.status(201).json({ userMessage: messageToApi(userMessage), assistantMessage: messageToApi(assistantMessage) });
 });
 
+type ToolStep = KbToolStep;
+
+/** 往这一轮的 SSE 流里写一条事件 */
+const sseSender = (res: Response) => (event: Record<string, unknown>) => {
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+};
+
 router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Request, res: Response) => {
   const { thread } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
   const turnStartedAt = Date.now();
@@ -856,46 +863,16 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
   if (!config.api_key_encrypted) throw new ApiError(404, `Provider "${resolvedProviderId}" is not configured for this course`);
   const apiKey = decryptProviderApiKey(config.api_key_encrypted);
 
-  /**
-   * 课程知识库检索。让 AI 先看这门课真实的材料再回答 —— 这是降低幻觉最直接的一招：
-   * 它不必凭训练记忆去猜「这门课讲了什么」，而是有原文可依。
-   *
-   * 检索失败不阻塞对话：拿不到材料就照常回答，只是少了依据。
-   * 按提问的人检索：别组空间里的附件不能经这里进到他的系统提示。
-   */
-  let kbSection = '';
-  if (!freeAsk) try {
-    const hits = await searchKnowledgeBase(thread.course_id, req.user!, content.slice(0, 500), 5);
-    if (hits.length > 0) {
-      kbSection = [
-        'COURSE MATERIALS — retrieved from this course\'s own library. Ground your answer in these when relevant.',
-        'Cite the source by name when you use one. If they do not cover the question, say so instead of inventing.',
-        ...hits.map((h, i) => {
-          const where = h.headingPath ? `${h.title} · ${h.headingPath}` : h.title;
-          return `[${i + 1}] ${where}\n${h.content}`;
-        }),
-      ].join('\n\n');
-    }
-  } catch (err: any) {
-    console.warn('[NoteConversations] KB retrieval failed:', err?.message);
-  }
-
-  const baseSystemSections = [
-    'You are a pedagogical GenAI collaborator inside a Knowledge Building note editor.',
-    'Help the learner improve the current idea. Be concise, concrete, and evidence-oriented.',
-    'When useful, ask one follow-up question that can improve the public idea object.',
-    getConversationAgentSpec(normalizedAgentMode).systemInstruction,
-    `Current note title: ${note.title}`,
-    // 1200 字是早期为省 token 定的，一条像样的笔记就超了 —— AI 读到的是半截。
-    // 模型的上下文窗口远不是瓶颈，真正的成本在于送太多无关内容。
-    `Current note content: ${stripHtml(note.content).slice(0, 6000)}`,
-    kbSection,
-  ].filter(Boolean);
-  if (freeAsk) {
-    baseSystemSections.length = 0;
-    baseSystemSections.push(buildFreeAskSystemPrompt({ title: note.title, text: stripHtml(note.content).slice(0, 6000) }));
-  }
-  let systemContent = baseSystemSections.join('\n\n');
+  // 课程资料：和下面的准备同时检索，见 kbSources.ts。history 最后一条就是刚存的这句
+  const zhQuestion = detectQuestionLanguage(content) === 'zh';
+  const kbRun = startNoteKbRetrieval({
+    courseId: thread.course_id,
+    viewer: req.user!,
+    question: content,
+    earlierQuestions: history.filter(m => m.role === 'user').map(m => m.content).slice(0, -1),
+    noteTitle: note.title,
+    zh: zhQuestion,
+  });
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -916,11 +893,30 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
   let toolPreparation: ConversationToolPreparation = { messages: historyWithDocs, toolCalls: [] };
   const toolsUsed = new Set<string>();
   // 这一轮做了哪几步，存进回答里：回看时也能看到「用了几步」（AgentProcess）
-  const toolSteps: Array<{ name: string; summary?: string; ms?: number }> = [];
+  const toolSteps: ToolStep[] = [];
   const keepaliveTimer = setInterval(() => {
     try { res.write(': keepalive\n\n'); } catch {}
   }, 15_000);
   try {
+    const kb = await announceKbRetrieval(sseSender(res), kbRun, toolSteps, toolsUsed, zhQuestion);
+    const baseSystemSections = [
+      'You are a pedagogical GenAI collaborator inside a Knowledge Building note editor.',
+      'Help the learner improve the current idea. Be concise, concrete, and evidence-oriented.',
+      'When useful, ask one follow-up question that can improve the public idea object.',
+      getConversationAgentSpec(normalizedAgentMode).systemInstruction,
+      `Current note title: ${note.title}`,
+      // 1200 字是早期为省 token 定的，一条像样的笔记就超了 —— AI 读到的是半截。
+      // 模型的上下文窗口远不是瓶颈，真正的成本在于送太多无关内容。
+      `Current note content: ${stripHtml(note.content).slice(0, 6000)}`,
+      kb?.section ?? '',
+    ].filter(Boolean);
+    if (freeAsk) {
+      baseSystemSections.length = 0;
+      baseSystemSections.push(buildFreeAskSystemPrompt({ title: note.title, text: stripHtml(note.content).slice(0, 6000) }));
+      if (kb?.section) baseSystemSections.push(kb.section);
+    }
+    let systemContent = baseSystemSections.join('\n\n');
+
     if (shouldUseWebSearch) {
       res.write(`data: ${JSON.stringify({ toolStatus: 'running', toolNames: ['tavily_search'] })}\n\n`);
       const searchStarted = Date.now();
@@ -929,7 +925,6 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
         toolsUsed.add('tavily_search');
         systemContent = [...baseSystemSections, formatTavilyResultsForPrompt(webResults)].join('\n\n');
       }
-      const zhQuestion = detectQuestionLanguage(content) === 'zh';
       const searchSummary = webResults.length > 0
         ? (zhQuestion ? `找到 ${webResults.length} 条网页结果` : `${webResults.length} web results`)
         : (zhQuestion ? '没有找到网页结果' : 'no web results');
@@ -1072,6 +1067,8 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
           model: normalizedModel,
           answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
           tool_steps: toolSteps,
+          // 来源卡片：回答里的 [n] 对应哪份资料、哪一节、第几页
+          kb_sources: kb?.citations.sources.length ? kb.citations.sources : undefined,
           elapsed_ms: Date.now() - turnStartedAt,
           use_web_search: shouldUseWebSearch,
           agent_mode: freeAsk ? 'free_ask' : normalizedAgentMode,
@@ -1190,6 +1187,17 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   if (!config.api_key_encrypted) throw new ApiError(404, `Provider "${provider_id}" is not configured for this course`);
   const apiKey = decryptProviderApiKey(config.api_key_encrypted);
 
+  // 课程资料：和下面装上下文同时检索，见 kbSources.ts
+  const zhQuestion = detectQuestionLanguage(content) === 'zh';
+  const kbRun = startNoteKbRetrieval({
+    courseId: thread.course_id,
+    viewer: req.user!,
+    question: content,
+    earlierQuestions: history.filter(m => m.role === 'user').map(m => m.content).slice(0, -1),
+    noteTitle: note.title,
+    zh: zhQuestion,
+  });
+
   // 工具按课内身份给：教师工具能读全班的数据，凭学生验证码入课的教师账号在这门课里是学生
   const userRole = !isCourseStaff(standing) ? 'student' as const : req.user!.role === 'admin' ? 'admin' as const : 'teacher' as const;
   // 自由提问带了图或附件才会走到这条：不挂任何工具，也不用智能体的人设
@@ -1232,7 +1240,7 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   let continuations = 0;
   let truncated = false;
   // 每一步的结果和用时，推给学生（AgentProcess），也存进回答里
-  const toolSteps: Array<{ name: string; summary?: string; ms?: number }> = [];
+  const toolSteps: ToolStep[] = [];
   const toolStartedAt = new Map<string, number>();
   const summaryLang = detectQuestionLanguage(content);
 
@@ -1241,6 +1249,8 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   }, 15_000);
 
   try {
+    const kb = await announceKbRetrieval(sseSender(res), kbRun, toolSteps, allToolsUsed, zhQuestion);
+    let sentSources = kb?.citations.sources.length ?? 0;
     const baseMessages = agentContext.messages.map((m) => ({
       role: m.role,
       content: m.content,
@@ -1271,12 +1281,14 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
       endpointUrl: config.endpoint_url ?? null,
       systemPrompt: [
         agentContext.systemPrompt,
+        kb?.section ?? '',
         carriesImage ? IMAGE_TURN_RULES : '',
         lengthInstruction(lengthPlan),
       ].filter(Boolean).join('\n\n'),
       messages: withImages,
       tools,
-      executeToolFn: (name, args) => agentRegistry.executeTool(name, args, toolContext),
+      // 智能体这一轮再查课程资料：查到的段落接着自动检索的编号往下编，来源卡片一起列
+      executeToolFn: (name, args) => agentRegistry.executeTool(name, args, kb ? { ...toolContext, kbCitations: kb.citations } : toolContext),
       maxTokens: lengthPlan.maxTokens,
     });
 
@@ -1304,6 +1316,11 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
             toolSummary: summary,
             toolDurationMs: ms,
           })}\n\n`);
+          // 又查到新的课程资料：来源卡片整份重发（编号接着自动检索的往下）
+          if (event.toolName === KB_STEP_NAME && kb && kb.citations.sources.length > sentSources) {
+            sentSources = kb.citations.sources.length;
+            res.write(`data: ${JSON.stringify({ kbSources: kb.citations.sources })}\n\n`);
+          }
           break;
         }
         case 'token':
@@ -1332,6 +1349,7 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
           provider_id,
           answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
           tool_steps: toolSteps,
+          kb_sources: kb?.citations.sources.length ? kb.citations.sources : undefined,
           elapsed_ms: Date.now() - turnStartedAt,
           // 记实际跑的模型。带图时会被切到视觉档，记请求值等于把回复
           // 算到一个没参与生成的模型头上，研究数据会失真。

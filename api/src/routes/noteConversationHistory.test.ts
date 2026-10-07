@@ -159,7 +159,12 @@ vi.mock('../services/agentContext', () => ({
 vi.mock('../services/agentTools', () => ({
   createDefaultRegistry: () => ({ getToolsForRole: () => [], executeTool: async () => ({ success: false, data: null }) }),
 }));
-vi.mock('../services/knowledgeBase', () => ({ searchKnowledgeBase: async () => [] }));
+vi.mock('../services/knowledgeBase', () => ({
+  searchKnowledgeBase: async () => [],
+  searchKnowledgeBaseDetailed: async () => ({ hits: [], semantic: true, reranked: false }),
+  // 这门课没有入库的资料：笔记 AI 不检索，过程里也没有这一步（检索那一半见 knowledgeBaseScope.test.ts）
+  courseHasKnowledgeBase: async () => false,
+}));
 vi.mock('../services/embeddingService', () => ({ embedNote: async () => {} }));
 vi.mock('../services/tavilySearch', () => ({
   callTavilySearch: async () => ({ results: [] }),

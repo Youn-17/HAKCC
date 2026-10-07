@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { TRIGGER_TYPE_LABEL } from './feedbackLabels';
 import { normalizeScaffoldMarkers } from './scaffoldLibrary';
 import DOMPurify from 'dompurify';
@@ -65,6 +66,7 @@ import {
 } from '../services/apiClient';
 import { modelOptionLabel, modelSpeedHint, providerDisplayName } from './aiModelLabels';
 import { uploadAttachment, MAX_ATTACHMENT_BYTES } from '../services/attachmentUpload';
+import { attachmentQuestionHint, restoreTurnAttachments } from './chatAttachments';
 import { Language, Note, Scaffold, UserRole } from '../types';
 import ScaffoldPicker from './ScaffoldPicker';
 import {
@@ -114,6 +116,7 @@ import { useChatPreferences, ChatPreferenceControls } from '../hooks/useChatPref
 import { useGrowingTextarea } from '../hooks/useGrowingTextarea';
 import RemixIcon from './RemixIcon';
 import AgentProcess from './AgentProcess';
+import KbSourceCards, { parseKbSources } from './KbSourceCards';
 import { applyToolEvent, stepsFromMetadata } from './agentProcessSteps';
 import type { ToolCallInfo } from './AgentToolCallDisplay';
 import { getAnswerLength } from './answerLengthPref';
@@ -159,6 +162,8 @@ interface NoteEditorModalProps {
   initialAiAttachment?: { file_url: string; file_name: string; mime_type: string; text?: string } | null;
   currentViewId?: string;
   onAiNotePublished?: (note: ApiNote, relation: ApiRelation) => void;
+  /** AI 回答下面的来源卡片：打开那份附件，PDF 跳到那一页。不给就不能点（手机端没有阅读页） */
+  onOpenKbSource?: (noteId: string, page: number | null) => void;
   userRole?: UserRole;
   /**
    * 课程教职（按课内身份）。教师反馈是给作者看的：非教职打开自己的笔记就把反馈记为已读，
@@ -452,6 +457,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   initialAiAttachment,
   currentViewId,
   onAiNotePublished,
+  onOpenKbSource,
   userRole,
   isStaff,
   onTeacherFeedbackRead,
@@ -2092,7 +2098,16 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     editorTextOffsetRef.current = editor.innerText.length;
   };
 
+  /**
+   * 支架栏和 AI 面板在每个页签上都在。从别的页签往正文里插东西，先同步切回「撰写」再插：
+   * 编辑区藏着时拿不到焦点，光标落不进去，插完学生也看不见插在了哪
+   */
+  const showEditorTab = () => {
+    if (activeTab !== 'edit') flushSync(() => setActiveTab('edit'));
+  };
+
   const insertHtmlAtCursor = (html: string, caretSelector?: string) => {
+    showEditorTab();
     const editor = editorRef.current;
     if (!editor) return;
 
@@ -2241,6 +2256,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
    * （或选中的那几个字）直接框进括号里，而不是在末尾再开一个空支架。
    */
   const insertScaffoldMarker = (scaffold: Scaffold) => {
+    showEditorTab();
     const editor = editorRef.current;
     const selection = window.getSelection();
     const saved = editorRangeRef.current;
@@ -2421,6 +2437,13 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       aiMetadata: {},
       createdAt: new Date().toISOString(),
     } as NoteConversationMessage]);
+    // 出错时附件和问题都放回输入框（重新生成的问题本来就在对话里，不放）。
+    // 服务端还没回传「已存下」的提问，对话里那条也撤掉
+    const putBack = () => {
+      setMessages(prev => prev.filter(message => message.id !== tempUserId));
+      setAiAttachments(prev => restoreTurnAttachments(turnAttachments, prev));
+      if (options.restoreInputOnError !== false) setAiInput(prev => (prev.trim() ? prev : prompt));
+    };
     try {
       const thread = await ensureAiThread();
       if (live()) rememberQuestion(thread.id, prompt);
@@ -2436,11 +2459,13 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
         // 但带了图必须走智能体那条：只有它会挂 image_url 并切到视觉模型。
       }, Boolean(selectedAgentMode) || turnAttachments.length > 0);
       let streamedText = '';
+      let failed = false;
       await readSSEStream(reader, event => {
         // 学生已经换了笔记：这一问照样在它自己的线程里答完，只是不往眼前的面板写
         if (!live()) return;
         if (event === '[DONE]') return;
         if (typeof event.error === 'string') {
+          failed = true;
           setAiError(event.error);
           return;
         }
@@ -2479,6 +2504,14 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               createdAt: new Date().toISOString(),
             } as NoteConversationMessage];
           });
+          return;
+        }
+        if (Array.isArray(event.kbSources)) {
+          // 来源卡片挂在这条临时消息上，回答写完由服务端存下的 ai_metadata.kb_sources 接手
+          const sources = event.kbSources;
+          setMessages(prev => prev.map(message => (message.id === tempAssistantId
+            ? { ...message, aiMetadata: { ...message.aiMetadata, kb_sources: sources } }
+            : message)));
           return;
         }
         if (typeof event.reasoningStatus === 'string') {
@@ -2534,14 +2567,11 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             : prev.map(message => (message.id === tempAssistantId ? assistant : message))));
         }
       });
+      if (failed && live()) putBack();
     } catch (error) {
       if (!live()) return;
       setAiError(error instanceof Error ? error.message : 'Failed to send AI message');
-      setMessages(prev => prev.filter(message => message.id !== tempUserId));
-      if (options.restoreInputOnError !== false) {
-        setAiInput(prompt);
-        setAiAttachments(turnAttachments);
-      }
+      putBack();
     } finally {
       if (live()) endAiTurn();
     }
@@ -2549,8 +2579,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
 
   const sendAiMessage = async () => {
     const prompt = aiInput.trim();
-    // 只传图不打字也算一次有效提问，给个默认问句而不是拒绝发送
-    if ((!prompt && aiAttachments.length === 0) || sending) return;
+    // 挂了附件也要写一句问题才发（chatAttachments.ts）
+    if (!prompt || sending) return;
     // 「画一张……」：直接出图（课程设置里「生成图片」那一行，默认 DMX），不经对话模型。带了附件的照常对话
     if (aiAttachments.length === 0 && detectDrawIntent(prompt)) {
       setPromptBeforeRefine(null);
@@ -2559,7 +2589,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     }
     setAiInput('');
     setPromptBeforeRefine(null);
-    await runAiTurn(prompt || (lang === 'zh' ? '看看这张图，说说你看到了什么。' : 'Look at this image and describe what you see.'));
+    await runAiTurn(prompt);
   };
 
   /** 重新生成：把这条回复之前最近的一条学生消息再跑一遍，输入框里正在写的内容不动。 */
@@ -3081,7 +3111,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   };
 
   const move = buildOnMoveType ? BUILD_ON_META[buildOnMoveType] : undefined;
-  const renderedContent = editorRef.current?.innerHTML || initialData?.content || '';
+  // 编辑区一直挂着，阅读、信息页签读它眼下的内容（含没保存的修改）。不能用 || 回落：正文删光时 innerHTML 是空串，
+  // 一回落就又显示打开时的旧正文。只有编辑区挂上之前的那一帧用打开时的正文
+  const renderedContent = editorRef.current ? editorRef.current.innerHTML : (initialData?.content ?? '');
   const currentNote = noteId ? allNotes.find(note => note.id === noteId) : null;
   // 别人的笔记：学生只能读（后端只让作者和本课教职改），右下角换成 Build-on。
   // 刚落库的草稿可能还没进 allNotes，找不到作者时按自己的算。
@@ -3625,6 +3657,13 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                           lang={lang === 'zh' ? 'zh' : 'en'}
                         />
                         <MarkdownMessage content={message.content} isMine={false} />
+                        <KbSourceCards
+                          sources={parseKbSources(message.aiMetadata?.kb_sources)}
+                          content={message.content}
+                          streaming={isStreaming}
+                          lang={lang === 'zh' ? 'zh' : 'en'}
+                          onOpen={onOpenKbSource}
+                        />
                         {isStreaming && <div className="mt-1.5"><AiThinkingDots /></div>}
                       </>
                     )}
@@ -3760,7 +3799,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             onChange={event => setAiInput(event.target.value)}
             onKeyDown={event => { if (event.key === 'Enter' && enterToSend && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void sendAiMessage(); } }}
             aria-label={t.aiPlaceholder}
-            placeholder={t.aiPlaceholder}
+            placeholder={aiAttachments.length > 0 ? attachmentQuestionHint(aiAttachments, lang === 'zh' ? 'zh' : 'en') : t.aiPlaceholder}
             className="assistant-input w-full resize-none bg-transparent outline-none"
           />
 
@@ -3853,7 +3892,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             <button
               type="button"
               onClick={() => void sendAiMessage()}
-              disabled={sending || (!aiInput.trim() && aiAttachments.length === 0) || !canChatWithAI}
+              disabled={sending || !aiInput.trim() || !canChatWithAI}
+              title={!aiInput.trim() && aiAttachments.length > 0 ? attachmentQuestionHint(aiAttachments, lang === 'zh' ? 'zh' : 'en') : undefined}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#000080] text-white transition-all hover:bg-[#000060] active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
               aria-label={t.send}
             >
@@ -4182,8 +4222,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               )}
             </div>
 
-            {activeTab === 'edit' && (
-              <>
+            {/* 切到别的页签时撰写区只藏起来、不卸载。正文只在打开笔记时写进编辑区一次，卸载后重新挂上的是空的，
+                再点「贡献」就把空正文存进了库（2026-10-06）。保存、阅读、信息页签都读这一个编辑区 */}
+            <div className={activeTab === 'edit' ? 'contents' : 'hidden'}>
                 <div className={`${readOnlyNote ? 'hidden' : 'flex'} flex-wrap items-center gap-1 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-4 py-1.5`}>
                   <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageInput} />
                   <input ref={documentInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={handleDocumentInput} />
@@ -4322,8 +4363,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                     <div className="space-y-2">{visibleFeedbacks.map(renderFeedback)}</div>
                   )}
                 </section>
-              </>
-            )}
+            </div>
 
             {activeTab === 'read' && (
               <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-50/60 p-4 dark:bg-gray-950 sm:p-6">

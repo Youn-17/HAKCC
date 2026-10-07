@@ -11,6 +11,8 @@ export function handleTeacher(on) {
     id: W.COURSE_ID, title: W.COURSE.title, instructorId: W.TEACHER_ID, instructorName: '刘老师', coverImage: null, tags: W.COURSE.tags,
     verificationCode: 'K7Q2', createdAt: W.COURSE.created_at, studentCount: 32, noteCount: 86, lastActivityAt: W.ago(0, 1),
     hasAi: true, hasUnreadFeedback: false, unreadFeedbackCount: 0,
+    // 刘老师是这门课的创建者：「我的课程」里显示「课程管理」（2026-10-06 起）
+    viewerStanding: 'owner',
   });
   on('GET', /^\/dashboard\/teacher-overview$/, () => ({
     overview: { generatedAt: W.NOW.toISOString(), totals: { totalCourses: 1, totalStudents: 32, totalNotes: 86, aiEnabledCourses: 1, pendingFeedbackCount: 2 }, courses: [summary()] },
