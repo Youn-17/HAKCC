@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.0 — 2026-10-08
+
+- Restore paginated history for knowledge-space and Note AI instead of short fixed queries.
+- Persist thread-scoped rolling summaries while retaining original messages and failure checkpoints.
+- Allocate history by configured model windows, retaining model choice and adapting workspace fallback budgets.
+- Retrieve relevant student-owned Notes, questions and recent summaries within the current course and accessible spaces.
+- Add migration 086 and bilingual guidance covering external processing, summary limitations and upgrade checks.
+
+See [memory and upgrade notes](write/UPDATES_v0.5.0.en.md) and [executed validation](evidence/RELEASE_VALIDATION.md). This is application-level memory and retrieval, not model training; repository publication does not deploy the hosted application.
+
 ## v0.4.0 — 2026-10-07
 
 - Integrate scoped course-material retrieval into Note and workspace AI with numbered source cards and available PDF page references.

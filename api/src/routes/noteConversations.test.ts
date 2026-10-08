@@ -1,3 +1,4 @@
+vi.mock('../services/studentLearningContext', () => ({ loadStudentLearningContext: vi.fn(async () => '') }));
 import 'express-async-errors';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
@@ -97,7 +98,7 @@ const h = vi.hoisted(() => {
       maybeSingle: () => run('maybeSingle'),
       then: (onOk: (v: unknown) => unknown, onFail: (e: unknown) => unknown) => run('many').then(onOk, onFail),
     };
-    for (const m of ['select', 'eq', 'is', 'in', 'lt', 'not', 'or', 'order', 'limit']) builder[m] = () => builder;
+    for (const m of ['range', 'select', 'eq', 'is', 'in', 'lt', 'not', 'or', 'order', 'limit']) builder[m] = () => builder;
     return builder;
   };
 

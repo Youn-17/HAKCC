@@ -40,7 +40,11 @@ Accordingly, this release does not recommend blindly applying the archive with `
 
 No production database dump or course dataset is included. A future release can provide a verified baseline schema without exposing private content.
 
-## Upgrading to v0.4.0
+## Upgrading to v0.5.0
+
+Review the [memory upgrade guide](write/UPDATES_v0.5.0.en.md) and migration [086_conversation_memory.sql](supabase/migrations/086_conversation_memory.sql). It adds a JSONB memory field to existing workspace and Note conversation tables. Back up the database, inspect the schema, and apply the reviewed migration before starting the updated API. Check course/ownership scope, summary persistence and actual provider limits in an isolated project. Summarization and personalization send selected records to the configured AI provider; they do not train model weights.
+
+## Previous v0.4.0 upgrade
 
 Review the [current upgrade guide](write/UPDATES_v0.4.0.en.md) for migrations 078–085, knowledge-base processing, optional server-side OpenRouter/MinerU configuration and external data handling. The API chart backend and dependency lock have changed. Validate schema, vector-extension prerequisites and permission scope in an isolated installation first.
 

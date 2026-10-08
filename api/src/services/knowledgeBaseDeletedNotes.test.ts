@@ -117,6 +117,7 @@ const h = vi.hoisted(() => {
     let conflictKeys: string[] = [];
     let patch: Row = {};
     let limit: number | undefined;
+    let offset = 0;
     const rows = () => (db[table] ??= []);
     const view = (r: Row): Row => {
       const out: Row = { ...r };
@@ -183,7 +184,7 @@ const h = vi.hoisted(() => {
         }
         return { data: hit, error: null };
       }
-      return { data: limit === undefined ? hit : hit.slice(0, limit), error: null };
+      return { data: limit === undefined ? hit : hit.slice(offset, offset + limit), error: null };
     };
     const run = async (terminal: 'single' | 'maybeSingle' | 'many') => {
       const { data, error } = await execute();
@@ -210,6 +211,7 @@ const h = vi.hoisted(() => {
       in: (col: string, values: unknown[]) => where(col, v => values.includes(v)),
       order: () => builder,
       limit: (n: number) => { limit = n; return builder; },
+      range: (start: number, end: number) => { offset = start; limit = end - start + 1; return builder; },
       single: () => run('single'),
       maybeSingle: () => run('maybeSingle'),
       then: (ok: (v: unknown) => unknown, fail?: (e: unknown) => unknown) => run('many').then(ok, fail),

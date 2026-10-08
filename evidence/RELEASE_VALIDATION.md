@@ -1,49 +1,46 @@
 # Release validation
 
-Checked on **2026-10-07** for public release **v0.4.0**. Source basis: `c25f8555184e94701b8c7daef05a2b28673ed329` plus inspected working-tree changes. Exact public bytes are identified by the manifests.
+Checked on **2026-10-08** for public release **v0.5.0**. This package inherits the v0.4.0 public snapshot and adds the memory delta and follow-up compatibility fixes from development revision `027198aa582dbed9cf82b1175525755cb12acaf2`. Exact public bytes are identified by the manifests.
 
 ## Executed checks
 
 | Check | Result | Scope |
 | --- | --- | --- |
-| Locked dependency installation | Passed | Fresh `npm ci --ignore-scripts --no-audit` in the public frontend and API directories on this Mac; private dependencies were not altered |
-| Frontend production build | Passed, exit 0 | Final `npm run build` with dummy browser project configuration; Vite reports chunks above its 300 kB warning threshold |
-| API TypeScript build | Passed, exit 0 | `npm run build` in `api/` after the proxy-addr patch |
-| Full test suite | **186 files / 2,148 tests passed**, exit 0 | Final run: `npm test -- --maxWorkers=2 --testTimeout=20000` with the installed public dependency patches; dummy configuration and local API test servers |
-| Credential-pattern scan and exact local-value comparison | No findings | Public files scanned for key/JWT/private-key patterns and four available local credential values; no values are stored in this report |
-| Internal-material marker scan | No findings in final files | Checked known private manuscript, planning, operational and internal experiment markers; excluded material remains outside this checkout |
-| Source snapshot correspondence | Recorded | **737 source files**, including **55 publication-adjusted files**, listed in [source_snapshot.json](source_snapshot.json) |
-| Figure inventory | Eighteen language-specific mechanisms retained | Nine English and nine Chinese mechanisms in draw.io, SVG and PNG; aggregate collection and supplied integrated overview |
-| Public documentation | Checked | English and Chinese update guides linked from both homepages; relative targets and fingerprints checked by the release validator |
-| Fictional screenshot | Public v0.4.0 changelog recaptured and inspected | Local mock course/participants; sanitized public update history; no real-course login or live AI call |
-| Citation metadata | Passed official CFF 1.2.0 schema validation | Zhenhai He, version 0.4.0, release date and repository links |
-| Development snapshot stability | Checked | Included source files did not change between snapshot capture and publication preparation |
+| Frontend production build | Passed, exit 0 | `npm run build` with dummy browser project configuration; existing Vite chunk-size warnings remain |
+| API TypeScript build | Passed, exit 0 | `npm run build --prefix api`, rerun after the shared Note-text fix |
+| Full test suite | **191 files / 2,170 tests passed**, exit 0 | Final `npm test -- --maxWorkers=2 --testTimeout=20000`; mocked providers/data and permitted local test-server listening |
+| Targeted compatibility checks | **4 files / 58 tests passed**, exit 0 | Knowledge-base scope, deleted attachments, shared Note-text sites and student context |
+| Credential scan | No findings | Key/JWT/private-key patterns and exact comparison with three available local secret values; values are not recorded here |
+| Internal-material marker scan | No findings | Known local-path, server-path, operational-plan and internal-research markers; this is a bounded marker scan |
+| Source correspondence | Recorded | **748 source files**, including **55 publication-adjusted files**, listed in [source_snapshot.json](source_snapshot.json) |
+| Figures and demonstrations | Retained | Eighteen language-specific figure variants, aggregate sources and fictional baseline media; no new authenticated recordings |
+| Public documentation and fingerprints | Checked | Bilingual memory guides, relative link targets, source hashes and complete public inventory checked by the release validator |
+| Citation metadata | Checked | Zhenhai He, version 0.5.0, date 2026-10-08, MIT and repository links; other CFF fields unchanged from v0.4.0 |
+| Local synchronization | Checked | All 19 memory-delta files match inspected development bytes except the previously sanitized public workspace route |
 
-The checks used Node.js **22.22.3**. Fresh locked installs used `--ignore-scripts`; installation lifecycle scripts on other platforms remain unvalidated. Backend chart generation was exercised by the automated tests on this Mac, including its text fallback. Android/iOS native builds, container startup and installation on other operating systems were not tested. No participant account or paid provider was used.
+The checks used Node.js **22.22.3** and the public dependency installations validated for v0.4.0. No package or lockfile changed for this release; a fresh dependency installation was not repeated. The v0.4.0 locked installations used `--ignore-scripts`; lifecycle scripts on other platforms remain unvalidated. No participant account or paid provider was used for these release checks.
 
-The prior public test adjustments are retained: workspace tests locate the accessible AI input label, and the sanitizer suite allows 40 seconds for its worker's 30-second guard. Behavior and security assertions remain; application runtime limits were not changed. A sandboxed final run could not initialize temporary HTTP servers and was interrupted. The completed final run permitted local test-server listening; interrupted or failed runs are not counted as passing checks.
+The first complete run exposed two database test doubles missing the new range interface and a new HTML-stripping site that needed the shared Note-text helper. Those three files were corrected in both local checkouts and the complete suite rerun. The original access and behavior assertions remain. The unsuccessful first run is not counted as a passing check. Existing public workspace-label and sanitizer-timeout test adjustments are retained.
 
-## Dependency audit snapshots
+## Retained dependency audit snapshots
 
-Fresh npm audits on **2026-10-07**, after compatible lockfile patches, report:
+The audits below were captured on **2026-10-07** for v0.4.0; they were **not refreshed** for this release. Dependency locks are unchanged.
 
 | Component | Low | Moderate | High | Critical | Total |
 | --- | --- | --- | --- | --- | --- |
 | Frontend | 1 | 5 | 7 | 0 | 13 |
 | API | 0 | 6 | 5 | 0 | 11 |
 
-See [frontend audit](frontend_dependency_audit.json) and [API audit](api_dependency_audit.json). These include tooling and transitive dependencies; the counts do not establish exploitability in this application. Remaining advisories have not been fully remediated or assessed through a formal security audit.
-
-The public locks update proxy-addr to 2.0.8 ([official advisory](https://github.com/advisories/GHSA-jqcg-44mw-7w3h)) and Capacitor Android/iOS to 8.4.3 ([official advisory](https://github.com/advisories/GHSA-rvm3-566m-v7fv)), within the existing package ranges. The root package declarations and unrelated lock entries are preserved. Existing native installations require a rebuild; the GitHub release does not patch the private installation or the deployed service.
+See [frontend audit](frontend_dependency_audit.json) and [API audit](api_dependency_audit.json). These are dated tooling/transitive-dependency snapshots, not current security certification or application exploitability assessments. Public locks retain proxy-addr 2.0.8 and Capacitor Android/iOS 8.4.3. Repository publication does not patch or rebuild an existing installation.
 
 ## Limits
 
-- Migrations 078–085 are included but were not applied to a live or newly provisioned database. The historical archive still contains duplicate earlier prefixes and deployment-era repairs. Fresh replay remains unvalidated. The intermediate canvas-layout functions are withdrawn by 081 and are not advertised as current features.
-- Repository publication does not deploy the hosted platform or establish that it runs this revision.
-- AI retrieval, citations, permissions and Jev behavior were checked through source and mocked tests, rather than live-provider acceptance or benchmarking. Default thresholds are not validated educational standards; page mappings and generated citations require checking.
-- The three looping GIFs retain their baseline demonstrations. Updated screenshots do not cover every new interaction.
-- No production credentials, real participant exports, private research proposals or authenticated course recordings are supplied.
-- Automated checks do not constitute complete teacher/student acceptance, independent human review, instructional-effect evidence or a formal security audit.
+- Migration 086 is included but was not applied to a live or newly provisioned database as part of this publication. The historical archive still includes duplicate prefixes and repair scripts; fresh replay remains unvalidated. Review earlier upgrade requirements for older installations.
+- This release publishes source and documentation. It does not deploy the hosted application, migrate student records or establish equivalence to a running production revision.
+- Memory, student-owned retrieval and fallback budgeting were checked through source and mocked regression tests. A full 1M-token request, all gateway account limits, live summarization costs and complete multimodal/tool request sizes were not validated.
+- Application-level memory does not train model weights. Derived summaries are fallible and incremental; there is no dedicated memory viewing/editing/deletion interface, and summary refresh does not guarantee immediate removal of earlier summarized facts.
+- Container startup, clean Supabase provisioning, Android/iOS native builds and installation on other operating systems were not tested. Frontend screenshots/GIFs retain their earlier fictional baseline and do not demonstrate the new backend memory behavior.
+- No production credentials, real participant exports, private research proposals or authenticated course recordings are supplied. Automated checks do not constitute complete teacher/student acceptance, a formal security/privacy audit or educational-effect evidence.
 
 ## Recheck this package
 
@@ -55,4 +52,4 @@ npm run build
 npm run build --prefix api
 ```
 
-The manifest excludes itself. Use [Getting started](../GETTING_STARTED.md) for environment requirements and [the update guide](../write/UPDATES_v0.4.0.en.md) for configuration and upgrade conditions.
+The manifest excludes itself. See [Getting started](../GETTING_STARTED.md) and the [memory guide](../write/UPDATES_v0.5.0.en.md) for setup, data flow and upgrade conditions.

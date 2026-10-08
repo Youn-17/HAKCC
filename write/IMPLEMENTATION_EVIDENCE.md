@@ -1,6 +1,8 @@
 # 功能说明的核对记录
 
-核对日期：2026-10-07。当前代码基于 `c25f855` 和已检查的工作区修改，具体发布内容由文件指纹标识。新增路径见 [v0.4.0 补充说明](UPDATES_v0.4.0.md)。本文件记录说明文档与功能的对应，方便后续版本更新；下列路径对应本仓库中的公开源代码；发布清理记录见 evidence/source_snapshot.json。
+核对日期：2026-10-08。当前发布继承 v0.4.0 公开快照，并应用开发版本 `027198a` 的记忆系统及文本/测试修正，具体发布内容由文件指纹标识。新增路径见 [v0.5.0 补充说明](UPDATES_v0.5.0.md)。本文件记录说明文档与功能的对应，方便后续版本更新；下列路径对应本仓库中的公开源代码；发布清理记录见 evidence/source_snapshot.json。
+
+下表原有实机记录来自先前检查，不代表本次发布重新登录课程验收；本次执行范围见发布验证。
 
 | 文档主题 | 主要实现位置 | 本次验证 |
 | --- | --- | --- |
@@ -9,6 +11,7 @@
 | Build-on | `types.ts`、`api/src/routes/notes.ts` | 实机查看 Note 关系与网络 |
 | 支架 | `components/NoteEditorModal.tsx`、`api/src/routes/scaffolds.ts` | 实机切换知识建构支架组 |
 | AI 角色与工具 | `api/src/services/noteAgentCatalog.ts`、`api/src/services/agentTools.ts` | 核对角色和工具；实机完成一次 AI 提问及回复 |
+| 对话记忆与学生情境 | `api/src/services/conversationMemory.ts`、`studentLearningContext.ts`、`loadConversationHistory.ts` | 源码与模拟回归测试；未进行模型训练或整窗压力测试 |
 | AI 采纳 | `api/src/routes/notes.ts`、`components/NoteAiPanel.tsx` | 核对采纳与来源；实机打开理由界面，未确认发布 |
 | 自动反馈 | `api/src/routes/noteAiFeedback.ts`、`components/NoteEditorModal.tsx` | 核对条件；实机读取已有反馈 |
 | Rise-above | `components/RiseAboveRoom.tsx`、`api/src/routes/riseAbove.ts`、`api/src/services/riseAboveRoom.ts` | 源码核对；本轮没有完整实机发布验证 |

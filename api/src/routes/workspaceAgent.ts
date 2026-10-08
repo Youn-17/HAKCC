@@ -14,6 +14,10 @@
  *   GET  /workspace-agent/:courseId/configs                        — list AI provider configs
  */
 
+import { restoreConversationMemory, type MemoryMessage } from '../services/conversationMemory';
+import { CONVERSATION_HISTORY_LIMIT } from '../services/conversationHistory';
+import { loadModelConversationHistory } from '../services/loadConversationHistory';
+import { modelContextBudget, selectModelHistory } from '../services/modelContextBudget';
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT } from '../middleware/auth';
@@ -540,28 +544,19 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   }
   const apiKey = decryptProviderApiKey(config.api_key_encrypted);
 
+  const memoryModel = model === 'auto'
+    ? (isDmxProvider(provider_id) ? pickModel('fast') : (pickNativeModel(provider_id, Array.isArray(config.enabled_models) ? config.enabled_models : null) ?? model))
+    : model;
+  const contextBudget = modelContextBudget(provider_id, memoryModel);
   // Build conversation history — prefer server-side messages when conversation exists
-  let history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  let history: MemoryMessage[];
   if (conversation_id && convId === conversation_id) {
-    // 取**最近**的 40 条再翻回正序。以前是 ascending + limit(40)，拿到的是最早的 40 条：
-    // 对话一长（现在隔天回来接着聊是常态），模型看不到刚问的这句，只看到开头那一段
-    const { data: serverMsgs } = await supabase
-      .from('agent_messages')
-      .select('role, content')
-      .eq('conversation_id', convId)
-      .order('created_at', { ascending: false })
-      .limit(40);
-    history = [...(serverMsgs ?? [])].reverse()
-      .filter((m: any) => m.content?.trim())
-      .map((m: any) => ({
-        role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-        content: m.content,
-      }));
+    history = await loadModelConversationHistory('workspace', String(convId), contextBudget);
   } else {
     history = [
       ...(clientHistory ?? [])
         .filter((m) => m.content?.trim())
-        .slice(-20)
+        .slice(-CONVERSATION_HISTORY_LIMIT)
         .map((m) => ({
           role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
           content: m.content,
@@ -569,6 +564,15 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
       { role: 'user' as const, content: content.trim() },
     ];
   }
+
+  // The current request must remain the final question even if the saved window is stale.
+  if (history.at(-1)?.role !== 'user' || history.at(-1)?.content !== content.trim()) {
+    history.push({ role: 'user', content: content.trim() });
+  }
+  const rawHistory = history;
+  const restoredMemory = await restoreConversationMemory({ kind: 'workspace', id: String(convId), history, budget: contextBudget,
+    model: { providerId: provider_id, model: memoryModel, apiKey, endpointUrl: config.endpoint_url } });
+  history = restoredMemory.messages;
 
   // 课程资料：和下面装上下文、读 Build-on 同时检索（kbSources.ts）。按提问的人检索，别组空间里的附件进不来。
   // history 最后一条就是这一问
@@ -601,6 +605,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   const agentContext = await buildAgentContext({
     note: workspaceNote,
     history,
+    contextBudget,
     agentMode: normalizedAgentMode,
     userRole,
     userId: req.user!.id,
@@ -795,8 +800,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         function: { name: tc.function?.name ?? '', arguments: tc.function?.arguments ?? '{}' },
       })),
     }));
-    // 附件正文和图片只进这一轮的模型输入。回答语言上面已按提问本身定了，附件是英文资料也不改
-    const loopMessages = attachImagesToLastUserMessage(withAttachmentNote(baseMessages, attachmentNote), attachments);
+    // Fit each fallback model before attaching this turn’s documents/images.
 
     for (let ci = 0; ci < candidates.length; ci++) {
       const cand = candidates[ci];
@@ -805,6 +809,13 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
       let emitted = false;
       let failedBeforeOutput: string | null = null;
 
+      const candidateBudget = modelContextBudget(cand.providerId, cand.model);
+      const candidateHistory = candidateBudget.historyBytes < contextBudget.historyBytes
+        ? (await restoreConversationMemory({ kind: 'workspace', id: String(convId), history: rawHistory, budget: candidateBudget,
+          model: { providerId: cand.providerId, model: cand.model, apiKey: cand.apiKey, endpointUrl: cand.endpointUrl } })).messages
+        : baseMessages;
+      const candidateMessages = selectModelHistory<(typeof baseMessages)[number] | { role: 'user' | 'assistant'; content: string }>(candidateHistory, candidateBudget);
+      const loopMessages = attachImagesToLastUserMessage(withAttachmentNote(candidateMessages, attachmentNote), attachments);
       const stream = runAgentLoopStream({
         providerId: cand.providerId,
         model: cand.model,

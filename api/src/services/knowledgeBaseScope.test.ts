@@ -113,6 +113,7 @@ const h = vi.hoisted(() => {
     let payload: Row[] = [];
     let patch: Row = {};
     let limit: number | undefined;
+    let offset = 0;
     const rows = () => (db[table] ??= []);
     const view = (r: Row): Row => {
       const out: Row = { ...r };
@@ -134,7 +135,7 @@ const h = vi.hoisted(() => {
       } else {
         found = rows().filter(r => filters.every(f => f(r)));
         if (op === 'update') found.forEach(r => Object.assign(r, patch));
-        else if (limit !== undefined) found = found.slice(0, limit);
+        else if (limit !== undefined) found = found.slice(offset, offset + limit);
       }
       const out = found.map(view);
       if (terminal === 'many') return { data: out, error: null };
@@ -150,6 +151,7 @@ const h = vi.hoisted(() => {
       in: (col: string, values: unknown[]) => { filters.push(r => values.includes(r[col])); return builder; },
       order: () => builder,
       limit: (n: number) => { limit = n; return builder; },
+      range: (start: number, end: number) => { offset = start; limit = end - start + 1; return builder; },
       single: async () => run('single'),
       maybeSingle: async () => run('maybeSingle'),
       then: (ok: (v: unknown) => unknown, fail?: (e: unknown) => unknown) =>

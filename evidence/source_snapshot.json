@@ -1,9 +1,9 @@
 {
-  "snapshot_date": "2026-10-07",
-  "source_revision": "c25f8555184e94701b8c7daef05a2b28673ed329",
+  "snapshot_date": "2026-10-08",
+  "source_revision": "027198aa582dbed9cf82b1175525755cb12acaf2",
   "working_tree_included": true,
-  "publication_version": "0.4.0",
-  "note": "Inspected source snapshot includes working-tree changes. Public hashes identify actual published bytes. Private history and omitted material names are not published. Publication adjustments retain privacy cleanup, remove internal research/operational commentary, update public configuration and fictional media, preserve test compatibility, and apply compatible proxy-addr and Capacitor Android/iOS dependency patches.",
+  "publication_version": "0.5.0",
+  "note": "Inherits the inspected v0.4.0 public source snapshot and its publication adjustments, with conversation-memory changes and follow-up text/test compatibility fixes from the recorded development revision. Public hashes identify the exact published bytes; the development revision alone does not identify inherited publication-only changes. Private Git history, omitted material names, secrets, production records and operational plans are not published. Existing public dependency patches and fictional media are retained.",
   "published_source_files": [
     {
       "path": ".env.deploy.example",
@@ -287,17 +287,17 @@
     },
     {
       "path": "api/src/routes/noteConversations.test.ts",
-      "public_sha256": "76d9f482ac6be8ff98916c86a711790e919a6f87dce242bae670b6a070e690af",
+      "public_sha256": "5dac77b76e63624ff48df1b699b610498cc40676c68af83677c466da97965dad",
       "modified_for_publication": false
     },
     {
       "path": "api/src/routes/noteConversations.ts",
-      "public_sha256": "9d9360e8d9d4914c4e93d76ce1f35bca9d5cc09440624d3beb7d560f6aa51099",
+      "public_sha256": "07f5371ec8eaa35704b07fd9935b0fcb488674c343a252863decf64d735dc1e2",
       "modified_for_publication": false
     },
     {
       "path": "api/src/routes/noteConversationsProcess.test.ts",
-      "public_sha256": "2ffc1eb6465b8115cb43041fdb32cc82ab73906e5cd3d4a05aebeafd91b1d4d3",
+      "public_sha256": "3644f5dd66f6f30a159a35b214fa9065b63eeeaf710cf19ed0fc9c12a61d4fa5",
       "modified_for_publication": false
     },
     {
@@ -462,12 +462,12 @@
     },
     {
       "path": "api/src/routes/workspaceAgent.test.ts",
-      "public_sha256": "18790d5d95f06eaa4d2bf653e3a4bda9333ba94662cc9409afd7d042ceb2e5b3",
+      "public_sha256": "67a5424aab20abd2ab76cb4c12f9bb16164c3c38b3798b51a1239b33800ab990",
       "modified_for_publication": false
     },
     {
       "path": "api/src/routes/workspaceAgent.ts",
-      "public_sha256": "70e62a50333a5d542a191eb0017a2c2e9636d1c4d922b4bd7e0549a71200b7b0",
+      "public_sha256": "1a5836ed7999679c89148ef6d1ba4b564ff2d8447bd9cbe69744ede11d5d0e2c",
       "modified_for_publication": true
     },
     {
@@ -502,7 +502,12 @@
     },
     {
       "path": "api/src/services/agentContext.ts",
-      "public_sha256": "e185cd0938a96efc49335927ae1c18ddd440e9369ea96b620fdabe1ac872f6dc",
+      "public_sha256": "bcfc3fc48169e8aaec93d84c1ea7fd2b67e306e4722051e5192f8225e8449a19",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/agentContextHistory.test.ts",
+      "public_sha256": "ebecfc6116a8d059357d3cb5e8681d2afeac39109fa33cbe7e06c3896db08ac8",
       "modified_for_publication": false
     },
     {
@@ -653,6 +658,21 @@
     {
       "path": "api/src/services/conceptExtraction.ts",
       "public_sha256": "fe0d0547d6cb09d4d76e4964934d25aa229a617a453fef529ac42d08960f1121",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/conversationHistory.ts",
+      "public_sha256": "c289d624705fd6113bc07a39425f861802eee7d7dbc90154577c1fdc1ebdc808",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/conversationMemory.test.ts",
+      "public_sha256": "a03a56c000c9421f7766731dfc4260e132fa72661bf8ca17c06060d65492ec6c",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/conversationMemory.ts",
+      "public_sha256": "c77b1d5e5b909aa6ae6c664b6b05bfd10d1c2ed4654974eb4d5a8ace96d022e5",
       "modified_for_publication": false
     },
     {
@@ -957,12 +977,12 @@
     },
     {
       "path": "api/src/services/knowledgeBaseDeletedNotes.test.ts",
-      "public_sha256": "e76ad8230bb36da75e6bfd6db624af0ae6fa92660c6e385b903b18396ec3740f",
+      "public_sha256": "1f5f4f4499609e7c501ad442774a05ae8460e30a6402c384a92673adac2001fd",
       "modified_for_publication": false
     },
     {
       "path": "api/src/services/knowledgeBaseScope.test.ts",
-      "public_sha256": "327f9a8cb61357d8f3484b14905a69afc30063d038b74e3d236cc073cd26aadb",
+      "public_sha256": "9091519e8dc4962779ebbb65351e3515566c526746851355dea68380ad15ca08",
       "modified_for_publication": false
     },
     {
@@ -988,6 +1008,16 @@
     {
       "path": "api/src/services/lessonPlanService.ts",
       "public_sha256": "93edc90d0ae4eb55a74446cbf2a490eb746ea1697c42c77586eec27097d2fdc8",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/loadConversationHistory.test.ts",
+      "public_sha256": "d9cfe493fc26573bd327c17fca94061af51b18df4d80ee1dc948f50385efbf19",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/loadConversationHistory.ts",
+      "public_sha256": "43608c3199f3d2440759d8a55afab880eedb6f2464ef021e8eaf3490d315ce4b",
       "modified_for_publication": false
     },
     {
@@ -1023,6 +1053,16 @@
     {
       "path": "api/src/services/modelCatalog.ts",
       "public_sha256": "06c8ab29a9ae0be69cf0704c7b3045294e6e260ace6da80f22c4f9798ca4bdd3",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/modelContextBudget.test.ts",
+      "public_sha256": "c5d6b097700fed264c7a672a574885ea3886fd6e5f0209b91116a2dab63a0c83",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/modelContextBudget.ts",
+      "public_sha256": "2cb55ec7e2188991deb19f6eb2f3874679766f803fb34ff80e92e8d5d29bd1a3",
       "modified_for_publication": false
     },
     {
@@ -1148,6 +1188,16 @@
     {
       "path": "api/src/services/secretCrypto.ts",
       "public_sha256": "c42821b7f4d0838e641445053e89122bdb172f047c88f99c089d27e24bc6f493",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/studentLearningContext.test.ts",
+      "public_sha256": "51ba76922649e54042f6657ace26d3e07ba33cbda914fad34fd55a78d3459f48",
+      "modified_for_publication": false
+    },
+    {
+      "path": "api/src/services/studentLearningContext.ts",
+      "public_sha256": "1608fa7582af38314036a86b2b2d54abbc5fe7c267df27c8ad4219915e2a606c",
       "modified_for_publication": false
     },
     {
@@ -3644,6 +3694,11 @@
       "path": "supabase/migrations/085_kb_switches.sql",
       "public_sha256": "b1ac03f44380d17fb00e86febe55bfa8622bbe2938212102750c008ec26a0574",
       "modified_for_publication": true
+    },
+    {
+      "path": "supabase/migrations/086_conversation_memory.sql",
+      "public_sha256": "41e6a949e557c2adac2514a2492e885dafc8e35fa11ee393e497f503436b1cb0",
+      "modified_for_publication": false
     },
     {
       "path": "tsconfig.json",

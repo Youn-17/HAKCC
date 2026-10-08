@@ -1,3 +1,6 @@
+import { loadStudentLearningContext } from './studentLearningContext';
+import { selectModelHistory, type ModelContextBudget } from './modelContextBudget';
+import { selectConversationHistory, CONVERSATION_HISTORY_LIMIT } from './conversationHistory';
 import {
   getConversationAgentSpec,
   normalizeConversationAgentMode,
@@ -48,6 +51,8 @@ export type AgentContextParams = {
   spaceId: string;
   toolNames?: string[];
   userMessage?: string;
+  contextBudget?: ModelContextBudget;
+  studentLearningContext?: string;
 };
 
 export type BuiltAgentContext = {
@@ -142,52 +147,12 @@ export function buildToolInstructions(toolNames: string[]): string {
 // History management
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MAX_MESSAGES = 10;
-
-/**
- * If `messages` exceeds `maxMessages`, compress the oldest messages into a
- * single system-role summary and keep the most recent ones intact.
- *
- * The summary captures the key topics discussed and any conclusions reached so
- * the agent retains conversational context without exceeding the window.
- */
+/** Keep faithful recent turns within the shared conversation input budget. */
 export function summarizeHistory(
   messages: ConversationMessage[],
-  maxMessages: number = DEFAULT_MAX_MESSAGES,
+  maxMessages: number = CONVERSATION_HISTORY_LIMIT,
 ): ConversationMessage[] {
-  if (messages.length <= maxMessages) return messages;
-
-  const cutoff = messages.length - maxMessages;
-  const older = messages.slice(0, cutoff);
-  const recent = messages.slice(cutoff);
-
-  // Build a condensed summary of the earlier conversation.
-  const topics: string[] = [];
-  for (const msg of older) {
-    if (!msg.content) continue;
-    // Keep the first sentence of each message as a topic signal.
-    const firstSentence = msg.content
-      .replace(/\n+/g, ' ')
-      .split(/(?<=[.!?])\s+/)[0];
-    if (firstSentence) {
-      const prefix = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : msg.role;
-      topics.push(`${prefix}: ${summarizeContent(firstSentence, 120)}`);
-    }
-  }
-
-  const summaryText = [
-    '[Earlier conversation summary]',
-    topics.length > 0
-      ? topics.join('\n')
-      : 'The conversation covered preliminary discussion about the note.',
-  ].join('\n');
-
-  const summaryMessage: ConversationMessage = {
-    role: 'system',
-    content: summaryText,
-  };
-
-  return [summaryMessage, ...recent];
+  return selectConversationHistory(messages, maxMessages);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +241,9 @@ export async function buildAgentContext(
     sections.push(reflectionSection);
   }
 
+  const studentContext = userRole === 'student' ? (params.studentLearningContext ?? await loadStudentLearningContext({ userId, courseId, question: userMessage ?? history.at(-1)?.content ?? '' }).catch(() => '')) : '';
+  if (studentContext) sections.push(studentContext);
+
   // 7. Active cognitive friction warning
   if (overrelianceDetected) {
     sections.push(
@@ -299,7 +267,7 @@ export async function buildAgentContext(
   const systemPrompt = sections.join('\n\n');
 
   // --- Messages (sliding window) ---
-  const messages = summarizeHistory(history, DEFAULT_MAX_MESSAGES);
+  const messages = params.contextBudget ? selectModelHistory(history, params.contextBudget) : summarizeHistory(history);
 
   // --- Tool context for executors ---
   const toolContext = {

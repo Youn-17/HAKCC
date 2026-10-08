@@ -1,3 +1,7 @@
+import { restoreConversationMemory, type MemoryModel } from '../services/conversationMemory';
+import { loadStudentLearningContext } from '../services/studentLearningContext';
+import { loadModelConversationHistory } from '../services/loadConversationHistory';
+import { modelContextBudget } from '../services/modelContextBudget';
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT } from '../middleware/auth';
@@ -683,8 +687,16 @@ async function resolvePartnerModel(courseId: string, providerId: string, model: 
   };
 }
 
+/** All AI entry points use the same ordered history; a failed read must not start an amnesic turn. */
+async function loadConversationHistory(threadId: string, model: MemoryModel): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  const budget = modelContextBudget(model.providerId, model.model);
+  const history = await loadModelConversationHistory('note', threadId, budget);
+  const restored = await restoreConversationMemory({ kind: 'note', id: threadId, history, model, budget });
+  return restored.messages;
+}
+
 router.post('/note-conversations/:threadId/ai', verifyJWT, async (req: Request, res: Response) => {
-  const { thread } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
+  const { thread, standing } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
   const { content, provider_id, model, scaffold_id, scaffold_step_id, attachments = [], use_web_search = false, agent_mode } = req.body as {
     content?: string;
     provider_id?: string;
@@ -720,20 +732,9 @@ router.post('/note-conversations/:threadId/ai', verifyJWT, async (req: Request, 
   if (userMessageError) throw new ApiError(500, userMessageError.message);
 
   const note = await getNoteContext(thread.note_id);
-  const { data: recent } = await supabase
-    .from('note_conversation_messages')
-    .select('sender_kind, content')
-    .eq('thread_id', thread.id)
-    .order('created_at', { ascending: false })
-    .limit(12);
+  const studentContext = isCourseStaff(standing) ? '' : await loadStudentLearningContext({ userId: req.user!.id, courseId: thread.course_id, question: content }).catch(() => '');
+  const history = await loadConversationHistory(thread.id, { providerId: partner.providerId, model: partner.model, apiKey: decryptProviderApiKey(partner.config.api_key_encrypted!), endpointUrl: partner.config.endpoint_url });
 
-  const history: ConversationAIMessage[] = (recent ?? [])
-    .reverse()
-    .map((m: any) => ({
-      role: (m.sender_kind === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
-      content: m.content as string,
-    }))
-    .filter((m: { content: string }) => !!m.content?.trim());
 
   const reply = await callConversationAI({
     courseId: thread.course_id,
@@ -744,6 +745,7 @@ router.post('/note-conversations/:threadId/ai', verifyJWT, async (req: Request, 
     note,
     useWebSearch: shouldUseWebSearch,
     agentMode: normalizedAgentMode,
+    studentContext,
   });
   const replyText = reply.content;
 
@@ -801,7 +803,7 @@ const sseSender = (res: Response) => (event: Record<string, unknown>) => {
 };
 
 router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Request, res: Response) => {
-  const { thread } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
+  const { thread, standing } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
   const turnStartedAt = Date.now();
   const { content, provider_id, model, scaffold_id, scaffold_step_id, attachments = [], use_web_search = false, agent_mode, answer_length } = req.body as {
     content?: string;
@@ -845,19 +847,8 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
   if (userMessageError) throw new ApiError(500, userMessageError.message);
 
   const note = await getNoteContext(thread.note_id);
-  const { data: recent } = await supabase
-    .from('note_conversation_messages')
-    .select('sender_kind, content')
-    .eq('thread_id', thread.id)
-    .order('created_at', { ascending: false })
-    .limit(12);
-  const history = (recent ?? [])
-    .reverse()
-    .map((m: any) => ({
-      role: (m.sender_kind === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
-      content: m.content as string,
-    }))
-    .filter((m: { content: string }) => !!m.content?.trim());
+  const studentContext = isCourseStaff(standing) ? '' : await loadStudentLearningContext({ userId: req.user!.id, courseId: thread.course_id, question: content }).catch(() => '');
+  const history = await loadConversationHistory(thread.id, { providerId: partner.providerId, model: partner.model, apiKey: decryptProviderApiKey(partner.config.api_key_encrypted!), endpointUrl: partner.config.endpoint_url });
 
   const config = partner.config;
   if (!config.api_key_encrypted) throw new ApiError(404, `Provider "${resolvedProviderId}" is not configured for this course`);
@@ -915,6 +906,7 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
       baseSystemSections.push(buildFreeAskSystemPrompt({ title: note.title, text: stripHtml(note.content).slice(0, 6000) }));
       if (kb?.section) baseSystemSections.push(kb.section);
     }
+    if (studentContext) baseSystemSections.push(studentContext);
     let systemContent = baseSystemSections.join('\n\n');
 
     if (shouldUseWebSearch) {
@@ -1171,16 +1163,8 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   if (userMessageError) throw new ApiError(500, userMessageError.message);
 
   const note = await getNoteContext(thread.note_id);
-  const { data: recent } = await supabase
-    .from('note_conversation_messages')
-    .select('sender_kind, content')
-    .eq('thread_id', thread.id)
-    .order('created_at', { ascending: false })
-    .limit(12);
-  const history = (recent ?? [])
-    .reverse()
-    .map((m: any) => ({ role: m.sender_kind === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content as string }))
-    .filter((m) => !!m.content?.trim());
+  const studentContext = isCourseStaff(standing) ? '' : await loadStudentLearningContext({ userId: req.user!.id, courseId: thread.course_id, question: content }).catch(() => '');
+  const history = await loadConversationHistory(thread.id, { providerId: partner.providerId, model: partner.model, apiKey: decryptProviderApiKey(partner.config.api_key_encrypted!), endpointUrl: partner.config.endpoint_url });
   const historyForModel = appendAttachmentContext(history, attachments);
 
   const config = partner.config;
@@ -1208,12 +1192,15 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   const toolNames = tools.map((t) => t.function.name);
 
   const agentContext = freeAsk ? {
-    systemPrompt: buildFreeAskSystemPrompt({ title: note.title, text: stripHtml(note.content).slice(0, 6000) }),
+    systemPrompt: [buildFreeAskSystemPrompt({ title: note.title, text: stripHtml(note.content).slice(0, 6000) }), studentContext].filter(Boolean).join('\n\n'),
     messages: historyForModel as Awaited<ReturnType<typeof buildAgentContext>>['messages'],
     toolContext: undefined as unknown as Awaited<ReturnType<typeof buildAgentContext>>['toolContext'],
   } : await buildAgentContext({
     note: { id: note.id, title: note.title, content: note.content, spaceId: note.spaceId, courseId: note.courseId },
     history: historyForModel,
+    contextBudget: modelContextBudget(provider_id, model),
+    studentLearningContext: studentContext,
+    userMessage: content,
     agentMode: normalizedAgentMode,
     userRole,
     userId: req.user!.id,
@@ -1612,6 +1599,7 @@ async function callConversationAI(params: {
   note: Awaited<ReturnType<typeof getNoteContext>>;
   useWebSearch: boolean;
   agentMode?: ConversationAgentMode;
+  studentContext?: string;
 }): Promise<ConversationAIReply> {
   const { courseId, providerId, model, messages, note, config } = params;
   if (!config.api_key_encrypted) throw new ApiError(404, `Provider "${providerId}" is not configured for this course`);
@@ -1627,6 +1615,7 @@ async function callConversationAI(params: {
     `Current note title: ${note.title}`,
     `Current note content: ${stripHtml(note.content).slice(0, 1200)}`,
   ];
+  if (params.studentContext) systemSections.push(params.studentContext);
   if (webResults.length > 0) systemSections.push(formatTavilyResultsForPrompt(webResults));
   const systemContent = systemSections.join('\n\n');
   const needsTools = shouldPrepareToolsForAgentMode(params.agentMode) || shouldPrepareConversationTools(messages.at(-1)?.content ?? '');

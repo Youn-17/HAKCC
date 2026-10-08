@@ -1,4 +1,6 @@
+vi.mock('../services/studentLearningContext', () => ({ loadStudentLearningContext: vi.fn(async () => '') }));
 import 'express-async-errors';
+import { loadStudentLearningContext } from '../services/studentLearningContext';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
@@ -21,6 +23,8 @@ const h = vi.hoisted(() => {
     updates: [] as { table: string; payload: unknown }[],
     uploads: [] as string[],
     reads: [] as string[],
+    history: null as null | Array<{ sender_kind: string; content: string }>,
+    failHistory: false,
   };
 
   // 课内身份：teacher-1 是创建者，admin-1 是平台管理员；其余（含 teacher-2 这个
@@ -80,8 +84,17 @@ const h = vi.hoisted(() => {
   const from = (table: string) => {
     let action: Action = 'select';
     let payload: unknown;
+    let historyLimit = Infinity;
+    let historyOffset = 0;
     const run = (terminal: Terminal) => {
       if (action === 'select') state.reads.push(table);
+      if (table === 'note_conversation_messages' && action === 'select' && state.history) {
+        if (state.failHistory) return Promise.resolve({ data: null, error: { message: 'database unavailable' } });
+        return Promise.resolve(ok([...state.history].reverse().slice(historyOffset, historyOffset + historyLimit)));
+      }
+      if (table === 'note_conversation_messages' && action === 'insert' && state.history) {
+        state.history.push(payload as { sender_kind: string; content: string });
+      }
       return Promise.resolve(resultFor(table, action, payload, terminal));
     };
     const write = (kind: Action, list: { table: string; payload: unknown }[]) => (p: unknown) => {
@@ -98,7 +111,9 @@ const h = vi.hoisted(() => {
       maybeSingle: () => run('maybeSingle'),
       then: (onOk: (v: unknown) => unknown, onFail: (e: unknown) => unknown) => run('many').then(onOk, onFail),
     };
-    for (const m of ['select', 'eq', 'is', 'in', 'lt', 'not', 'or', 'order', 'limit']) builder[m] = () => builder;
+    builder.range = (start: number, end: number) => { historyOffset = start; historyLimit = end - start + 1; return builder; };
+    builder.limit = (n: number) => { historyLimit = n; return builder; };
+    for (const m of ['select', 'eq', 'is', 'in', 'lt', 'not', 'or', 'order']) builder[m] = () => builder;
     return builder;
   };
 
@@ -223,6 +238,8 @@ afterAll(() => new Promise<void>(done => server.close(() => done())));
 beforeEach(() => {
   h.state.user = { id: 'student-a', role: 'student' };
   h.state.inserts.length = 0;
+  h.state.history = null;
+  h.state.failHistory = false;
   (globalThis as any).__streams = [];
   (globalThis as any).__aiBodies = [];
   h.ensureSpaceAccess.mockReset();
@@ -286,5 +303,40 @@ describe('智能体（ai/agent-stream）', () => {
     const reply = savedReply();
     expect(reply.ai_metadata.tool_steps).toEqual([expect.objectContaining({ name: 'search_notes', summary: '找到 3 条相关笔记' })]);
     expect(reply.ai_metadata.answer_length).toMatchObject({ preset: 'long', continuations: 1 });
+  });
+});
+
+
+describe('同一 Note 的连续追问', () => {
+  it.each(['ai/stream', 'ai/agent-stream'])('%s: 第八轮仍带上第一轮的完整要求', async endpoint => {
+    h.state.history = [
+      { sender_kind: 'user', content: '主题是蒸发。请面向七年级 7B 班，安排 35 分钟的课堂。' },
+      { sender_kind: 'assistant', content: '可以比较盖住和敞开的水杯。' },
+      ...Array.from({ length: 12 }, (_, i) => ({ sender_kind: i % 2 ? 'assistant' : 'user', content: `讨论 ${i}` })),
+    ];
+    (globalThis as any).__streams = [{ text: '沿用前面要求', finish: 'stop' }];
+    const res = await post(`/note-conversations/thread-b/${endpoint}`, { ...ASK, content: '沿用上面的班级和时长', agent_mode: 'free_ask' });
+    expect(res.status).toBe(200);
+    const sent = endpoint === 'ai/stream'
+      ? (globalThis as any).__aiBodies[0].messages
+      : (h.runAgentLoopStream.mock.calls[0][0] as any).messages;
+    expect(sent).toContainEqual({ role: 'user', content: '主题是蒸发。请面向七年级 7B 班，安排 35 分钟的课堂。' });
+    expect(sent.at(-1)).toEqual({ role: 'user', content: '沿用上面的班级和时长' });
+  });
+  it.each(['ai/stream', 'ai/agent-stream'])('%s: 自由提问也接入当前学生的课程学习记录', async endpoint => {
+    vi.mocked(loadStudentLearningContext).mockResolvedValueOnce('SOURCE my-own-note: 我正在比较蒸发实验');
+    (globalThis as any).__streams = [{ text: '继续你的实验', finish: 'stop' }];
+    const res = await post(`/note-conversations/thread-b/${endpoint}`, { ...ASK, agent_mode: 'free_ask' });
+    expect(res.status).toBe(200);
+    const prompt = endpoint === 'ai/stream' ? (globalThis as any).__aiBodies[0].messages[0].content : (h.runAgentLoopStream.mock.calls[0][0] as any).systemPrompt;
+    expect(prompt).toContain('SOURCE my-own-note');
+    expect(loadStudentLearningContext).toHaveBeenCalledWith({ userId: 'student-a', courseId: 'course-1', question: ASK.content });
+  });
+  it('读取历史失败时停止回答，避免把追问当新问题', async () => {
+    h.state.history = [];
+    h.state.failHistory = true;
+    const res = await post('/note-conversations/thread-b/ai/stream', { ...ASK, agent_mode: 'free_ask' });
+    expect(res.status).toBe(500);
+    expect(h.aiFetch).not.toHaveBeenCalled();
   });
 });

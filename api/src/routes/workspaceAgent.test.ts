@@ -61,6 +61,7 @@ const h = vi.hoisted(() => {
     scaffolds: [] as Array<{ id: string; title: string; metadata: unknown }>,
     profiles: [] as Array<{ id: string; full_name: string }>,
     failAiStats: false,
+    failHistory: false,
     // 课里配了 key 的其余厂商（候选链）
     otherConfigs: [] as Array<{ provider_id: string; api_key_encrypted: string; endpoint_url: string | null; enabled_models: string[] }>,
     inserts: [] as { table: string; payload: unknown }[],
@@ -72,14 +73,14 @@ const h = vi.hoisted(() => {
   const ok = (data: unknown) => ({ data, error: null });
   const missing = { data: null, error: { message: 'not found' } };
 
-  type Opts = { head: boolean; order: { col: string; asc: boolean } | null; limit: number | null; nulls: string[] };
+  type Opts = { head: boolean; order: { col: string; asc: boolean } | null; limit: number | null; nulls: string[]; offset?: number };
   const ordered = <T extends Record<string, any>>(rows: T[], opts: Opts): T[] => {
     let out = [...rows];
     if (opts.order) {
       const { col, asc } = opts.order;
       out.sort((a, b) => (String(a[col] ?? '') < String(b[col] ?? '') ? -1 : String(a[col] ?? '') > String(b[col] ?? '') ? 1 : 0) * (asc ? 1 : -1));
     }
-    if (opts.limit != null) out = out.slice(0, opts.limit);
+    if (opts.limit != null) out = out.slice(opts.offset ?? 0, (opts.offset ?? 0) + opts.limit);
     return out;
   };
 
@@ -120,6 +121,7 @@ const h = vi.hoisted(() => {
         return found[0] ? ok(found[0]) : (terminal === 'single' ? missing : ok(null));
       }
       case 'agent_messages':
+        if (state.failHistory) return { data: null, error: { message: 'database unavailable' } };
         return ok(ordered(state.messages.filter(m => m.conversation_id === eq.conversation_id), opts));
       case 'note_ai_feedbacks':
         return ok(state.feedbacks.filter(f => (!eq.space_id || f.space_id === eq.space_id) && (!inList.note_id || inList.note_id.includes(f.note_id))));
@@ -159,7 +161,8 @@ const h = vi.hoisted(() => {
       eq: (col: string, value: unknown) => { eq[col] = value; return builder; },
       in: (col: string, values: unknown[]) => { inList[col] = values; return builder; },
       select: (_cols?: string, o?: { head?: boolean }) => { opts.head = Boolean(o?.head); return builder; },
-      order: (col: string, o?: { ascending?: boolean }) => { opts.order = { col, asc: o?.ascending !== false }; return builder; },
+      order: (col: string, o?: { ascending?: boolean }) => { if (!opts.order) opts.order = { col, asc: o?.ascending !== false }; return builder; },
+      range: (start: number, end: number) => { opts.offset = start; opts.limit = end - start + 1; return builder; },
       limit: (n: number) => { opts.limit = n; return builder; },
       is: (col: string, value: unknown) => { if (value === null) opts.nulls.push(col); return builder; },
       single: () => run('single'),
@@ -226,6 +229,7 @@ vi.mock('../services/aiProviderConfig', () => ({
 }));
 vi.mock('../services/agentLoop', () => ({ runAgentLoopStream: h.runAgentLoopStream }));
 vi.mock('../services/drawTurn', () => ({ streamDrawTurn: h.streamDrawTurn }));
+vi.mock('../services/studentLearningContext', () => ({ loadStudentLearningContext: vi.fn(async () => '') }));
 vi.mock('../services/agentContext', () => ({
   buildAgentContext: h.buildAgentContext,
   stripHtml: (value: string) => value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
@@ -312,6 +316,7 @@ beforeEach(() => {
   h.state.scaffolds = [];
   h.state.profiles = [];
   h.state.failAiStats = false;
+  h.state.failHistory = false;
   h.state.otherConfigs = [];
   h.state.inserts.length = 0;
   h.state.updates.length = 0;
@@ -674,16 +679,17 @@ describe('对话历史：能读回来，长对话取最近的', () => {
     expect(res.text).not.toContain('第 1 句');
   });
 
-  it('接着聊：喂给模型的服务端历史是最近的 40 条（旧到新），不是最早的 40 条', async () => {
+  it('接着聊：保留较早的要求与最新追问，按旧到新提供完整历史', async () => {
     h.state.conversations = [conv('c1', 'space-a', '2026-10-03T00:00:00Z')];
     h.state.messages = Array.from({ length: 50 }, (_, i) => msg('c1', i + 1));
     const res = await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a', conversation_id: 'c1' });
 
     expect(res.status).toBe(200);
     const history = (h.buildAgentContext.mock.calls[0][0] as unknown as { history: { content: string }[] }).history;
-    expect(history).toHaveLength(40);
-    expect(history[0].content).toBe('第 11 句');
-    expect(history[39].content).toBe('第 50 句');
+    expect(history).toHaveLength(51);
+    expect(history[0].content).toBe('第 1 句');
+    expect(history[49].content).toBe('第 50 句');
+    expect(history[50].content).toBe(ASK.content);
   });
 
   it('接着聊带的是别门课的、或个人助手的对话 id：不写进那段、不读它的历史，新开一段这门课的', async () => {
@@ -1119,5 +1125,17 @@ describe('附件：正文和图片进这一轮的模型输入，不进库', () =
     expect(eventsOf(res.text)).toContainEqual({ modelSwitched: 'glm-4.6v', providerId: 'zhipu', reason: 'vision' });
     expect(loopCalls().map(o => `${o.providerId}/${o.model}`)).toEqual(['zhipu/glm-4.6v', 'moonshot/kimi-k2.6']);
     expect(res.text).toContain('AI 的回复');
+  });
+});
+
+
+describe('知识空间对话历史读取故障', () => {
+  it('历史读不到时停止调用模型，不将追问当成新对话', async () => {
+    h.state.user = { id: 'teacher-1', role: 'teacher' };
+    h.state.conversations = [{ id: 'history-read-fail', user_id: 'teacher-1', space_id: 'space-a', course_id: 'course-1', agent_type: 'workspace' }];
+    h.state.failHistory = true;
+    const res = await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a', conversation_id: 'history-read-fail' });
+    expect(res.status).toBe(500);
+    expect(h.runAgentLoopStream).not.toHaveBeenCalled();
   });
 });
