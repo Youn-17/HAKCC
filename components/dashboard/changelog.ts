@@ -32,6 +32,15 @@ export interface ChangelogEntry {
 /** 最新的排最前面。加新版本就往数组头部插。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v0.7.0', date: '2026-10-10',
+    titleZh: '讨论分析与来源核对', titleEn: 'Discussion analysis and source checks',
+    items: [
+      { zh: '知识空间分析改为独立页面，支持词云、关键词变化、观点接力和待推进议题。', en: 'Knowledge-space analysis opens a dedicated page with word clouds, keyword changes, idea relay and open discussions.', for: 'teacher' },
+      { zh: '按视图、学生和日期筛选，点击结果查看来源 Note，支持匿名展示与图像导出。', en: 'Filter by view, student and date; inspect source Notes, use anonymous display and export charts.', for: 'teacher' },
+      { zh: '新增可选的课程资料引用核对和草稿支架建议。', en: 'Optional course-material citation checks and draft scaffold suggestions are added.' },
+    ],
+  },
+  {
     version: 'v0.6.0', date: '2026-10-09',
     titleZh: '协作文档与情境绘图', titleEn: 'Shared documents and contextual drawing',
     items: [

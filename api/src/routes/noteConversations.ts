@@ -6,7 +6,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
-import { announceKbRetrieval, KB_STEP_NAME, startNoteKbRetrieval, type KbToolStep } from '../services/kbSources';
+import { announceKbRetrieval, checkKbAnswer, KB_STEP_NAME, startNoteKbRetrieval, type KbToolStep } from '../services/kbSources';
 import {
   buildConversationToolDefinitions,
   clampToolLimit,
@@ -1100,6 +1100,10 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
       truncated = next.truncated;
     }
 
+    // 回答写完：Jev 核对课程资料的引用，来源卡片带上核对结果再推一次（kbCitationCheck.ts）
+    const kbChecked = kb && fullReply.trim() ? await checkKbAnswer(fullReply, kb.citations) : null;
+    if (kbChecked) res.write(`data: ${JSON.stringify({ kbSources: kbChecked.sources })}\n\n`);
+
     const { data: assistantMessage, error: assistantError } = await supabase
       .from('note_conversation_messages')
       .insert({
@@ -1112,8 +1116,9 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
           model: normalizedModel,
           answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
           tool_steps: toolSteps,
-          // 来源卡片：回答里的 [n] 对应哪份资料、哪一节、第几页
-          kb_sources: kb?.citations.sources.length ? kb.citations.sources : undefined,
+          // 来源卡片：回答里的 [n] 对应哪份资料、哪一节、第几页；核对过的带上结果
+          kb_sources: kbChecked?.sources ?? (kb?.citations.sources.length ? kb.citations.sources : undefined),
+          ...(kbChecked ? { kb_check: kbChecked.summary } : {}),
           elapsed_ms: Date.now() - turnStartedAt,
           use_web_search: shouldUseWebSearch,
           agent_mode: freeAsk ? 'free_ask' : normalizedAgentMode,
@@ -1378,6 +1383,9 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
       }
     }
 
+    const kbChecked = kb && fullReply.trim() ? await checkKbAnswer(fullReply, kb.citations) : null;
+    if (kbChecked) res.write(`data: ${JSON.stringify({ kbSources: kbChecked.sources })}\n\n`);
+
     const { data: assistantMessage, error: assistantError } = await supabase
       .from('note_conversation_messages')
       .insert({
@@ -1389,7 +1397,8 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
           provider_id,
           answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
           tool_steps: toolSteps,
-          kb_sources: kb?.citations.sources.length ? kb.citations.sources : undefined,
+          kb_sources: kbChecked?.sources ?? (kb?.citations.sources.length ? kb.citations.sources : undefined),
+          ...(kbChecked ? { kb_check: kbChecked.summary } : {}),
           elapsed_ms: Date.now() - turnStartedAt,
           // 记实际跑的模型。带图时会被切到视觉档，记请求值等于把回复
           // 算到一个没参与生成的模型头上，研究数据会失真。

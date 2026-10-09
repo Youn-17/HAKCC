@@ -4,13 +4,13 @@
 
 [Visit the platform](https://ideaweave.tech/) · [简体中文](README.zh-CN.md) · [System guide](write/SYSTEM_OVERVIEW.en.md) · [Getting started](GETTING_STARTED.md) · [MIT License](LICENSE)
 
-Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Public package: **v0.6.0**.
+Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Public package: **v0.7.0**.
 
-## New in v0.6.0
+## New in v0.7.0
 
-Knowledge spaces add real-time shared documents with a Word-style ribbon, durable synchronization, version snapshots and basic Word export. The source also updates contextual drawing, canvas search, Build-on folding and Node 22 configuration.
+Knowledge spaces add a dedicated discussion-analysis page with word clouds, keyword changes, Note-level idea relay and open discussions. View, student and date filters share source inspection and canvas return. Optional citation checks and draft scaffold suggestions are included.
 
-[Shared documents, setup and limits](write/UPDATES_v0.6.0.en.md) · [中文说明](write/UPDATES_v0.6.0.md)
+[Discussion analysis, setup and limits](write/UPDATES_v0.7.0.en.md) · [中文说明](write/UPDATES_v0.7.0.md)
 
 ## Previous v0.5.0 update
 
@@ -191,3 +191,5 @@ Use GitHub's **Cite this repository** action or [CITATION.cff](CITATION.cff):
 > He, Z. (2026). *HAKCC: Human–AI Knowledge Collaboration Commons* (v0.4.0) [Software and design documentation]. https://github.com/Youn-17/HAKCC
 
 [Authorship and acknowledgments](AUTHORS.md) records the public author and AI-assisted documentation preparation. Versioned publication and fingerprints support attribution and traceability; they do not certify worldwide invention priority.
+
+Current update: [Discussion analysis](write/UPDATES_v0.7.0.en.md).

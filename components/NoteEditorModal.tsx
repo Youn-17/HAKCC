@@ -61,6 +61,7 @@ import {
   notes as notesApi,
   NoteRevision,
   relations as relationsApi,
+  scaffolds as scaffoldsApi,
   trackEvent,
   type PartnerModelPolicy,
 } from '../services/apiClient';
@@ -121,6 +122,7 @@ import { applyToolEvent, stepsFromMetadata } from './agentProcessSteps';
 import type { ToolCallInfo } from './AgentToolCallDisplay';
 import { getAnswerLength } from './answerLengthPref';
 import { chooseDrawing, lastReplyFrom, previousDrawingFrom, type DrawChoice } from './drawRouting';
+import { useScaffoldRecommendation } from './scaffoldRecommend';
 import {
   formatThreadTime,
   nextThreadAfterDelete,
@@ -1350,6 +1352,22 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       .finally(() => setRevisionsLoading(false));
   }, [activeTab, isOpen, noteId]);
 
+  // 推荐支架（scaffoldRecommend.ts）：学生停笔几秒后按草稿问一次。钩子要放在下面的提前 return 之前，
+  // 所以原笔记、只读这两样在这里先算一遍（和后面 parentNote、readOnlyNote 的口径一样）
+  const recommendParentId = buildOnParentId ?? (noteId ? allEdges.find(edge => edge.source === noteId && edge.target !== noteId)?.target : undefined);
+  const recommendParentNote = recommendParentId ? allNotes.find(note => note.id === recommendParentId) : undefined;
+  const recommendAuthorId = noteId ? allNotes.find(note => note.id === noteId)?.authorId : undefined;
+  const recommendReadOnly = Boolean(recommendAuthorId && userId && recommendAuthorId !== userId) && !(isStaff ?? (userRole === 'teacher' || userRole === 'admin'));
+  const scaffoldRecommendation = useScaffoldRecommendation({
+    courseId: resolvedCourseIdRef.current || courseId || null,
+    enabled: isOpen && !isRiseAbove && !recommendReadOnly && availableScaffolds.length > 0,
+    noteId: noteId ?? null,
+    spaceId: spaceId ?? null,
+    scaffolds: availableScaffolds,
+    parent: recommendParentNote ? { title: recommendParentNote.title ?? '', text: stripHtml(recommendParentNote.content).slice(0, 600) } : null,
+    readDraft: () => ({ title, html: editorRef.current?.innerHTML ?? '' }),
+  });
+
   if (!isOpen) return null;
 
   /** 记下眼前这一次编辑。异步请求回来时调它：返回 false 说明学生已经换了笔记或关掉了编辑器。 */
@@ -1418,6 +1436,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     saveEditorSelection();
     updateWordCount();
     scheduleFeedbackCheck(editorRef.current?.innerHTML ?? '');
+    scaffoldRecommendation.onDraftChange();
   };
 
   /** 编辑区里鼠标移到哪个支架上，就在它左上角露出小叉。移到小叉本身时保持不变。 */
@@ -4209,6 +4228,13 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                       .filter(f => f.status === 'new' && f.suggestedScaffold && !f.suggestedScaffoldUsedAt)
                       .map(f => ({ id: f.id, text: f.suggestedScaffold! }))}
                     onPickAi={insertAiScaffold}
+                    recommended={scaffoldRecommendation.recommended}
+                    onPickRecommended={scaffold => {
+                      insertScaffoldMarker(scaffold);
+                      scaffoldRecommendation.consume();
+                      if (spaceId) void scaffoldsApi.use(scaffold.id, { space_id: spaceId, ...(noteId ? { note_id: noteId } : {}), source: 'recommended' }).catch(() => undefined);
+                    }}
+                    onDismissRecommended={scaffoldRecommendation.dismiss}
                     compact
                   />
                 )}

@@ -3,6 +3,8 @@ import { compareFeedbackRevision, studentAuthoredText, validUptakeEvidence } fro
 describe('feedback uptake at contribution', () => {
   it('excludes copied AI text and scaffold labels, retains student writing', () => {
     expect(studentAuthoredText('<p>原观点</p><div data-ai-source="genai"><div>复制的建议</div></div><p data-scaffold-id="s"><span data-scaffold-tag="true">建议话头</span><span data-scaffold-input="true">我观察到实验组差异，因此需要控制变量。</span></p>')).toBe('原观点 我观察到实验组差异，因此需要控制变量。');
+    // 话头属性没写值的旧写法（编辑区生成的是 <strong data-scaffold-tag>）也要去掉
+    expect(studentAuthoredText('<p data-scaffold-id="s"><strong data-scaffold-tag>我的想法是</strong><span data-scaffold-slot><span data-scaffold-bracket>[</span><span data-scaffold-input>先自己想再问</span><span data-scaffold-bracket>]</span></span></p>')).toBe('先自己想再问');
   });
   it('formatting, punctuation, tiny edits and empty scaffolds are not substantive revision', () => {
     expect(compareFeedbackRevision('我的观点是学生需要更多证据', '我的观点是，学生需要更多证据。')).toBe('unchanged');

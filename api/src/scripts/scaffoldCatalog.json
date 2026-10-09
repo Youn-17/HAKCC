@@ -1,0 +1,1088 @@
+[
+{
+"id": "cat-001",
+"title": "My theory",
+"titleEn": "My theory",
+"group": "Theory Building"
+},
+{
+"id": "cat-002",
+"title": "A better theory",
+"titleEn": "A better theory",
+"group": "Theory Building"
+},
+{
+"id": "cat-003",
+"title": "New Information",
+"titleEn": "New information",
+"group": "Theory Building"
+},
+{
+"id": "cat-004",
+"title": "This theory cannot explain",
+"titleEn": "This theory cannot explain",
+"group": "Theory Building"
+},
+{
+"id": "cat-005",
+"title": "I need to understand",
+"titleEn": "I need to understand",
+"group": "Theory Building"
+},
+{
+"id": "cat-006",
+"title": "Putting our knowledge together",
+"titleEn": "Putting our knowledge together",
+"group": "Theory Building"
+},
+{
+"id": "cat-007",
+"title": "要解决的问题的实质是",
+"titleEn": "The essence of the problem to be solved is",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-008",
+"title": "该问题包含以下要素",
+"titleEn": "This problem contains the following elements",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-009",
+"title": "我将这个问题分解为以下几个子问题",
+"titleEn": "I decompose this problem into sub-problems",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-010",
+"title": "每个子问题之间的关系是",
+"titleEn": "The relationships between sub-problems are",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-011",
+"title": "这个问题涉及到以下领域的知识",
+"titleEn": "This problem involves knowledge from the following domains",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-012",
+"title": "这个问题可以从以下几步来考虑",
+"titleEn": "This problem can be approached in the following steps",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-013",
+"title": "GenAI对这个问题的分解是",
+"titleEn": "GenAI's decomposition of this problem is",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-014",
+"title": "GenAI对这个问题的理解是…分解为以下几个要素",
+"titleEn": "GenAI's understanding and decomposition of this problem",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-015",
+"title": "GenAI提供了我没考虑到的新视角或新方法",
+"titleEn": "GenAI provided new perspectives or methods I had not considered",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-016",
+"title": "这个问题类似的问题已经有哪些解决方案？优缺点是什么？",
+"titleEn": "What existing solutions address similar problems? What are their strengths and limitations?",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-017",
+"title": "这个问题有哪些可能的解决方案，最终解决方案的呈现形式是什么？",
+"titleEn": "What possible solutions exist, and in what form should the final solution be presented?",
+"group": "CT1 问题解析"
+},
+{
+"id": "cat-018",
+"title": "我发现问题涉及的主要要素的关系是",
+"titleEn": "I found the relationships among the key elements are",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-019",
+"title": "我发现问题设计的主要要素的关系是",
+"titleEn": "I found the relationships among the key elements are",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-020",
+"title": "我发现重复出现的结构是",
+"titleEn": "I identified the following recurring structures",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-021",
+"title": "这些重复出现的结构有以下不同的地方",
+"titleEn": "These recurring structures differ in the following ways",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-022",
+"title": "我发现这个问题/事物具有的共同特征是",
+"titleEn": "The common characteristics of this problem/phenomenon are",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-023",
+"title": "这些共同特征能够帮助我解决以下几类问题",
+"titleEn": "These common characteristics help me solve the following types of problems",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-024",
+"title": "我能够总结出关于这个问题/事物的规律",
+"titleEn": "I can identify patterns regarding this problem/phenomenon",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-025",
+"title": "解决这个问题需要收集哪些类型的数据？",
+"titleEn": "What types of data need to be collected?",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-026",
+"title": "用什么方法处理与分析这些数据？",
+"titleEn": "What methods should be used to process and analyze data?",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-027",
+"title": "我发现这个问题中有重复或常见的结构/模式是",
+"titleEn": "I found recurring or common structures/patterns in this problem",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-028",
+"title": "如何分类和组织这些模式来简化问题？",
+"titleEn": "How can these patterns be classified to simplify the problem?",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-029",
+"title": "GenAI识别的模式是",
+"titleEn": "The patterns identified by GenAI are",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-030",
+"title": "GenAI识别的模式与我识别的模式不同的部分是",
+"titleEn": "Differences between GenAI's and my identified patterns",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-031",
+"title": "GenAI识别的模式与我识别的模式的区别是",
+"titleEn": "Differences between GenAI's and my identified patterns",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-032",
+"title": "根据GenAI的建议，该模式需要改进的是",
+"titleEn": "Based on GenAI's suggestions, the pattern needs improvement in",
+"group": "CT2 模式识别"
+},
+{
+"id": "cat-033",
+"title": "根据总结出的规律，我认为可以这样表达",
+"titleEn": "Based on identified patterns, I can express it as follows",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-034",
+"title": "根据总结出的模式和规律，我认为问题可以被简化为",
+"titleEn": "Based on identified patterns, the problem can be simplified to",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-035",
+"title": "我可以构建出这样的模型",
+"titleEn": "I can construct the following model",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-036",
+"title": "我可以构建出这类模型来表示这些核心要素与关系",
+"titleEn": "I can construct this model to represent core elements and relationships",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-037",
+"title": "这个模型/公式的功能是",
+"titleEn": "The function of this model/formula is",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-038",
+"title": "这个模型的基本组成部分是",
+"titleEn": "The basic components of this model are",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-039",
+"title": "这个模型/公式的主要功能或目的是",
+"titleEn": "The primary function or purpose of this model/formula is",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-040",
+"title": "这个模型/公式可以解决此类问题",
+"titleEn": "This model/formula can solve this type of problem",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-041",
+"title": "GenAI建议的模型或者抽象表示是",
+"titleEn": "The model or abstract representation suggested by GenAI is",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-042",
+"title": "GenAI提供的模型与我构建的模型之间的差异是",
+"titleEn": "Differences between GenAI's model and the model I constructed",
+"group": "CT3 抽象与建模"
+},
+{
+"id": "cat-043",
+"title": "我需要解决如下问题",
+"titleEn": "The specific problem I need to solve is",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-044",
+"title": "我要解决的具体问题或需要达到的目的是",
+"titleEn": "The specific problem or goal is",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-045",
+"title": "我认为可以有以下步骤来解决该问题",
+"titleEn": "I propose the following steps to solve this problem",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-046",
+"title": "根据问题的性质，我认为可以有以下步骤或策略来解决",
+"titleEn": "Based on the nature of the problem, the following steps or strategies can be used",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-047",
+"title": "根据问题的性质，我认为问题解决的步骤和方法是",
+"titleEn": "Based on the nature of the problem, the steps and methods are",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-048",
+"title": "我解决该问题的流程图是",
+"titleEn": "My flowchart for solving this problem is",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-049",
+"title": "我解决这个/这类问题的流程图是",
+"titleEn": "My flowchart for solving this type of problem is",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-050",
+"title": "解决该问题用到的算法是",
+"titleEn": "The algorithm used to solve this problem is",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-051",
+"title": "对于这个/这类问题，我用到的算法是",
+"titleEn": "The algorithm I used for this type of problem is",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-052",
+"title": "我选择/设计的算法是….",
+"titleEn": "The algorithm I selected/designed is",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-053",
+"title": "我选择这个算法的原因是",
+"titleEn": "The reason I chose this algorithm is",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-054",
+"title": "这个算法可能存在的局限性是",
+"titleEn": "The potential limitations of this algorithm are",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-055",
+"title": "这个算法可能存在的局限是什么？需要如何改进？",
+"titleEn": "What limitations might this algorithm have? How should it be improved?",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-056",
+"title": "GenAI提供的算法或者优化建议是",
+"titleEn": "The algorithm or optimization suggestions by GenAI are",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-057",
+"title": "根据GenAI提供的反馈，我是这样调整并完善我的算法的",
+"titleEn": "Based on GenAI's feedback, I adjusted and refined my algorithm as follows",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-058",
+"title": "GenAI提供算法是……其优缺点是",
+"titleEn": "The algorithm provided by GenAI is... Its pros and cons are",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-059",
+"title": "根据GenAI提供的算法或建议，我对该算法的改进和完善",
+"titleEn": "Based on GenAI's algorithm/suggestions, I improved the algorithm by",
+"group": "CT4 算法设计"
+},
+{
+"id": "cat-060",
+"title": "解决该算法，可以用这个程序设计语言",
+"titleEn": "To implement this algorithm, this programming language can be used",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-061",
+"title": "我选择了以下程序语言来实现该算法，其主要的优点是",
+"titleEn": "I chose this programming language; its main advantages are",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-062",
+"title": "我编写的程序实现的主要功能是",
+"titleEn": "The main functions implemented by my program are",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-063",
+"title": "我编写的程序实现了以下功能",
+"titleEn": "My program implements the following functions",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-064",
+"title": "我编写该程序的主要逻辑或思路是",
+"titleEn": "The main logic or approach for programming is",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-065",
+"title": "如何将算法转化为一个计算机程序？采用什么编程语言？",
+"titleEn": "How to convert the algorithm into a program? What language?",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-066",
+"title": "编程的逻辑思路是什么？",
+"titleEn": "What is the logical approach to programming?",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-067",
+"title": "程序要实现的功能/解决的问题是什么？",
+"titleEn": "What functions should the program implement?",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-068",
+"title": "程序调试和迭代的方法是",
+"titleEn": "Methods for debugging and iterating the program are",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-069",
+"title": "GenAI推荐的程序语言是…，推荐的原因是",
+"titleEn": "The language recommended by GenAI is... The reason is",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-070",
+"title": "GenAI对我的程序逻辑提供了以下反馈和建议",
+"titleEn": "GenAI's feedback and suggestions on my program logic",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-071",
+"title": "GenAI给出的程序代码有哪些优缺点？对我的启示是",
+"titleEn": "Strengths/limitations of GenAI's code? Insights for me?",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-072",
+"title": "GenAI对我们的程序给出的反馈和改进建议是",
+"titleEn": "GenAI's feedback and improvement suggestions on our program",
+"group": "CT5 程序开发"
+},
+{
+"id": "cat-073",
+"title": "算法的计算结果是",
+"titleEn": "The computational result of the algorithm is",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-074",
+"title": "程序运行的结果是",
+"titleEn": "The result of running the program is",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-075",
+"title": "程序运行过程中，出现了下列问题",
+"titleEn": "The following issues occurred during execution",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-076",
+"title": "我还需要进行下列改进",
+"titleEn": "I still need to make the following improvements",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-077",
+"title": "运行的结果与预期有以下不同",
+"titleEn": "The results differ from expectations in the following ways",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-078",
+"title": "该方案可以很好地解决此类问题",
+"titleEn": "This solution effectively solves this type of problem",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-079",
+"title": "实际执行程序后，我获得的运行结果是",
+"titleEn": "After executing the program, the results are",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-080",
+"title": "基于测试结果，我还需要进行以下改进",
+"titleEn": "Based on test results, improvements needed are",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-081",
+"title": "总体上，该方案可以很好地解决下列问题，但还需要考虑",
+"titleEn": "Overall, this solution works but still needs to consider",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-082",
+"title": "如何测试这个解决方案的有效性？",
+"titleEn": "How to test the effectiveness of this solution?",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-083",
+"title": "在哪些条件下这个解决方案可能失败？",
+"titleEn": "Under what conditions might this solution fail?",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-084",
+"title": "基于测试的结果，还需要哪些改进？",
+"titleEn": "Based on test results, what further improvements are needed?",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-085",
+"title": "如何收集和分析反馈以改进解决方案？",
+"titleEn": "How to collect and analyze feedback to improve the solution?",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-086",
+"title": "GenAI对我程序的运行结果的看法或分析是",
+"titleEn": "GenAI's analysis of my program's results is",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-087",
+"title": "GenAI建议的问题诊断方法或解决策略是",
+"titleEn": "The diagnosis method or strategy suggested by GenAI is",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-088",
+"title": "GenAI对这个方案的反馈意见/建议改进和完善的地方？",
+"titleEn": "GenAI's feedback / Suggested improvements?",
+"group": "CT6 方案检验"
+},
+{
+"id": "cat-089",
+"title": "GenAI对这个概念的解释是",
+"titleEn": "GenAI's explanation of this concept is",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-090",
+"title": "GenAI提供的案例是",
+"titleEn": "The case/example provided by GenAI is",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-091",
+"title": "关于这个问题，GenAI给出的Idea是",
+"titleEn": "The idea proposed by GenAI on this problem is",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-092",
+"title": "根据GenAI给出的回答，我有了新的思路",
+"titleEn": "Based on GenAI's response, I developed new ideas",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-093",
+"title": "我认为GenAI的回答/解释还缺乏",
+"titleEn": "I think GenAI's response still lacks",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-094",
+"title": "我对GenAI给出的答案进行了以下评价",
+"titleEn": "I evaluated GenAI's answer as follows",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-095",
+"title": "我与GenAI进行了有建设性的讨论或辩论",
+"titleEn": "I had a constructive discussion or debate with GenAI",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-096",
+"title": "我与GenAI进行了多轮的深度对话",
+"titleEn": "I engaged in multiple rounds of in-depth dialogue with GenAI",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-097",
+"title": "我是这样评估GenAI答案的准确性和可靠性的",
+"titleEn": "This is how I assessed GenAI's accuracy and reliability",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-098",
+"title": "GenAI针对这个问题提出的观点/建议是",
+"titleEn": "GenAI's viewpoints/suggestions on this problem are",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-099",
+"title": "GenAI提出的观点是",
+"titleEn": "The viewpoint proposed by GenAI is",
+"group": "GAI 支持问题解决"
+},
+{
+"id": "cat-100",
+"title": "AI导师/助教—提供反馈与指导",
+"titleEn": "AI Tutor/TA — providing feedback and guidance",
+"group": "GAI 角色设定"
+},
+{
+"id": "cat-101",
+"title": "AI教练—提供反思调节机会，促进元认知",
+"titleEn": "AI Coach — providing reflective regulation, promoting metacognition",
+"group": "GAI 角色设定"
+},
+{
+"id": "cat-102",
+"title": "AI伙伴—提供不同观点，参与团队任务",
+"titleEn": "AI Partner — offering diverse perspectives, participating in team tasks",
+"group": "GAI 角色设定"
+},
+{
+"id": "cat-103",
+"title": "AI代码助手—提供编程指导，给出调试修改代码的建议",
+"titleEn": "AI Code Assistant — programming guidance, debugging suggestions",
+"group": "GAI 角色设定"
+},
+{
+"id": "cat-104",
+"title": "AI模拟器：创设应用场景，模拟真实情境，扮演特定角色",
+"titleEn": "AI Simulator — creating scenarios, simulating real situations, playing roles",
+"group": "GAI 角色设定"
+},
+{
+"id": "cat-105",
+"title": "原则1 真实的观点，现实的问题",
+"titleEn": "Principle 1: Real ideas, authentic problems",
+"group": "知识建构原则"
+},
+{
+"id": "cat-106",
+"title": "原则2 观点多样化",
+"titleEn": "Principle 2: Idea diversity",
+"group": "知识建构原则"
+},
+{
+"id": "cat-107",
+"title": "原则3 持续改进的观点",
+"titleEn": "Principle 3: Improvable ideas",
+"group": "知识建构原则"
+},
+{
+"id": "cat-108",
+"title": "原则4 观点的概括和升华",
+"titleEn": "Principle 4: Rise above",
+"group": "知识建构原则"
+},
+{
+"id": "cat-109",
+"title": "原则5 学生是积极的认知者",
+"titleEn": "Principle 5: Epistemic agency",
+"group": "知识建构原则"
+},
+{
+"id": "cat-110",
+"title": "原则6 社区知识的与协同认知责任",
+"titleEn": "Principle 6: Community knowledge, collective responsibility",
+"group": "知识建构原则"
+},
+{
+"id": "cat-111",
+"title": "原则7 \"民主化\"的知识",
+"titleEn": "Principle 7: Democratizing knowledge",
+"group": "知识建构原则"
+},
+{
+"id": "cat-112",
+"title": "原则8 均衡的知识发展",
+"titleEn": "Principle 8: Symmetric knowledge advancement",
+"group": "知识建构原则"
+},
+{
+"id": "cat-113",
+"title": "原则9 无处不在的知识建构",
+"titleEn": "Principle 9: Pervasive knowledge building",
+"group": "知识建构原则"
+},
+{
+"id": "cat-114",
+"title": "原则10 知识建构对话",
+"titleEn": "Principle 10: Knowledge building discourse",
+"group": "知识建构原则"
+},
+{
+"id": "cat-115",
+"title": "原则11 权威资料的建构性使用",
+"titleEn": "Principle 11: Constructive use of authoritative sources",
+"group": "知识建构原则"
+},
+{
+"id": "cat-116",
+"title": "原则12 嵌入活动的形成性评价",
+"titleEn": "Principle 12: Embedded and transformative assessment",
+"group": "知识建构原则"
+},
+{
+"id": "cat-117",
+"title": "我的想法/观点是",
+"titleEn": "My idea/viewpoint is",
+"group": "表达与改进观点"
+},
+{
+"id": "cat-118",
+"title": "这些观点的相同/不同之处是",
+"titleEn": "The similarities/differences among these viewpoints are",
+"group": "表达与改进观点"
+},
+{
+"id": "cat-119",
+"title": "我对这个观点的解释是",
+"titleEn": "My explanation of this viewpoint is",
+"group": "表达与改进观点"
+},
+{
+"id": "cat-120",
+"title": "你的观点/建议很好，但还可以改进为",
+"titleEn": "Your viewpoint is good, but it could be improved to",
+"group": "表达与改进观点"
+},
+{
+"id": "cat-121",
+"title": "我不同意你的观点，理由是",
+"titleEn": "I disagree with your viewpoint; the reason is",
+"group": "表达与改进观点"
+},
+{
+"id": "cat-122",
+"title": "我对这个观点的补充/改进",
+"titleEn": "My supplement/improvement to this viewpoint",
+"group": "表达与改进观点"
+},
+{
+"id": "cat-123",
+"title": "这个观点与其他观点的联系/区别",
+"titleEn": "How this idea connects to or differs from others",
+"group": "表达与改进观点"
+},
+{
+"id": "cat-124",
+"title": "GenAI对这个观点的补充/改进是",
+"titleEn": "GenAI's supplement/improvement to this viewpoint is",
+"group": "表达与改进观点"
+},
+{
+"id": "cat-125",
+"title": "我同意你的观点",
+"titleEn": "I agree with your viewpoint",
+"group": "协商与评价"
+},
+{
+"id": "cat-126",
+"title": "我对这个观点的评价是",
+"titleEn": "My evaluation of this viewpoint is",
+"group": "协商与评价"
+},
+{
+"id": "cat-127",
+"title": "我不同意你的观点，理由是",
+"titleEn": "I disagree; the reason is",
+"group": "协商与评价"
+},
+{
+"id": "cat-128",
+"title": "你的观点很好",
+"titleEn": "Your viewpoint is excellent",
+"group": "协商与评价"
+},
+{
+"id": "cat-129",
+"title": "我查找的文献分享如下，其要点是",
+"titleEn": "The literature I found is shared below; key points are",
+"group": "分享信息和观点"
+},
+{
+"id": "cat-130",
+"title": "你能提供这方面的资料或证据吗？",
+"titleEn": "Can you provide materials or evidence on this?",
+"group": "分享信息和观点"
+},
+{
+"id": "cat-131",
+"title": "你能分享这方面的资料吗？",
+"titleEn": "Can you share materials on this topic?",
+"group": "分享信息和观点"
+},
+{
+"id": "cat-132",
+"title": "我可以提供这方面的资料或证据",
+"titleEn": "I can provide materials or evidence on this topic",
+"group": "分享信息和观点"
+},
+{
+"id": "cat-133",
+"title": "我可以分享这方面的资料",
+"titleEn": "I can share materials on this topic",
+"group": "分享信息和观点"
+},
+{
+"id": "cat-134",
+"title": "我们讨论的问题核心是",
+"titleEn": "The core of the problem we are discussing is",
+"group": "探究问题"
+},
+{
+"id": "cat-135",
+"title": "与问题有关的因素有",
+"titleEn": "The factors related to this problem include",
+"group": "探究问题"
+},
+{
+"id": "cat-136",
+"title": "从以下几个方面探讨问题",
+"titleEn": "Let us explore the problem from the following perspectives",
+"group": "探究问题"
+},
+{
+"id": "cat-137",
+"title": "我们讨论的要点是",
+"titleEn": "The key points of our discussion are",
+"group": "整合与提升观点"
+},
+{
+"id": "cat-138",
+"title": "把我们的想法整合在一起",
+"titleEn": "Let us integrate our ideas together",
+"group": "整合与提升观点"
+},
+{
+"id": "cat-139",
+"title": "我们需要改进/优化这个方案",
+"titleEn": "We need to improve/optimize this solution",
+"group": "整合与提升观点"
+},
+{
+"id": "cat-140",
+"title": "概括总结我们的讨论",
+"titleEn": "Summarize and generalize our discussion",
+"group": "整合与提升观点"
+},
+{
+"id": "cat-141",
+"title": "我们需要进一步讨论的要点/问题是",
+"titleEn": "The points/issues we need to further discuss are",
+"group": "整合与提升观点"
+},
+{
+"id": "cat-142",
+"title": "请大家就这个问题提出建议，每个观点都可能引发我们新的思考",
+"titleEn": "Please offer suggestions; every viewpoint may spark new thinking.",
+"group": "团队组织与管理"
+},
+{
+"id": "cat-143",
+"title": "让我们一起努力探讨这个问题",
+"titleEn": "Let us work together to explore this problem",
+"group": "团队组织与管理"
+},
+{
+"id": "cat-144",
+"title": "你的见解为团队带来了新的视角，产生了很大的贡献，非常棒！",
+"titleEn": "Your insight brought a new perspective — excellent contribution!",
+"group": "团队组织与管理"
+},
+{
+"id": "cat-145",
+"title": "我们讨论和解决问题的进度有些慢了，我们一起努力加快进度",
+"titleEn": "Our progress has been slow; let us work together to speed up.",
+"group": "团队组织与管理"
+},
+{
+"id": "cat-146",
+"title": "我们可以对这个问题/任务进行一个分工",
+"titleEn": "We can divide this problem/task as follows",
+"group": "团队组织与管理"
+},
+{
+"id": "cat-147",
+"title": "我们团队针对这个问题的最终解决方案是",
+"titleEn": "Our team's final solution to this problem is",
+"group": "团队组织与管理"
+},
+{
+"id": "cat-148",
+"title": "我使用GenAI想达到的学习目的是",
+"titleEn": "The learning goal I want to reach by using GenAI is",
+"group": "思考后询问 GAI"
+},
+{
+"id": "cat-149",
+"title": "在询问GenAI之前，我自己的idea是",
+"titleEn": "Before asking GenAI, my own idea is",
+"group": "思考后询问 GAI"
+},
+{
+"id": "cat-150",
+"title": "我判断GenAI的回答好坏的标准是",
+"titleEn": "My criteria for judging whether GenAI's answer is good are",
+"group": "思考后询问 GAI"
+},
+{
+"id": "cat-151",
+"title": "当前这个任务，我让GenAI思考的和我自己思考的分别是",
+"titleEn": "On the current task, what I let GenAI think about and what I think about myself are",
+"group": "思考后询问 GAI"
+},
+{
+"id": "cat-152",
+"title": "我告诉GenAI的背景和限定条件是",
+"titleEn": "The background and constraints I gave GenAI are",
+"group": "思考后询问 GAI"
+},
+{
+"id": "cat-153",
+"title": "GenAI的第一次回答不符合我的需求，所以我进一步提问",
+"titleEn": "GenAI's first answer did not meet my needs, so I asked further",
+"group": "思考后询问 GAI"
+},
+{
+"id": "cat-154",
+"title": "GenAI的结论若要成立，需要满足的前提是",
+"titleEn": "For GenAI's conclusion to hold, what must be true is",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-155",
+"title": "GenAI的回答有问题，主要在于",
+"titleEn": "GenAI's answer has a problem, mainly in",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-156",
+"title": "GenAI的回答可能带有的偏向，或没有考虑到的是",
+"titleEn": "Possible bias in GenAI's answer, or what it did not consider, is",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-157",
+"title": "我要求GenAI说明依据，它给出的是……，我对此的判断是",
+"titleEn": "I asked GenAI for its basis; it gave ..., and my judgement of this is",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-158",
+"title": "GenAI的回答中，我决定采用的部分和理由是",
+"titleEn": "The part of GenAI's answer I decided to use, and why",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-159",
+"title": "我用已有知识经验纠正了GenAI的说法，依据是",
+"titleEn": "I corrected GenAI's statement using my prior knowledge and experience; my basis is",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-160",
+"title": "把GenAI的方案放到我们讨论的具体情境中，需要调整的是",
+"titleEn": "Fitting GenAI's proposal to the specific situation we are discussing, what needs adjusting is",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-161",
+"title": "我对GenAI的这段回答进行了转述",
+"titleEn": "I paraphrased this answer from GenAI",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-162",
+"title": "GenAI的这个说法，我已用别的来源进行了核对",
+"titleEn": "GenAI's claim below, which I have checked against another source",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-163",
+"title": "我对GenAI的回答进行了改写",
+"titleEn": "I rewrote GenAI's answer",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-164",
+"title": "GenAI的这个回答，我打算当作反例来检验",
+"titleEn": "GenAI's answer below, which I will test as a counter-example",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-165",
+"title": "GenAI和我看法不同的地方在于",
+"titleEn": "Where GenAI's view differs from mine is",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-166",
+"title": "我追问GenAI之后，它补充的证据是",
+"titleEn": "The evidence GenAI added when I pressed it is",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-167",
+"title": "GenAI帮我整理了我自己的想法",
+"titleEn": "GenAI organised my own ideas",
+"group": "GAI 回答的判断与取舍"
+},
+{
+"id": "cat-168",
+"title": "我将GenAI的回答与教材和相关文献资料对照，发现",
+"titleEn": "Comparing GenAI's answer with the textbook and related literature, I found",
+"group": "GAI 多方求证"
+},
+{
+"id": "cat-169",
+"title": "GenAI和其他来源说法不一致，我更相信……，理由是",
+"titleEn": "GenAI and another source disagree; I trust ... more, because",
+"group": "GAI 多方求证"
+},
+{
+"id": "cat-170",
+"title": "我把借助GenAI完成的内容给同学或老师查看，他们的建议是",
+"titleEn": "I showed what I did with GenAI to a classmate or teacher; their suggestion is",
+"group": "GAI 多方求证"
+},
+{
+"id": "cat-171",
+"title": "我想请大家帮我核对GenAI的这个回答，我的疑问是",
+"titleEn": "I would like help checking this GenAI answer; my doubt is",
+"group": "GAI 多方求证"
+},
+{
+"id": "cat-172",
+"title": "GenAI在这个问题上不能提供有效帮助，所以我找了其他资料",
+"titleEn": "GenAI could not give effective help on this question, so I looked for other materials",
+"group": "GAI 多方求证"
+},
+{
+"id": "cat-173",
+"title": "我和同学向GenAI问了同一个问题，发现回答不一样的地方是",
+"titleEn": "A classmate and I asked GenAI the same question, and found our answers differ in",
+"group": "GAI 多方求证"
+},
+{
+"id": "cat-174",
+"title": "我和同学/老师核对之后，对GenAI这个说法的共同判断是",
+"titleEn": "After checking with a classmate or teacher, our shared judgement on this GenAI claim is",
+"group": "GAI 多方求证"
+},
+{
+"id": "cat-175",
+"title": "我为这个结论负责，我做过的核对有",
+"titleEn": "I stand behind this conclusion; the checks I have made are",
+"group": "GAI 多方求证"
+},
+{
+"id": "cat-176",
+"title": "使用GenAI，对我的学习目的有帮助和有妨碍的分别是",
+"titleEn": "Using GenAI, what helped and what got in the way of my learning goal are",
+"group": "GAI 使用回顾与校准"
+},
+{
+"id": "cat-177",
+"title": "不使用GenAI，我现在能自己独立表达的知识/概念是，还不清楚的知识/概念是",
+"titleEn": "Without GenAI, the knowledge or concepts I can now express on my own are; the ones I am still unclear about are",
+"group": "GAI 使用回顾与校准"
+},
+{
+"id": "cat-178",
+"title": "与GenAI互动之前相比，我的想法变化在于",
+"titleEn": "Compared with before I interacted with GenAI, my thinking has changed in",
+"group": "GAI 使用回顾与校准"
+},
+{
+"id": "cat-179",
+"title": "我现在遇到的问题是……，GenAI能提供的帮助和不能提供的帮助分别是",
+"titleEn": "The problem I am facing now is ..., and the help GenAI can and cannot provide is",
+"group": "GAI 使用回顾与校准"
+},
+{
+"id": "cat-180",
+"title": "GenAI出错的地方是……，我通过……发现的",
+"titleEn": "Where GenAI went wrong is ..., and I found this out by ...",
+"group": "GAI 使用回顾与校准"
+},
+{
+"id": "cat-181",
+"title": "回顾前面借助GenAI完成的任务，我的做法有……的变化",
+"titleEn": "Looking back at earlier tasks I did with GenAI, my way of working has changed in terms of",
+"group": "GAI 使用回顾与校准"
+}
+]

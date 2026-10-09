@@ -2,13 +2,13 @@
 
 [English](README.md) · [访问平台](https://ideaweave.tech/) · [系统说明](write/SYSTEM_OVERVIEW.md) · [MIT 开源许可证](LICENSE)
 
-**作者与维护者：Zhenhai He（[Youn-17](https://github.com/Youn-17)）。** 本仓库开源应用代码、机制图和系统说明，英文为主、中文为辅。当前公开版本为 **v0.6.0**。
+**作者与维护者：Zhenhai He（[Youn-17](https://github.com/Youn-17)）。** 本仓库开源应用代码、机制图和系统说明，英文为主、中文为辅。当前公开版本为 **v0.7.0**。
 
-## 本次更新 · v0.6.0
+## 本次更新 · v0.7.0
 
-知识空间新增多人同步协作文档，提供 Word 风格工具栏、落盘确认、版本快照和基础 Word 导出。同步更新情境绘图、画布搜索、Build-on 折叠和 Node 22 配置。
+知识空间新增独立讨论分析页，提供词云、关键词变化、观点接力和待推进议题。支持视图、学生、日期筛选，查看来源 Note 并返回画布；新增可选的引用核对与草稿支架建议。
 
-[功能、安装与限制](write/UPDATES_v0.6.0.md) · [English](write/UPDATES_v0.6.0.en.md)
+[功能、安装与限制](write/UPDATES_v0.7.0.md) · [English](write/UPDATES_v0.7.0.en.md)
 
 ## 上一版 · v0.5.0
 
@@ -77,3 +77,5 @@ KB 理论主要来自 **Marlene Scardamalia 与 Carl Bereiter**，Note、View、
 原始代码、文档与 HAKCC 图稿使用 **[MIT 许可证](LICENSE)**，保留版权与许可说明即可按许可证使用、修改和分发；第三方组件遵循各自许可。[作者说明](AUTHORS.md) · [引用元数据](CITATION.cff) · [权利与复用](RIGHTS.md)。
 
 发布包不包含真实课程数据、密钥、运维账户信息、未公开论文或参考图原件。版本记录与文件指纹支持核查公开内容及时间，不独立证明全部机制的最早发明权。
+
+本次更新：[讨论分析](write/UPDATES_v0.7.0.md)。

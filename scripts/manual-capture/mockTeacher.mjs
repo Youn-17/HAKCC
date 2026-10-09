@@ -1,6 +1,7 @@
 /**
  * 教师端几张截图用到的演示数据：概览、教学日志、AI 设置与触发设置、学生求助。
  */
+import fs from 'node:fs';
 import * as W from './world.mjs';
 import { state } from './mockApi.mjs';
 
@@ -94,4 +95,139 @@ export function handleTeacher(on) {
   on('GET', /^\/courses\/[^/]+\/goals$/, () => ({ goals: [] }));
   on('GET', /^\/courses\/[^/]+\/materials$/, () => ({ materials: [] }));
   on('GET', /^\/courses\/[^/]+\/tasks$/, () => ({ tasks: [] }));
+
+  // ── 讨论分析（知识空间顶栏「分析」，2026-10-09）：按演示笔记现算，口径照 api/src/services/spaceAnalytics.ts 简化 ──
+  on('GET', /^\/spaces\/[^/]+\/analytics$/, () => ({ overview: analyticsOverview(), signature: 'demo', generatedAt: W.NOW.toISOString() }));
+  on('GET', /^\/spaces\/[^/]+\/analytics\/students\/(?<uid>[^/]+)$/, ({ params }) => ({ student: analyticsStudent(params.uid) }));
+  on('GET', /^\/spaces\/[^/]+\/analytics\/wordcloud$/, ({ query }) => {
+    // 演示词云是服务器上用 Python（jieba + wordcloud）对这批演示笔记排好的，存在 analyticsDemoCloud.json
+    if (!query.author_id) return DEMO_CLOUD;
+    const mine = new Set(studentNotes().filter(n => n.author_id === query.author_id).map(n => n.id));
+    const terms = DEMO_CLOUD.terms.filter(t => t.note_ids.some(id => mine.has(id)));
+    const keep = new Set(terms.map(t => t.word));
+    return { ...DEMO_CLOUD, terms, docs: mine.size, cloud: { ...DEMO_CLOUD.cloud, items: DEMO_CLOUD.cloud.items.filter(i => keep.has(i.word)) } };
+  });
+}
+
+const DEMO_CLOUD = JSON.parse(fs.readFileSync(new URL('./analyticsDemoCloud.json', import.meta.url), 'utf8'));
+const STUDENT_IDS = Object.keys(W.PEOPLE).filter(id => id !== W.TEACHER_ID);
+const studentNotes = () => state.notes.filter(n => STUDENT_IDS.includes(n.author_id) && n.type !== 'view');
+const buildOns = () => {
+  const byId = new Map(state.notes.map(n => [n.id, n]));
+  return state.relations
+    .map(r => ({ ...r, from: byId.get(r.source_note_id)?.author_id, to: byId.get(r.target_note_id)?.author_id }))
+    .filter(r => r.from && r.to);
+};
+const dayOf = iso => new Date(iso).toISOString().slice(0, 10);
+const QUIET_MS = 7 * 86_400_000;
+
+function analyticsOverview() {
+  const notes = studentNotes();
+  const rels = buildOns();
+  const lastAt = new Map();
+  for (const n of notes) if (!lastAt.has(n.author_id) || lastAt.get(n.author_id) < n.created_at) lastAt.set(n.author_id, n.created_at);
+  for (const r of rels) if (!lastAt.has(r.from) || lastAt.get(r.from) < r.created_at) lastAt.set(r.from, r.created_at);
+  const fbs = Object.values(state.feedbacks).flat();
+  const participation = STUDENT_IDS.map(id => {
+    const mine = notes.filter(n => n.author_id === id);
+    const fb = fbs.filter(f => f.userId === id);
+    return {
+      userId: id, name: W.PEOPLE[id], avatar: null,
+      notes: mine.length,
+      buildOnsGiven: rels.filter(r => r.from === id && r.to !== id).length,
+      buildOnsReceived: rels.filter(r => r.to === id && r.from !== id).length,
+      chars: mine.reduce((sum, n) => sum + String(n.content ?? '').replace(/<[^>]+>/g, '').replace(/\s/g, '').length, 0),
+      scaffolds: mine.reduce((sum, n) => sum + (String(n.content ?? '').match(/data-scaffold-id=/g) ?? []).length, 0),
+      lastAt: lastAt.get(id) ?? null,
+      quiet: !lastAt.has(id) || Date.parse(lastAt.get(id)) < W.NOW.getTime() - QUIET_MS,
+      aiFeedback: { received: fb.length, adopted: fb.filter(f => ['accepted', 'inserted', 'followed_up'].includes(f.status)).length },
+      aiUse: [6, 2, 4, 1, 0, 3, 0, 1][STUDENT_IDS.indexOf(id)] ?? 0,
+    };
+  }).sort((a, b) => (b.notes + b.buildOnsGiven) - (a.notes + a.buildOnsGiven));
+  // 和服务端 timelineDays 一样：从最早一次发言到今天，至少一周
+  const end = Date.parse(dayOf(W.NOW.toISOString()));
+  const earliest = [...notes.map(n => n.created_at), ...rels.map(r => r.created_at)].sort()[0];
+  const start = Math.min(earliest ? Date.parse(dayOf(earliest)) : end, end - 6 * 86_400_000);
+  const days = [];
+  for (let t = start; t <= end; t += 86_400_000) days.push(new Date(t).toISOString().slice(0, 10));
+  const timeline = days.map(day => ({
+    day,
+    notes: notes.filter(n => dayOf(n.created_at) === day).length,
+    buildOns: rels.filter(r => dayOf(r.created_at) === day).length,
+    active: new Set([...notes.filter(n => dayOf(n.created_at) === day).map(n => n.author_id), ...rels.filter(r => dayOf(r.created_at) === day).map(r => r.from)]).size,
+  }));
+  const linkCount = new Map();
+  for (const r of rels) if (r.from !== r.to) linkCount.set(`${r.from}→${r.to}`, (linkCount.get(`${r.from}→${r.to}`) ?? 0) + 1);
+  const received = new Map();
+  for (const r of rels) if (r.from !== r.to) received.set(r.target_note_id, (received.get(r.target_note_id) ?? 0) + 1);
+  const unanswered = notes.filter(n => !received.get(n.id)).sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .map(n => ({ id: n.id, title: n.title, authorId: n.author_id, authorName: W.PEOPLE[n.author_id], createdAt: n.created_at }));
+  const typeCount = new Map();
+  for (const r of rels) typeCount.set(r.relation_type, (typeCount.get(r.relation_type) ?? 0) + 1);
+  const scaffoldGroup = new Map(state.scaffolds.map(sc => [sc.id, sc.metadata?.l2_zh ?? sc.category]));
+  const groupCount = new Map();
+  for (const n of notes) for (const m of String(n.content ?? '').matchAll(/data-scaffold-id="([^"]+)"/g)) {
+    const g = scaffoldGroup.get(m[1]) ?? '表达与改进观点';
+    groupCount.set(g, (groupCount.get(g) ?? 0) + 1);
+  }
+  const count = map => [...map.entries()].map(([label, c]) => ({ label, count: c })).sort((a, b) => b.count - a.count);
+  const adopted = fbs.filter(f => ['accepted', 'inserted', 'followed_up'].includes(f.status)).length;
+  return {
+    summary: {
+      students: STUDENT_IDS.length,
+      activeStudents: participation.filter(p => p.notes + p.buildOnsGiven > 0).length,
+      quietStudents: participation.filter(p => p.quiet).length,
+      notes: notes.length,
+      teacherNotes: state.notes.filter(n => n.author_id === W.TEACHER_ID).length,
+      riseAbove: notes.filter(n => n.type === 'riseabove').length,
+      buildOns: rels.length,
+      unanswered: unanswered.length,
+      chars: participation.reduce((sum, p) => sum + p.chars, 0),
+      feedback: { total: Math.max(fbs.length, 9), adopted: Math.max(adopted, 7), rejected: 2, ignored: 0, pending: 0 },
+      aiUse: participation.reduce((sum, p) => sum + p.aiUse, 0),
+      firstAt: notes.map(n => n.created_at).sort()[0] ?? null,
+      lastAt: [...lastAt.values()].sort().at(-1) ?? null,
+    },
+    timeline,
+    participation,
+    network: {
+      nodes: participation.map(p => ({ id: p.userId, name: p.name, notes: p.notes, buildOns: p.buildOnsGiven + p.buildOnsReceived })),
+      links: [...linkCount.entries()].map(([key, c]) => { const [from, to] = key.split('→'); return { from, to, count: c }; }),
+    },
+    unanswered: unanswered.slice(0, 30),
+    scaffoldGroups: groupCount.size ? count(groupCount) : [{ label: '表达与改进观点', count: 6 }, { label: '思考后询问 GAI', count: 3 }, { label: 'GAI 回答的判断与取舍', count: 2 }],
+    relationTypes: count(typeCount),
+  };
+}
+
+function analyticsStudent(uid) {
+  const o = analyticsOverview();
+  const p = o.participation.find(x => x.userId === uid) ?? o.participation[0];
+  const notes = studentNotes().filter(n => n.author_id === p.userId);
+  const rels = buildOns();
+  const received = new Map();
+  for (const r of rels) if (r.from !== r.to) received.set(r.target_note_id, (received.get(r.target_note_id) ?? 0) + 1);
+  const partners = rows => {
+    const m = new Map();
+    for (const id of rows) m.set(id, (m.get(id) ?? 0) + 1);
+    return [...m.entries()].map(([userId, count]) => ({ userId, name: W.PEOPLE[userId], count })).sort((a, b) => b.count - a.count);
+  };
+  return {
+    member: { id: p.userId, name: p.name, avatar: null, isStaff: false },
+    summary: { notes: p.notes, buildOnsGiven: p.buildOnsGiven, buildOnsReceived: p.buildOnsReceived, chars: p.chars, scaffolds: p.scaffolds, aiUse: p.aiUse, firstAt: notes.map(n => n.created_at).sort()[0] ?? null, lastAt: p.lastAt, quiet: p.quiet },
+    timeline: o.timeline.map(t => ({
+      day: t.day,
+      notes: notes.filter(n => dayOf(n.created_at) === t.day).length,
+      buildOns: rels.filter(r => r.from === p.userId && r.to !== p.userId && dayOf(r.created_at) === t.day).length,
+    })),
+    notes: notes.map(n => ({ id: n.id, title: n.title, createdAt: n.created_at, type: n.type, received: received.get(n.id) ?? 0, scaffolds: (String(n.content ?? '').match(/data-scaffold-id=/g) ?? []).length, chars: String(n.content ?? '').replace(/<[^>]+>/g, '').replace(/\s/g, '').length }))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    builtOn: partners(rels.filter(r => r.from === p.userId && r.to !== p.userId).map(r => r.to)),
+    builtOnBy: partners(rels.filter(r => r.to === p.userId && r.from !== p.userId).map(r => r.from)),
+    relationTypes: { given: [], received: [] },
+    scaffoldGroups: [],
+    scaffoldTitles: p.scaffolds ? [{ label: '我的想法/观点是', count: p.scaffolds }] : [],
+    feedback: { total: 3, adopted: 2, rejected: 1, ignored: 0, pending: 0, byType: [{ label: 'no_evidence', count: 2 }, { label: 'promising_seed', count: 1 }] },
+    unanswered: notes.filter(n => !received.get(n.id)).length,
+  };
 }

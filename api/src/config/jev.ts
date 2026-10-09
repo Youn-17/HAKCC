@@ -1,8 +1,5 @@
-/**
- * Optional server-side Jev judgments for feedback, answer length and drawing.
- * Keep JEV_API_KEY in the server environment. Without it the corresponding
- * optional judgments are disabled. Validate behavior on your own examples.
- */
+/** Optional server-side Jev judgments, including citation checks and draft scaffold suggestions.
+ * Keep keys in the server environment; validate optional behavior on your own examples. */
 
 export type JevFeedbackMode = 'off' | 'shadow' | 'gate';
 
@@ -21,12 +18,16 @@ export interface JevConfig {
   feedbackMode: JevFeedbackMode;
   /** 「有明显问题」（T1–T4、T6）的概率到这个值才算要 */
   needThreshold: number;
-  /** Separate threshold for promising unfinished ideas (T5); calibrate before operational use. */
+  /** Separate threshold for promising unfinished ideas; calibrate before use. */
   promisingThreshold: number;
   /** 用 Jev 判断问题难度来定回答长度；没有 key 时为 false */
   answerLength: boolean;
   /** 用 Jev 判断要不要画、怎么画，并核对规划；没有 key 时为 false */
   drawJudge: boolean;
+  /** 用 Jev 核对回答里的课程资料引用；没有 key 时为 false */
+  citationCheck: boolean;
+  /** 用 Jev 按草稿推荐支架；没有 key 时为 false */
+  scaffoldRecommend: boolean;
 }
 
 export const JEV_DEFAULTS = {
@@ -62,6 +63,8 @@ export function readJevConfig(env: NodeJS.ProcessEnv): JevConfig {
     promisingThreshold: readNumber(env.JEV_PROMISING_THRESHOLD, JEV_DEFAULTS.promisingThreshold, 0.05, 0.95),
     answerLength: hasKey && (env.JEV_ANSWER_LENGTH ?? '').trim().toLowerCase() !== 'off',
     drawJudge: hasKey && (env.JEV_DRAWING ?? '').trim().toLowerCase() !== 'off',
+    citationCheck: hasKey && (env.JEV_CITATIONS ?? '').trim().toLowerCase() !== 'off',
+    scaffoldRecommend: hasKey && (env.JEV_SCAFFOLDS ?? '').trim().toLowerCase() !== 'off',
   };
 }
 

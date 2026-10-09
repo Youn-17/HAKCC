@@ -6,6 +6,10 @@ import type { KbSourceCard } from '../services/apiClient';
  * 附件能点开原文，PDF 跳到那一页；课程资料学生端看不到原件，只显示摘录。
  * 回答写完了却一个 [n] 都没标，就列出这次检索到的全部资料，标题换成「检索到的课程资料」。
  * 颜色用 AI 面板的变量（assistant.css 的 .assistant-panel），深浅两套跟着面板走。
+ *
+ * 2026-10-09 起回答写完后由 Jev 核对（api/src/services/kbCitationCheck.ts），卡片带上 check：
+ * 引用对得上的标「已核对」，资料里找不到依据、和资料矛盾的标出来；没标引用时只列回答真正用到的资料。
+ * 没有核对结果（旧消息、Jev 没开）时照原来的规则显示。
  */
 
 /** 回答里出现过的 [n] */
@@ -35,9 +39,33 @@ export function parseKbSources(raw: unknown): KbSourceCard[] {
       kind: card.kind === 'material' ? 'material' : 'attachment',
       noteId: textOrNull(card.noteId),
       relevance: typeof card.relevance === 'number' ? card.relevance : null,
+      ...(typeof card.check === 'string' && CHECKS.includes(card.check as CardCheck) ? { check: card.check as CardCheck } : {}),
+      ...(typeof card.checkP === 'number' ? { checkP: card.checkP } : {}),
     }];
   });
 }
+
+type CardCheck = NonNullable<KbSourceCard['check']>;
+const CHECKS: readonly CardCheck[] = ['supported', 'contradicted', 'unsupported', 'used', 'unused'];
+
+/** 卡片上的核对标记。对得上的只给一个淡淡的勾，对不上的写明 */
+const CHECK_MARK: Partial<Record<CardCheck, { zh: string; en: string; tipZh: string; tipEn: string; className: string; icon: string }>> = {
+  supported: {
+    zh: '已核对', en: 'Checked', icon: 'check-line',
+    tipZh: '核对过：这段资料支持引用它的那句话', tipEn: 'Checked: this passage supports the sentence that cites it',
+    className: 'text-[#5d8a7f] dark:text-[#9cc5ba]',
+  },
+  unsupported: {
+    zh: '未找到依据', en: 'Not in source', icon: 'question-line',
+    tipZh: '核对过：引用它的那句话在这段资料里找不到依据', tipEn: 'Checked: the sentence citing this passage is not found in it',
+    className: 'border border-[#C9A96E]/50 bg-[#C9A96E]/10 px-1.5 text-[#8a6d38] dark:text-[#dcc394]',
+  },
+  contradicted: {
+    zh: '与资料不符', en: 'Contradicts source', icon: 'error-warning-line',
+    tipZh: '核对过：引用它的那句话和这段资料说的相反', tipEn: 'Checked: the sentence citing this passage says the opposite',
+    className: 'border border-[#C27C7C]/50 bg-[#C27C7C]/10 px-1.5 text-[#9a5555] dark:text-[#e0a5a5]',
+  },
+};
 
 export function pagesText(start: number | null, end: number | null, zh: boolean): string | null {
   if (start == null) return null;
@@ -57,24 +85,45 @@ interface Props {
   onOpen?: (noteId: string, page: number | null) => void;
 }
 
+/** 列哪几张、标题写什么。核对过的：没标引用时只列用上了的 */
+export function visibleSources(sources: KbSourceCard[], content: string, streaming: boolean): { shown: KbSourceCard[]; kind: 'cited' | 'used' | 'found' } {
+  const cited = citedNumbers(content);
+  const citedCards = sources.filter(source => cited.has(source.n));
+  if (citedCards.length > 0) return { shown: citedCards, kind: 'cited' };
+  if (streaming) return { shown: [], kind: 'found' };
+  if (sources.some(source => source.check === 'used' || source.check === 'unused')) {
+    return { shown: sources.filter(source => source.check === 'used'), kind: 'used' };
+  }
+  return { shown: sources, kind: 'found' };
+}
+
+const HEADING = {
+  cited: { zh: '引用来源', en: 'Sources' },
+  used: { zh: '回答用到的课程资料', en: 'Course materials used' },
+  found: { zh: '检索到的课程资料', en: 'Course materials found' },
+} as const;
+
 export default function KbSourceCards({ sources, content, streaming, lang, onOpen }: Props) {
   if (sources.length === 0) return null;
   const zh = lang === 'zh';
-  const cited = citedNumbers(content);
-  const citedCards = sources.filter(source => cited.has(source.n));
-  const shown = citedCards.length > 0 ? citedCards : streaming ? [] : sources;
+  const { shown, kind } = visibleSources(sources, content, streaming);
   if (shown.length === 0) return null;
-  const heading = citedCards.length > 0
-    ? (zh ? '引用来源' : 'Sources')
-    : (zh ? '检索到的课程资料' : 'Course materials found');
+  const heading = zh ? HEADING[kind].zh : HEADING[kind].en;
+  const flagged = shown.filter(source => source.check === 'unsupported' || source.check === 'contradicted').length;
 
   return (
     <section className="mt-3 border-t border-[var(--assistant-line)] pt-2.5" aria-label={heading}>
       <h4 className="mb-1.5 text-[0.6875rem] font-semibold text-[var(--assistant-muted)]">{heading}</h4>
+      {flagged > 0 && (
+        <p className="mb-1.5 text-[0.6875rem] leading-5 text-[var(--assistant-muted)]">
+          {zh ? `有 ${flagged} 处引用和资料对不上，已在卡片上标出，用之前请对照原文。` : `${flagged} citation(s) do not match the source and are marked below; check the original before relying on them.`}
+        </p>
+      )}
       <ul className="flex flex-col gap-1.5">
         {shown.map(source => {
           const pages = pagesText(source.pageStart, source.pageEnd, zh);
           const noteId = source.kind === 'attachment' ? source.noteId : null;
+          const mark = source.check ? CHECK_MARK[source.check] : undefined;
           const body = (
             <>
               <span className="mt-0.5 inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-md bg-[#000080]/[0.07] px-1 text-[0.6875rem] font-semibold tabular-nums text-[#000080] dark:bg-blue-950/50 dark:text-blue-300">
@@ -84,6 +133,15 @@ export default function KbSourceCards({ sources, content, streaming, lang, onOpe
                 <span className="flex items-baseline gap-2">
                   <span className="truncate text-[0.75rem] font-semibold text-[var(--assistant-ink)]">{source.title}</span>
                   {pages && <span className="shrink-0 text-[0.6875rem] text-[var(--assistant-muted)]">{pages}</span>}
+                  {mark && (
+                    <span
+                      title={zh ? mark.tipZh : mark.tipEn}
+                      className={`ml-auto inline-flex shrink-0 items-center gap-0.5 self-center rounded-full text-[0.625rem] font-medium ${mark.className}`}
+                    >
+                      <RemixIcon name={mark.icon} size={11} />
+                      {zh ? mark.zh : mark.en}
+                    </span>
+                  )}
                 </span>
                 {source.section && (
                   <span className="block truncate text-[0.6875rem] text-[var(--assistant-muted)]">{source.section}</span>

@@ -17,7 +17,7 @@ import { isCollaborativeDocument } from '../services/collaborativeDocuments';
 const CollaborativeDocumentEditor = lazy(() => import('./CollaborativeDocumentEditor'));
 const COLLAB_ENABLED = import.meta.env.VITE_ENABLE_COLLAB_DOCUMENTS === 'true';
 import AttachmentUploadModal from './AttachmentUploadModal';
-const AnalyticsModal = React.lazy(() => import('./AnalyticsModal'));
+const SpaceAnalytics = React.lazy(() => import('./analytics/SpaceAnalytics'));
 import ViewPanel from './ViewPanel';
 import ViewCard, { VIEW_CARD_WIDTH, VIEW_CARD_HEIGHT } from './ViewCard';
 // 旧的 RiseAboveModal（四步向导 + AI 生成综述）已删除。Rise Above 现在是一间讨论室：
@@ -3026,6 +3026,19 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     setPendingLocate(null);
     locateNote(pendingLocate.id);
   }, [pendingLocate, activeViewId, visibleNoteById, locateNote]);
+  /** 讨论分析里点的笔记：在这个视图就直接定位，在别的视图先切过去（和搜索一样） */
+  const locateAnyNote = useCallback((id: string) => {
+    if (visibleNoteById.has(id)) { locateNote(id); return; }
+    const item = searchItems.find(entry => entry.note.id === id);
+    if (item?.viewId && item.viewId !== activeViewId) {
+      setPendingLocate({ id, viewId: item.viewId });
+      goToView(item.viewId);
+    }
+  }, [visibleNoteById, locateNote, searchItems, activeViewId, goToView]);
+  const analyticsNoteTitles = useMemo(
+    () => new Map(notes.map(note => [note.id, { title: note.title, authorId: note.authorId ?? null }])),
+    [notes],
+  );
   const handlePeekPick = useCallback((id: string) => {
     if (spaceId && UUID_RE.test(id)) {
       trackEvent({
@@ -3060,7 +3073,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         onLogout={logout}
         isWorkspaceAgentOpen={isWorkspaceAgentOpen}
         onToggleWorkspaceAgent={() => setIsWorkspaceAgentOpen(v => !v)}
-        onOpenAnalytics={() => setIsAnalyticsOpen(true)}
+        onOpenAnalytics={viewerIsStaff ? () => setIsAnalyticsOpen(true) : undefined}
         afterTitle={spaceId ? (
           <CanvasSearch
             lang={lang === 'zh' ? 'zh' : 'en'}
@@ -4387,20 +4400,19 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
           </div>
         </div>
       )}
-      {isAnalyticsOpen && (
+      {/* 讨论分析：只给这门课的教职（2026-10-09 用户：给教师看学生整体的讨论情况，用于教学） */}
+      {isAnalyticsOpen && viewerIsStaff && spaceId && (
         <React.Suspense fallback={null}>
-          <AnalyticsModal
-            isOpen={isAnalyticsOpen}
-            onClose={() => setIsAnalyticsOpen(false)}
-            courseId={courseId}
+          <SpaceAnalytics
+            key={spaceId}
+            spaceTitle={currentSpace?.title || headerTitle}
             spaceId={spaceId}
-            lang={lang}
-            currentViewId={activeViewId}
-            currentViewName={activeView.title}
-            userRole={userRole}
-            userId={user?.id ?? 's1'}
-            notes={notes}
-            edges={edges}
+            lang={lang === 'zh' ? 'zh' : 'en'}
+            viewId={activeViewId}
+            viewName={activeView.title}
+            onClose={() => setIsAnalyticsOpen(false)}
+            onLocateNote={locateAnyNote}
+            noteTitles={analyticsNoteTitles}
           />
         </React.Suspense>
       )}

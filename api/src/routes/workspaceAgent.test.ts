@@ -189,6 +189,9 @@ const h = vi.hoisted(() => {
     // 默认这门课没有资料；「课程资料」那一组用例自己给检索结果
     startKbRetrieval: vi.fn((_params: unknown) => ({ available: Promise.resolve(false), result: Promise.resolve(null) as Promise<unknown> })),
     collectGroupNotesForDigest: vi.fn(async () => [{ id: 'n-a1' }]),
+    // 引用核对：默认用真的（测试里 Jev 没开，返回 null）；核对那条用例自己给结果
+    checkKbAnswer: vi.fn(),
+    realCheckKbAnswer: null as unknown as typeof import('../services/kbSources').checkKbAnswer,
     // 要不要画：默认用真的 routeDrawRequest（测试里 Jev 没开，按说法认）；Jev 那几条用例自己给判断
     routeDrawRequest: vi.fn(),
     realRouteDrawRequest: null as unknown as typeof import('../services/drawJudge').routeDrawRequest,
@@ -249,10 +252,11 @@ vi.mock('../services/agentContext', () => ({
 vi.mock('../services/agentTools', () => ({
   createDefaultRegistry: () => ({ getToolsForRole: h.getToolsForRole, executeTool: h.executeTool }),
 }));
-vi.mock('../services/kbSources', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../services/kbSources')>()),
-  startKbRetrieval: h.startKbRetrieval,
-}));
+vi.mock('../services/kbSources', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/kbSources')>();
+  h.realCheckKbAnswer = actual.checkKbAnswer;
+  return { ...actual, startKbRetrieval: h.startKbRetrieval, checkKbAnswer: h.checkKbAnswer };
+});
 vi.mock('../services/modelRouter', () => ({
   isDmxProvider: () => false,
   orderConfigsByHealth: (configs: unknown[]) => configs,
@@ -341,6 +345,8 @@ beforeEach(() => {
   h.runAgentLoopStream.mockClear();
   h.buildAgentContext.mockClear();
   h.streamDrawTurn.mockClear();
+  h.checkKbAnswer.mockReset();
+  h.checkKbAnswer.mockImplementation((answer: string, citations: Parameters<typeof h.realCheckKbAnswer>[1]) => h.realCheckKbAnswer(answer, citations));
   h.routeDrawRequest.mockReset();
   h.routeDrawRequest.mockImplementation((text: string, opts?: Parameters<typeof h.realRouteDrawRequest>[1]) => h.realRouteDrawRequest(text, opts));
   h.executeTool.mockClear();
@@ -1115,6 +1121,21 @@ describe('课程资料：每轮自动检索，回答下面有来源卡片', () =
     expect(h.executeTool).toHaveBeenCalledWith('search_course_materials', { query: '访谈' }, expect.objectContaining({ kbCitations: registry }));
     expect(eventsOf(res.text).filter(e => e.kbSources).map(e => e.kbSources.length)).toEqual([1, 2]);
     expect(savedReply().ai_metadata.kb_sources.map((c: { n: number }) => c.n)).toEqual([1, 2]);
+  });
+
+  it('回答写完后核对引用：带核对结果的卡片再推一次，存下的也是核对过的', async () => {
+    const registry = new KbCitationRegistry([hit('a', '论文A', 3), hit('b', '论文B', 9)]);
+    h.startKbRetrieval.mockReturnValueOnce(runWith(registry));
+    const checked = registry.sources.map(c => ({ ...c, check: c.n === 1 ? 'supported' : 'unsupported', checkP: c.n === 1 ? 0.99 : 0.02 }));
+    h.checkKbAnswer.mockResolvedValueOnce({ sources: checked, summary: { ms: 400, pairs: 2, passages: 0, errors: 0, cited: true } });
+    const res = await call('POST', '/workspace-agent/course-1/stream', ASK);
+
+    expect(h.checkKbAnswer).toHaveBeenCalledWith('AI 的回复', registry);
+    const pushed = eventsOf(res.text).filter(e => e.kbSources).map(e => e.kbSources);
+    expect(pushed).toHaveLength(2);
+    expect(pushed[1]).toEqual(checked);
+    expect(savedReply().ai_metadata.kb_sources).toEqual(checked);
+    expect(savedReply().ai_metadata.kb_check).toMatchObject({ pairs: 2, cited: true });
   });
 
   it('课里没有资料：不推这一步，提示词里没有资料段，回答不存 kb_sources', async () => {

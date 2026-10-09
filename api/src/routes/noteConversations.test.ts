@@ -414,3 +414,16 @@ describe('笔记 AI 助手里画图：先读这条笔记和这段对话（2026-1
     }
   });
 });
+
+describe('课程资料引用核对接在两条回答路径上（2026-10-09）', () => {
+  // 这两条路径的课程资料没有挂载测试（workspaceAgent.test 测了同样的写法），这里锁住：存回答之前核对、存核对过的卡片
+  const src = readFileSync(resolve(__dirname, 'noteConversations.ts'), 'utf-8');
+  it('每处存 kb_sources 之前都先 checkKbAnswer，并把核对过的卡片推给前端', () => {
+    const checks = [...src.matchAll(/const kbChecked = kb && fullReply\.trim\(\) \? await checkKbAnswer\(fullReply, kb\.citations\) : null;/g)].map(m => m.index!);
+    const saves = [...src.matchAll(/kb_sources: kbChecked\?\.sources \?\? /g)].map(m => m.index!);
+    expect(checks).toHaveLength(2);
+    expect(saves).toHaveLength(2);
+    checks.forEach((at, i) => expect(at).toBeLessThan(saves[i]));
+    expect(src.match(/kb_sources: kb\?\.citations/g)).toBeNull();
+  });
+});

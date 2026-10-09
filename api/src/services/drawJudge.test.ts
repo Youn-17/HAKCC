@@ -28,7 +28,7 @@ import {
 
 const CONFIG: JevConfig = {
   apiKey: 'k', endpoint: 'https://jev.test', model: 'jev-1.13.0', timeoutMs: 4000,
-  feedbackMode: 'shadow', needThreshold: 0.5, promisingThreshold: 0.7, answerLength: true, drawJudge: true,
+  feedbackMode: 'shadow', needThreshold: 0.5, promisingThreshold: 0.7, answerLength: true, drawJudge: true, citationCheck: true, scaffoldRecommend: true,
 };
 
 const PREVIOUS: PreviousDrawing = {

@@ -62,7 +62,7 @@ import { loadStudentLearningContext } from '../services/studentLearningContext';
 import { detectQuestionLanguage, languageDirective } from '../services/finalAnswer';
 import { fetchSpaceBuildOnGraph, formatBuildOnSection } from '../services/buildOnContext';
 import { fetchAiInteractionData, formatAiInteractionSection } from '../services/aiInteractionContext';
-import { announceKbRetrieval, KB_STEP_NAME, startKbRetrieval, type KbToolStep } from '../services/kbSources';
+import { announceKbRetrieval, checkKbAnswer, KB_STEP_NAME, startKbRetrieval, type KbToolStep } from '../services/kbSources';
 import { attachImagesToLastUserMessage, imageAttachmentsToParts, isVisionModel, pickVisionModel } from '../services/visionMessages';
 
 const router = Router();
@@ -942,6 +942,10 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
       res.write(`data: ${JSON.stringify({ providerSwitch: { from: cand.providerId, to: next.providerId, model: next.model } })}\n\n`);
     }
 
+    // 回答写完：Jev 核对课程资料的引用，来源卡片带上核对结果再推一次（kbCitationCheck.ts）
+    const kbChecked = kb && fullReply.trim() ? await checkKbAnswer(fullReply, kb.citations) : null;
+    if (kbChecked) res.write(`data: ${JSON.stringify({ kbSources: kbChecked.sources })}\n\n`);
+
     // Save assistant message to agent_messages
     await supabase.from('agent_messages').insert({
       conversation_id: convId,
@@ -954,8 +958,9 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         iterations: agentIterations,
         answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
         tool_steps: toolSteps,
-        // 来源卡片：回答里的 [n] 对应哪份资料、哪一节、第几页
-        kb_sources: kb?.citations.sources.length ? kb.citations.sources : undefined,
+        // 来源卡片：回答里的 [n] 对应哪份资料、哪一节、第几页；核对过的带上结果
+        kb_sources: kbChecked?.sources ?? (kb?.citations.sources.length ? kb.citations.sources : undefined),
+        ...(kbChecked ? { kb_check: kbChecked.summary } : {}),
         elapsed_ms: Date.now() - turnStartedAt,
         provider_id: usedProvider,
         model: usedModel,

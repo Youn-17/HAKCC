@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT, requireRole } from '../middleware/auth';
@@ -5,8 +6,160 @@ import { ApiError } from '../middleware/errorHandler';
 import { getSpaceMetricsSummary } from '../services/metricsService';
 import { ensureSpaceAccess, ensureSpaceStaff, ensureNoteAccess } from '../services/accessControl';
 import { clampNumber } from '../services/requestParams';
+import { buildOverview, buildStudentDetail, loadSpaceAnalytics, wordCloudDocs } from '../services/spaceAnalytics';
+import { buildDiscussion, filterDiscussionPeriod, type DiscussionFilter } from '../services/discussionAnalytics';
+import { extractKeywords, keywordChanges, layoutCloud, type CloudItem, type KeywordTerm } from '../services/python/textWorker';
 
 const router = Router();
+
+// ── 讨论分析（2026-10-09）：教师看全班和个人的讨论情况，只给这门课的教职 ──────────────
+
+const queryView = (raw: unknown) => (typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 100) : null);
+
+function queryInstant(req: Request, key: string): string | null {
+  const raw = req.query[key];
+  if (raw == null || raw === '') return null;
+  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(raw) || !Number.isFinite(Date.parse(raw))) throw new ApiError(400, `Invalid ${key} date`);
+  if (new Date(`${raw.slice(0,10)}T00:00:00Z`).toISOString().slice(0,10)!==raw.slice(0,10)) throw new ApiError(400, `Invalid ${key} date`);
+  return new Date(raw).toISOString();
+}
+function discussionFilter(req: Request): DiscussionFilter {
+  const from = queryInstant(req,'from'), until = queryInstant(req,'until');
+  if (from && until && from >= until) throw new ApiError(400, 'End date must follow start date');
+  const author = req.query.author_id;
+  if (author != null && typeof author !== 'string') throw new ApiError(400, 'Invalid author');
+  return {from, until, authorId: typeof author === 'string' && author ? author : null};
+}
+function termOptions(req: Request) {
+  const words = (key: string) => {
+    const raw=req.query[key];
+    if (raw == null || raw === '') return [];
+    if (typeof raw !== 'string' || raw.length > 1200) throw new ApiError(400, `Invalid ${key}`);
+    const values=[...new Set(raw.split(/[\s,，;；]+/).filter(Boolean))];
+    if (values.length > 50 || values.some(w=>w.length>20)) throw new ApiError(400, `Too many or too long ${key}`);
+    return values;
+  };
+  return {extraWords:words('extra_words'),extraStop:words('extra_stop')};
+}
+
+router.get('/spaces/:spaceId/analytics/discussion', verifyJWT, async (req: Request, res: Response) => {
+  const spaceId = String(req.params.spaceId);
+  await ensureSpaceStaff(spaceId, req.user!);
+  const filter = discussionFilter(req);
+  const input = await loadSpaceAnalytics(spaceId, {viewId:queryView(req.query.view_id)});
+  if (filter.authorId && !input.members.some(m => m.id === filter.authorId && !m.isStaff)) throw new ApiError(404, 'Student not in this space');
+  res.json(buildDiscussion(input, filter));
+});
+
+// GET /api/spaces/:spaceId/analytics?view_id= — 全班概况
+router.get('/spaces/:spaceId/analytics', verifyJWT, async (req: Request, res: Response) => {
+  const spaceId = String(req.params.spaceId);
+  await ensureSpaceStaff(spaceId, req.user!);
+  const input = await loadSpaceAnalytics(spaceId, { viewId: queryView(req.query.view_id) });
+  const filtered = filterDiscussionPeriod(input, discussionFilter(req));
+  res.json({ overview: buildOverview(filtered), signature: input.signature, generatedAt: input.now.toISOString() });
+});
+
+// GET /api/spaces/:spaceId/analytics/students/:userId?view_id= — 一个学生
+router.get('/spaces/:spaceId/analytics/students/:userId', verifyJWT, async (req: Request, res: Response) => {
+  const spaceId = String(req.params.spaceId);
+  await ensureSpaceStaff(spaceId, req.user!);
+  const input = await loadSpaceAnalytics(spaceId, { viewId: queryView(req.query.view_id) });
+  const userId = String(req.params.userId);
+  if (!input.members.some(m => m.id === userId) && !input.notes.some(n => n.authorId === userId)) {
+    throw new ApiError(404, 'This person has no records in this space');
+  }
+  res.json({ student: buildStudentDetail(input, userId) });
+});
+
+type CloudPayload = { available: boolean; terms: KeywordTerm[]; cloud: { items: CloudItem[]; width: number; height: number } | null; docs: number; error?: string };
+const cloudCache = new Map<string, { at: number; value: CloudPayload }>();
+const CLOUD_TTL_MS = 10 * 60_000;
+const CLOUD_CACHE_MAX = 200;
+
+/** 每改一次笔记签名就变、多一个键：存的时候顺手清掉过期的，再超出上限就从最早的删 */
+function rememberCloud(key: string, value: CloudPayload): void {
+  const now = Date.now();
+  for (const [k, entry] of cloudCache) if (now - entry.at >= CLOUD_TTL_MS) cloudCache.delete(k);
+  cloudCache.delete(key);
+  cloudCache.set(key, { at: now, value });
+  while (cloudCache.size > CLOUD_CACHE_MAX) cloudCache.delete(cloudCache.keys().next().value as string);
+}
+
+/**
+ * GET /api/spaces/:spaceId/analytics/wordcloud?view_id=&author_id=&width=&height= — 词云。
+ * 用 Python（jieba 分词 + wordcloud 排版，services/python）对学生写的笔记做，不经 AI；
+ * 笔记里插入的 AI 摘录和支架话头不算。笔记没变就用缓存。Python 不可用时 available=false，其余分析照常。
+ */
+router.get('/spaces/:spaceId/analytics/wordcloud', verifyJWT, async (req: Request, res: Response) => {
+  const spaceId = String(req.params.spaceId);
+  await ensureSpaceStaff(spaceId, req.user!);
+  const filter = discussionFilter(req);
+  const authorId = filter.authorId;
+  const width = clampNumber(req.query.width, 320, 1600, 900);
+  const height = clampNumber(req.query.height, 200, 1000, 420);
+  const input = await loadSpaceAnalytics(spaceId, { viewId: queryView(req.query.view_id) });
+  if (authorId && !input.members.some(m => m.id === authorId && !m.isStaff)) throw new ApiError(404, 'Student not in this space');
+  const docs = wordCloudDocs(filterDiscussionPeriod(input, filter), authorId);
+  const options = termOptions(req);
+  const digest = createHash('sha256').update(JSON.stringify({docs,names:input.members.map(m=>m.name),view:queryView(req.query.view_id),filter,width,height,options,version:3})).digest('hex');
+  const key = `${spaceId}|${digest}`;
+  const hit = cloudCache.get(key);
+  if (hit && Date.now() - hit.at < CLOUD_TTL_MS) {
+    res.json(hit.value);
+    return;
+  }
+  let value: CloudPayload;
+  if (docs.length === 0) {
+    value = { available: true, terms: [], cloud: { items: [], width, height }, docs: 0 };
+  } else {
+    try {
+      const names = input.members.map(m => m.name).filter(name => name && name !== '未命名');
+      const keywords = await extractKeywords(docs, { topK: authorId ? 40 : 70, names, ...(options.extraWords.length || options.extraStop.length ? options : {}) });
+      const cloud = await layoutCloud(keywords.terms.map(t => ({ word: t.word, weight: t.weight })), { width, height });
+      value = { available: true, terms: keywords.terms, cloud, docs: keywords.docs };
+    } catch (err) {
+      console.warn('[analytics] word cloud unavailable:', err instanceof Error ? err.message : err);
+      res.json({ available: false, terms: [], cloud: null, docs: docs.length, error: 'python unavailable' });
+      return;
+    }
+  }
+  rememberCloud(key, value);
+  res.json(value);
+});
+
+type ChangesPayload = Awaited<ReturnType<typeof keywordChanges>> & {available: boolean; splitAt: string};
+const changesCache = new Map<string,{at:number;value:ChangesPayload}>();
+router.get('/spaces/:spaceId/analytics/changes', verifyJWT, async (req: Request, res: Response) => {
+  const spaceId=String(req.params.spaceId);
+  await ensureSpaceStaff(spaceId,req.user!);
+  const filter=discussionFilter(req), requestedSplit=queryInstant(req,'split_at'), options=termOptions(req);
+  const input=await loadSpaceAnalytics(spaceId,{viewId:queryView(req.query.view_id)});
+  if (filter.authorId && !input.members.some(m=>m.id===filter.authorId && !m.isStaff)) throw new ApiError(404,'Student not in this space');
+  const scoped=filterDiscussionPeriod(input,filter);
+  const text=wordCloudDocs(scoped,filter.authorId);
+  const dates=new Map(scoped.notes.map(n=>[n.id,Date.parse(n.createdAt)]));
+  const times=text.map(d=>dates.get(d.id)!);
+  const min=filter.from ? Date.parse(filter.from) : times.length ? Math.min(...times) : input.now.getTime();
+  const max=filter.until ? Date.parse(filter.until) : times.length ? Math.max(...times)+1 : min+1;
+  const splitAt=requestedSplit ?? new Date(min + (max-min)/2).toISOString();
+  if ((filter.from && splitAt <= filter.from) || (filter.until && splitAt >= filter.until)) throw new ApiError(400,'Comparison date must be inside the selected range');
+  const docs=text.map(d=>({...d,period:dates.get(d.id)! < Date.parse(splitAt) ? 'before' as const : 'after' as const}));
+  const names=input.members.map(m=>m.name).filter(n=>n && n!=='未命名');
+  const key=spaceId+'|'+createHash('sha256').update(JSON.stringify({docs,names,options,view:queryView(req.query.view_id),filter,splitAt,version:1})).digest('hex');
+  const hit=changesCache.get(key);
+  if(hit && Date.now()-hit.at<CLOUD_TTL_MS) {res.json(hit.value);return;}
+  try {
+    const result=docs.length ? await keywordChanges(docs,{names,...options}) : {terms:[],periods:{before:{docs:0,tokens:0},after:{docs:0,tokens:0}}};
+    const value={...result,available:true,splitAt};
+    for(const [k,entry] of changesCache) if(Date.now()-entry.at>=CLOUD_TTL_MS) changesCache.delete(k);
+    changesCache.set(key,{at:Date.now(),value});
+    while(changesCache.size>100) changesCache.delete(changesCache.keys().next().value as string);
+    res.json(value);
+  } catch {
+    res.json({available:false,splitAt,terms:[],periods:{before:{docs:0,tokens:0},after:{docs:0,tokens:0}}});
+  }
+});
 
 // GET /api/spaces/:spaceId/metrics/summary - space metrics summary (any member)
 router.get('/spaces/:spaceId/metrics/summary', verifyJWT, async (req: Request, res: Response) => {

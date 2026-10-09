@@ -8,6 +8,8 @@ describe('readJevConfig', () => {
     expect(config.feedbackMode).toBe('off');
     expect(config.answerLength).toBe(false);
     expect(config.drawJudge).toBe(false);
+    expect(config.citationCheck).toBe(false);
+    expect(config.scaffoldRecommend).toBe(false);
     expect(config.model).toBe('jev-1.13.0');
     expect(config.endpoint).toBe(JEV_DEFAULTS.endpoint);
   });
@@ -18,6 +20,8 @@ describe('readJevConfig', () => {
     expect(config.feedbackMode).toBe('shadow');
     expect(config.answerLength).toBe(true);
     expect(config.drawJudge).toBe(true);
+    expect(config.citationCheck).toBe(true);
+    expect(config.scaffoldRecommend).toBe(true);
   });
 
   it('模式写错了不会变成 gate：按默认 shadow', () => {
@@ -34,6 +38,8 @@ describe('readJevConfig', () => {
     expect(readJevConfig({ JEV_API_KEY: 'k', JEV_ANSWER_LENGTH: 'off' }).answerLength).toBe(false);
     expect(readJevConfig({ JEV_API_KEY: 'k', JEV_DRAWING: 'OFF' }).drawJudge).toBe(false);
     expect(readJevConfig({ JEV_API_KEY: 'k', JEV_DRAWING: 'off' }).answerLength).toBe(true);
+    expect(readJevConfig({ JEV_API_KEY: 'k', JEV_CITATIONS: 'off' }).citationCheck).toBe(false);
+    expect(readJevConfig({ JEV_API_KEY: 'k', JEV_SCAFFOLDS: 'off' }).scaffoldRecommend).toBe(false);
   });
 
   it('两个阈值：有问题 0.5，好想法更严 0.7', () => {

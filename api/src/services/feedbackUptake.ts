@@ -9,7 +9,8 @@ export function studentAuthoredText(html: string): string {
     if (token.startsWith('<')) {
       const tag = token.match(/^<\s*([a-z0-9]+)/i)?.[1]?.toLowerCase();
       if (!tag) continue;
-      const excluded = ['script', 'style'].includes(tag) || stack.at(-1) === true || /\bdata-(?:ai-source|scaffold-tag|scaffold-bracket)\s*=/.test(token);
+      // 属性可能没写值（<strong data-scaffold-tag>，线上有一篇是这样存的）
+      const excluded = ['script', 'style'].includes(tag) || stack.at(-1) === true || /\bdata-(?:ai-source|scaffold-tag|scaffold-bracket)(?:\s*=|[\s/>])/.test(token);
       if (!['br', 'img', 'hr', 'input', 'meta', 'link', 'wbr'].includes(tag) && !token.endsWith('/>')) stack.push(excluded);
       if (!excluded) output.push(' ');
     } else if (!stack.at(-1)) output.push(token);

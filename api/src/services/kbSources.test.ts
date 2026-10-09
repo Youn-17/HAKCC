@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../config/supabase', () => ({ supabase: {} }));
+const check = vi.hoisted(() => ({ checkCitations: vi.fn() }));
+vi.mock('./kbCitationCheck', () => ({ checkCitations: check.checkCitations }));
 
 import type { KbHit } from './knowledgeBase';
-import { excerptOf, formatKbSection, KbCitationRegistry, pageLabel, toSourceCards } from './kbSources';
+import { checkKbAnswer, excerptOf, formatKbSection, KbCitationRegistry, pageLabel, toSourceCards } from './kbSources';
 
 /** 笔记 AI 用课程资料：提示词里的编号、页码、引用规矩，和回答下面的来源卡片 */
 
@@ -90,5 +92,33 @@ describe('KbCitationRegistry：一轮回答里的资料编号', () => {
   it('没有自动检索结果时从 1 开始', () => {
     const registry = new KbCitationRegistry();
     expect(registry.add([hit({ chunkId: 'x' })])).toEqual([1]);
+  });
+});
+
+describe('checkKbAnswer：回答写完后核对引用（2026-10-09）', () => {
+  it('交给核对的是每段的全文（卡片上只有摘录）；核对结果写回对应编号的卡片', async () => {
+    const long = '检索练习'.repeat(80);
+    const registry = new KbCitationRegistry([hit({ chunkId: 'a', content: long, pageStart: 3, pageEnd: 3 }), hit({ chunkId: 'b', title: '课程大纲', headingPath: null })]);
+    check.checkCitations.mockResolvedValueOnce({
+      cards: new Map([[1, { check: 'supported', p: 0.99 }], [2, { check: 'unsupported', p: 0.02 }]]),
+      summary: { ms: 300, pairs: 2, passages: 0, errors: 0, cited: true },
+    });
+    const out = await checkKbAnswer('第一句[1]。第二句[2]。', registry);
+    const passages = check.checkCitations.mock.calls[0][1];
+    expect(passages[0]).toEqual({ n: 1, source: 'Scardamalia 2006.pdf · Principles · p. 3', text: long });
+    expect(passages[1].source).toBe('课程大纲');
+    expect(out!.sources.map(c => [c.n, c.check, c.checkP])).toEqual([[1, 'supported', 0.99], [2, 'unsupported', 0.02]]);
+    expect(out!.summary.pairs).toBe(2);
+  });
+
+  it('没开 Jev、核对出错、一张都没核出来：返回 null，卡片照旧', async () => {
+    const registry = new KbCitationRegistry([hit({ chunkId: 'a' })]);
+    check.checkCitations.mockResolvedValueOnce(null);
+    expect(await checkKbAnswer('第一句[1]。', registry)).toBeNull();
+    check.checkCitations.mockRejectedValueOnce(new Error('boom'));
+    expect(await checkKbAnswer('第一句[1]。', registry)).toBeNull();
+    check.checkCitations.mockResolvedValueOnce({ cards: new Map(), summary: { ms: 1, pairs: 1, passages: 0, errors: 1, cited: true } });
+    expect(await checkKbAnswer('第一句[1]。', registry)).toBeNull();
+    expect(await checkKbAnswer('第一句。', new KbCitationRegistry([]))).toBeNull();
   });
 });

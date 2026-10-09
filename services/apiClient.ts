@@ -2035,6 +2035,9 @@ export interface KbSourceCard {
   /** 附件所在的笔记，点开原文用；课程资料为 null */
   noteId: string | null;
   relevance: number | null;
+  /** 回答写完后的引用核对：supported 对得上 / contradicted 和资料矛盾 / unsupported 资料没说到；没标引用时 used / unused */
+  check?: 'supported' | 'contradicted' | 'unsupported' | 'used' | 'unused';
+  checkP?: number;
 }
 
 export interface NoteConversationAIStreamEvent {
@@ -2637,7 +2640,22 @@ export const scaffolds = {
     scope?: 'global';
   }) => request<{ ok: boolean; updated?: number; deleted?: number }>('POST', `/courses/${courseId}/scaffolds/bulk`, data),
 
-  use: (scaffoldId: string, data?: { space_id?: string; note_id?: string }) =>
+  /** 按正在写的草稿推荐一条支架（服务端问 Jev）；没开或不合适时 scaffold 为 null */
+  recommend: (courseId: string, data: {
+    title: string;
+    text: string;
+    parent?: { title: string; text: string } | null;
+    used_ids?: string[];
+    note_id?: string | null;
+    space_id?: string | null;
+  }) => request<{
+    scaffold: { id: string; title: string; titleEn: string | null; group: string } | null;
+    fit: number | null;
+    decided_by: 'jev' | 'off' | 'too_short';
+  }>('POST', `/courses/${courseId}/scaffolds/recommend`, data),
+
+  /** source: 'recommended' = 用的是推荐的那条 */
+  use: (scaffoldId: string, data?: { space_id?: string; note_id?: string; source?: 'recommended' }) =>
     request<{ ok: boolean }>('POST', `/scaffolds/${scaffoldId}/use`, data ?? {}),
 };
 
@@ -3969,4 +3987,111 @@ export const support = {
   inbox: () =>
     request<{ student: SupportInboxItem[]; teacher: SupportInboxItem[]; counts: { student: number; teacher: number } }>(
       'GET', '/support/inbox'),
+};
+
+// ── 讨论分析（知识空间顶栏「分析」，2026-10-09）：只给这门课的教职 ──────────────
+
+export interface AnalyticsCount { label: string; count: number }
+
+export interface SpaceAnalyticsOverview {
+  summary: {
+    students: number;
+    activeStudents: number;
+    quietStudents: number;
+    notes: number;
+    teacherNotes: number;
+    riseAbove: number;
+    buildOns: number;
+    unanswered: number;
+    chars: number;
+    feedback: { total: number; adopted: number; rejected: number; ignored: number; pending: number };
+    aiUse: number;
+    firstAt: string | null;
+    lastAt: string | null;
+  };
+  timeline: Array<{ day: string; notes: number; buildOns: number; active: number }>;
+  participation: Array<{
+    userId: string;
+    name: string;
+    avatar: string | null;
+    notes: number;
+    buildOnsGiven: number;
+    buildOnsReceived: number;
+    chars: number;
+    scaffolds: number;
+    lastAt: string | null;
+    quiet: boolean;
+    aiFeedback: { received: number; adopted: number };
+    aiUse: number;
+  }>;
+  network: { nodes: Array<{ id: string; name: string; notes: number; buildOns: number }>; links: Array<{ from: string; to: string; count: number }> };
+  unanswered: Array<{ id: string; title: string; authorId: string | null; authorName: string; createdAt: string }>;
+  scaffoldGroups: AnalyticsCount[];
+  relationTypes: AnalyticsCount[];
+}
+
+export interface SpaceStudentDetail {
+  member: { id: string; name: string; avatar: string | null; isStaff: boolean };
+  summary: {
+    notes: number;
+    buildOnsGiven: number;
+    buildOnsReceived: number;
+    chars: number;
+    scaffolds: number;
+    aiUse: number;
+    firstAt: string | null;
+    lastAt: string | null;
+    quiet: boolean;
+  };
+  timeline: Array<{ day: string; notes: number; buildOns: number }>;
+  notes: Array<{ id: string; title: string; createdAt: string; type: string | null; received: number; scaffolds: number; chars: number }>;
+  builtOn: Array<{ userId: string; name: string; count: number }>;
+  builtOnBy: Array<{ userId: string; name: string; count: number }>;
+  relationTypes: { given: AnalyticsCount[]; received: AnalyticsCount[] };
+  scaffoldGroups: AnalyticsCount[];
+  scaffoldTitles: AnalyticsCount[];
+  feedback: { total: number; adopted: number; rejected: number; ignored: number; pending: number; byType: AnalyticsCount[] };
+  unanswered: number;
+}
+
+export interface SpaceWordCloud {
+  available: boolean;
+  terms: Array<{ word: string; weight: number; count: number; notes: number; note_ids: string[] }>;
+  cloud: { items: Array<{ word: string; weight: number; size: number; x: number; y: number; w: number; h: number; ascent: number }>; width: number; height: number } | null;
+  docs: number;
+  error?: string;
+}
+
+const analyticsQuery = (params: Record<string, string | number | null | undefined>) => {
+  const q = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value != null && value !== '') q.set(key, String(value));
+  const s = q.toString();
+  return s ? `?${s}` : '';
+};
+
+export interface DiscussionOptions { viewId?: string | null; authorId?: string | null; from?: string | null; until?: string | null }
+export interface SpaceDiscussion {
+  members: Array<{id: string; name: string}>;
+  notes: Array<{id: string; title: string; authorId: string; createdAt: string; type: string | null; excerpt: string; selected: boolean}>;
+  edges: Array<{from: string; to: string; type: string; createdAt: string}>;
+  pending: Array<{noteId: string; reason: 'unanswered' | 'question'}>;
+}
+export interface SpaceKeywordChanges {
+  available: boolean;
+  splitAt: string;
+  periods: {before: {docs: number; tokens: number}; after: {docs: number; tokens: number}};
+  terms: Array<{word: string; before: {count: number; notes: number; note_ids: string[]}; after: {count: number; notes: number; note_ids: string[]}; delta: number}>;
+}
+const discussionQuery = (opts: DiscussionOptions) => ({view_id:opts.viewId,author_id:opts.authorId,from:opts.from,until:opts.until});
+
+export const spaceAnalytics = {
+  discussion: (spaceId: string, opts: DiscussionOptions = {}) => request<SpaceDiscussion>('GET', `/spaces/${spaceId}/analytics/discussion${analyticsQuery(discussionQuery(opts))}`),
+  changes: (spaceId: string, opts: DiscussionOptions & {splitAt?: string | null; extraWords?: string; extraStop?: string} = {}) => request<SpaceKeywordChanges>('GET', `/spaces/${spaceId}/analytics/changes${analyticsQuery({...discussionQuery(opts),split_at:opts.splitAt,extra_words:opts.extraWords,extra_stop:opts.extraStop})}`),
+  overview: (spaceId: string, viewId?: string | null, period: Pick<DiscussionOptions, 'from' | 'until'> = {}) =>
+    request<{ overview: SpaceAnalyticsOverview; signature: string; generatedAt: string }>('GET', `/spaces/${spaceId}/analytics${analyticsQuery({ view_id: viewId, from: period.from, until: period.until })}`),
+  student: (spaceId: string, userId: string, viewId?: string | null) =>
+    request<{ student: SpaceStudentDetail }>('GET', `/spaces/${spaceId}/analytics/students/${userId}${analyticsQuery({ view_id: viewId })}`),
+  /** 词云：服务端用 Python（jieba + wordcloud）对学生写的笔记做，不经 AI */
+  wordCloud: (spaceId: string, opts: DiscussionOptions & { width?: number; height?: number; extraWords?: string; extraStop?: string } = {}) =>
+    request<SpaceWordCloud>('GET', `/spaces/${spaceId}/analytics/wordcloud${analyticsQuery({ ...discussionQuery(opts), width: opts.width, height: opts.height, extra_words: opts.extraWords, extra_stop: opts.extraStop })}`),
 };

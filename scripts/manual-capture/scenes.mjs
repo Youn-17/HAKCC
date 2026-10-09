@@ -748,6 +748,18 @@ SCENES.push(
   { name: 'ui-teacher-ai', kind: 'shot', role: 'teacher', async run({ page, shot }) { await teacherPanel(page, 'AI 设置'); await shot('ui-teacher-ai'); } },
   { name: 'ui-teacher-helpdesk', kind: 'shot', role: 'teacher', async run({ page, shot }) { await teacherPanel(page, '学生求助'); await shot('ui-teacher-helpdesk'); } },
   { name: 'ui-teaching-log', kind: 'shot', role: 'teacher', async run({ page, shot }) { await teacherPanel(page, '教学日志'); await shot('ui-teaching-log'); } },
+  {
+    name: 'ui-teacher-analytics',
+    kind: 'shot',
+    role: 'teacher',
+    async run({ page, shot }) {
+      await openCanvas(page);
+      await page.getByRole('button', { name: '分析' }).first().click();
+      await page.getByText('每个人的参与').first().waitFor();
+      await page.waitForTimeout(1800);
+      await shot('ui-teacher-analytics');
+    },
+  },
 );
 
 // ── 新增：文档阅读、图灵测试、触发设置 ───────────────────────────────────

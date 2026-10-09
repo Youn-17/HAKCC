@@ -3,7 +3,9 @@ import { supabase } from '../config/supabase';
 import { verifyJWT, requireRole, type AuthUser } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
 import { isUuid } from '../services/eventPayload';
-import { ensureCourseInstructor, getCourseStanding } from '../services/accessControl';
+import { ensureCourseInstructor, ensureCourseMember, getCourseStanding } from '../services/accessControl';
+import { logEvent } from '../services/eventService';
+import { recommendScaffold, type ScaffoldOption } from '../services/scaffoldRecommend';
 
 const router = Router();
 
@@ -79,6 +81,83 @@ router.get('/courses/:courseId/scaffolds', verifyJWT, async (req: Request, res: 
   // requireScaffold 是课程级开关本身（支架管理弹窗里的那个开关要显示它）；
   // scaffoldExempt 说的是这个开关管不管当前这个人
   res.json({ scaffolds: list, requireScaffold: course?.require_scaffold === true, scaffoldExempt });
+});
+
+/** 草稿至少这么多字（不算空白）才推荐：几个字看不出在做什么 */
+const RECOMMEND_MIN_CHARS = 20;
+
+/**
+ * POST /api/courses/:courseId/scaffolds/recommend — 按正在写的草稿推荐一条支架（Jev，scaffoldRecommend.ts）。
+ * 只从这门课学生看得到的支架里挑（老师隐藏的不推荐，教职写笔记时也一样），已经用在这条笔记里的不再推荐。
+ * 推荐出来就记一条 scaffold_recommended 事件：研究上分得清哪些支架是推荐后才用的。
+ * Body: { title, text, parent?: { title, text }, used_ids?, note_id?, space_id? } → { scaffold: { id, title, titleEn, group } | null, fit, decided_by }
+ */
+router.post('/courses/:courseId/scaffolds/recommend', verifyJWT, async (req: Request, res: Response) => {
+  const courseId = String(req.params.courseId);
+  if (!isUuid(courseId)) throw new ApiError(400, 'courseId must be a valid UUID');
+  await ensureCourseMember(courseId, req.user!);
+
+  const body = (req.body ?? {}) as { title?: unknown; text?: unknown; parent?: unknown; used_ids?: unknown; note_id?: unknown; space_id?: unknown };
+  const text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
+  const title = typeof body.title === 'string' ? body.title.trim().slice(0, 200) : '';
+  if (text.replace(/\s/g, '').length < RECOMMEND_MIN_CHARS) {
+    res.json({ scaffold: null, fit: null, decided_by: 'too_short' });
+    return;
+  }
+  const rawParent = body.parent && typeof body.parent === 'object' ? body.parent as { title?: unknown; text?: unknown } : null;
+  const parent = rawParent && (typeof rawParent.title === 'string' || typeof rawParent.text === 'string')
+    ? { title: String(rawParent.title ?? '').slice(0, 200), text: String(rawParent.text ?? '').slice(0, 1000) }
+    : null;
+  const used = new Set((Array.isArray(body.used_ids) ? body.used_ids : []).filter((id): id is string => typeof id === 'string' && isUuid(id)));
+
+  const [{ data, error }, { data: prefRows }] = await Promise.all([
+    supabase
+      .from('scaffolds')
+      .select('id, title, title_en, category, metadata, sort_order')
+      .or(`course_id.eq.${courseId},course_id.is.null`)
+      .order('sort_order', { ascending: true }),
+    supabase.from('course_scaffold_prefs').select('scaffold_id, hidden').eq('course_id', courseId),
+  ]);
+  if (error) throw new ApiError(500, error.message);
+  const hidden = new Set((prefRows ?? []).filter(p => p.hidden).map(p => p.scaffold_id as string));
+  const options: ScaffoldOption[] = (data ?? [])
+    .filter(row => !hidden.has(row.id as string) && !used.has(row.id as string))
+    .map(row => {
+      const meta = (row.metadata ?? {}) as { l2_zh?: unknown };
+      return {
+        id: row.id as string,
+        title: String(row.title ?? ''),
+        titleEn: (row.title_en as string | null) ?? null,
+        group: typeof meta.l2_zh === 'string' && meta.l2_zh ? meta.l2_zh : String(row.category ?? ''),
+      };
+    })
+    .filter(option => option.title);
+
+  const result = await recommendScaffold({ title, text, parent }, options);
+  if (result?.scaffold) {
+    logEvent({
+      actor_id: req.user!.id,
+      actor_role: req.user!.role,
+      event_type: 'scaffold_recommended',
+      object_type: 'scaffold',
+      object_id: result.scaffold.id,
+      space_id: typeof body.space_id === 'string' && isUuid(body.space_id) ? body.space_id : null,
+      metadata_json: {
+        note_id: typeof body.note_id === 'string' && isUuid(body.note_id) ? body.note_id : null,
+        course_id: courseId,
+        fit: result.fit,
+        substantive: result.substantive,
+        candidates: result.candidates.map(c => c.id),
+        model: result.model ?? null,
+        cached: result.cached ?? false,
+      },
+    });
+  }
+  res.json({
+    scaffold: result?.scaffold ? { id: result.scaffold.id, title: result.scaffold.title, titleEn: result.scaffold.titleEn, group: result.scaffold.group } : null,
+    fit: result?.fit ?? null,
+    decided_by: result ? 'jev' : 'off',
+  });
 });
 
 // PUT /api/courses/:courseId/scaffold-policy — 本课程是否强制使用支架（课程创建者与课程管理员）
@@ -303,7 +382,7 @@ router.delete('/scaffolds/:id', verifyJWT, requireRole('teacher', 'admin'), asyn
 
 // POST /api/scaffolds/:id/use — increment usage count + log event
 router.post('/scaffolds/:id/use', verifyJWT, async (req: Request, res: Response) => {
-  const { space_id, note_id } = req.body;
+  const { space_id, note_id, source } = req.body;
 
   const { data, error } = await supabase
     .from('scaffolds')
@@ -326,7 +405,8 @@ router.post('/scaffolds/:id/use', verifyJWT, async (req: Request, res: Response)
     object_type: 'scaffold',
     object_id: req.params.id,
     space_id: space_id ?? null,
-    metadata_json: { note_id: note_id ?? null },
+    // source = 'recommended'：用的是写笔记时推荐的那条（scaffold_recommended）
+    metadata_json: { note_id: note_id ?? null, ...(source === 'recommended' ? { source: 'recommended' } : {}) },
   });
 
   res.json({ ok: true });

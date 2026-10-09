@@ -1,5 +1,24 @@
 # Release validation
 
+Checked on **2026-10-10** for **v0.7.0**. This successor retains the sanitized v0.6.0 package and adds inspected discussion-analysis, optional citation-check and scaffold-suggestion source changes.
+
+## Current checks
+
+- Public application suite: **212 files / 2,420 tests passed** with Node 22 and actual local Python for worker tests.
+- Frontend TypeScript check, production build and API build passed. Existing chunk-size warnings remain.
+- The dedicated analytics page was checked locally with fictional fixtures on desktop, mobile and dark mode: filters, sources, anonymity, browser back, canvas return and PNG export. Text calculations used actual local Python. These browser checks used the private development source; public source was independently tested and built.
+- Source fingerprint, full public inventory, relative-link and credential-shape checks passed. Local comparison against five available credential values and known private paths/server markers found no matching public files. This is a bounded automated check, not a formal privacy audit.
+- Public lockfiles retain the previous publication-only dependency patches. Dependencies did not change in this successor. The dependency audit snapshots below are dated 2026-10-09 and were not refreshed for this release.
+
+## Discussion-analysis limits
+
+The four tools inspect student-authored Note text and actual adopted Build-on relations. Keyword periods use creation dates and current text, not historical revision snapshots. Anonymous display hides names, titles and excerpts, but does not anonymize words from source text. Frequencies and relation labels do not measure mastery or demonstrate learning effects. Sources are capped at 50 IDs per keyword; counts remain complete. Peer connections and teacher-defined topic coverage are deferred. No new database migration is required. Deployment credentials and production acceptance records are excluded from this public package.
+
+## Previous release evidence
+
+The following checks and dependency snapshots were recorded for v0.6.0; their dates and scope remain unchanged.
+
+
 Checked on **2026-10-09** for public release **v0.6.0**. This package inherits the sanitized v0.5.0 public snapshot and incorporates inspected application updates and collaborative-document working files from the revision recorded in [source_snapshot.json](source_snapshot.json). Exact publication bytes are identified by the manifests; the development revision alone does not describe publication-only adjustments or uncommitted working files.
 
 ## Executed checks

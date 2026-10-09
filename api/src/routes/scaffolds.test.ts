@@ -47,7 +47,10 @@ const h = vi.hoisted(() => {
     }
     return builder;
   };
-  return { state, from, getCourseStanding: vi.fn(), ensureCourseInstructor: vi.fn() };
+  return {
+    state, from, getCourseStanding: vi.fn(), ensureCourseInstructor: vi.fn(),
+    ensureCourseMember: vi.fn(), recommendScaffold: vi.fn(), logEvent: vi.fn(),
+  };
 });
 
 vi.mock('../config/supabase', () => ({ supabase: { from: h.from } }));
@@ -60,8 +63,11 @@ vi.mock('../middleware/auth', () => ({
 }));
 vi.mock('../services/accessControl', () => ({
   ensureCourseInstructor: h.ensureCourseInstructor,
+  ensureCourseMember: h.ensureCourseMember,
   getCourseStanding: h.getCourseStanding,
 }));
+vi.mock('../services/scaffoldRecommend', () => ({ recommendScaffold: h.recommendScaffold }));
+vi.mock('../services/eventService', () => ({ logEvent: h.logEvent }));
 
 import scaffoldsRouter from './scaffolds';
 import { ApiError, errorHandler } from '../middleware/errorHandler';
@@ -88,6 +94,10 @@ beforeEach(() => {
   h.getCourseStanding.mockReset();
   h.ensureCourseInstructor.mockReset();
   h.ensureCourseInstructor.mockResolvedValue(undefined);
+  h.ensureCourseMember.mockReset();
+  h.ensureCourseMember.mockResolvedValue('member');
+  h.recommendScaffold.mockReset();
+  h.logEvent.mockReset();
 });
 
 async function listAs(role: string, standing?: string | Error) {
@@ -195,4 +205,54 @@ describe('新建、隐藏、推荐支架只放行课程教职', () => {
       expect(h.ensureCourseInstructor).toHaveBeenCalledWith(COURSE_ID, expect.objectContaining({ id: 'teacher-joined' }));
     });
   }
+});
+
+/** 2026-10-09：写笔记时按草稿推荐一条支架（Jev，scaffoldRecommend.ts） */
+describe('POST /courses/:id/scaffolds/recommend', () => {
+  const NOTE_ID = '22222222-2222-4222-8222-222222222222';
+  const SPACE_ID = '33333333-3333-4333-8333-333333333333';
+  const recommend = (body: Record<string, unknown>) => fetch(`${base}/courses/${COURSE_ID}/scaffolds/recommend`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+
+  it('不是这门课的人：403，什么都不问', async () => {
+    h.ensureCourseMember.mockRejectedValueOnce(new ApiError(403, 'You are not a member of this course'));
+    const res = await recommend({ title: 't', text: '一段足够长的草稿，写着我自己的观点和两条理由。' });
+    expect(res.status).toBe(403);
+    expect(h.recommendScaffold).not.toHaveBeenCalled();
+  });
+
+  it('草稿太短：不问 Jev', async () => {
+    const res = await recommend({ title: 't', text: '我觉得' });
+    expect(await res.json()).toEqual({ scaffold: null, fit: null, decided_by: 'too_short' });
+    expect(h.recommendScaffold).not.toHaveBeenCalled();
+  });
+
+  it('只从学生看得到的支架里挑（这门课隐藏的不推荐）；推荐出来记一条 scaffold_recommended', async () => {
+    h.recommendScaffold.mockResolvedValueOnce({
+      scaffold: { id: 's-1', title: '我的想法是', titleEn: null, group: 'idea' }, fit: 0.8, substantive: 0.95,
+      candidates: [{ id: 's-1', rank: 0.9, fit: 0.8, best: 0.9 }], model: 'jev-1.13.0', latencyMs: 900,
+    });
+    const res = await recommend({
+      title: 'AI 让人懒', text: '我觉得 AI 让人懒得动脑，因为直接给答案。', parent: { title: '原笔记', text: '原文' },
+      note_id: NOTE_ID, space_id: SPACE_ID,
+    });
+    expect(await res.json()).toEqual({ scaffold: { id: 's-1', title: '我的想法是', titleEn: null, group: 'idea' }, fit: 0.8, decided_by: 'jev' });
+    const [draft, options] = h.recommendScaffold.mock.calls[0];
+    expect(draft).toEqual({ title: 'AI 让人懒', text: '我觉得 AI 让人懒得动脑，因为直接给答案。', parent: { title: '原笔记', text: '原文' } });
+    expect(options.map((o: { id: string }) => o.id)).toEqual(['s-1']);
+    expect(h.logEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'scaffold_recommended', object_id: 's-1', space_id: SPACE_ID,
+      metadata_json: expect.objectContaining({ note_id: NOTE_ID, course_id: COURSE_ID, fit: 0.8 }),
+    }));
+  });
+
+  it('已经用在这条笔记里的不再推荐；Jev 没开时说明 off，不记事件', async () => {
+    h.recommendScaffold.mockResolvedValueOnce(null);
+    const res = await recommend({ title: '', text: '一段足够长的草稿，写着我自己的观点和两条理由。', used_ids: ['s-1', 'not-a-uuid'] });
+    expect(await res.json()).toEqual({ scaffold: null, fit: null, decided_by: 'off' });
+    // s-1 不是 uuid，used_ids 里只认 uuid：这里只看 s-2（隐藏）照样被排除
+    expect(h.recommendScaffold.mock.calls[0][1].map((o: { id: string }) => o.id)).toEqual(['s-1']);
+    expect(h.logEvent).not.toHaveBeenCalled();
+  });
 });

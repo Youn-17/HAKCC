@@ -32,13 +32,17 @@ interface Props {
   /** AI 为当前这条笔记建议的支架（随反馈生成）。只针对这条笔记，不进支架库。 */
   aiSuggestions?: { id: string; text: string }[];
   onPickAi?: (suggestion: { id: string; text: string }) => void;
+  /** 按正在写的草稿推荐的一条（scaffoldRecommend.ts）；点了插入，叉掉不再推 */
+  recommended?: Scaffold | null;
+  onPickRecommended?: (scaffold: Scaffold) => void;
+  onDismissRecommended?: () => void;
 }
 
 const LAST_GROUP_KEY = 'hakcc-scaffold-group';
 
 const ScaffoldPicker: React.FC<Props> = ({
   scaffolds, lang, onPick, selectedId, onlyGenAi = false, compact = false, emptyHint,
-  aiSuggestions = [], onPickAi,
+  aiSuggestions = [], onPickAi, recommended = null, onPickRecommended, onDismissRecommended,
 }) => {
   const [query, setQuery] = useState('');
 
@@ -118,8 +122,43 @@ const ScaffoldPicker: React.FC<Props> = ({
     );
   };
 
+  const recommendedLabel = recommended ? scaffoldLabel(recommended, lang) : '';
+
   return (
     <div className="flex min-h-0 flex-col gap-2.5">
+      {recommended && onPickRecommended && (
+        <section
+          aria-label={lang === 'zh' ? '推荐支架' : 'Suggested scaffold'}
+          className="rounded-lg border border-[#000080]/15 bg-[#000080]/[0.04] p-2 duration-200 animate-in fade-in dark:border-blue-400/25 dark:bg-blue-950/30"
+        >
+          <div className="flex items-center gap-1 text-[0.6875rem] font-semibold text-[#000080] dark:text-blue-300">
+            {lang === 'zh' ? '推荐支架' : 'Suggested scaffold'}
+            {onDismissRecommended && (
+              <button
+                type="button"
+                onClick={onDismissRecommended}
+                aria-label={lang === 'zh' ? '不用这条' : 'Dismiss'}
+                title={lang === 'zh' ? '不用这条' : 'Dismiss'}
+                className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000080]/40 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onPickRecommended(recommended)}
+            title={t.add}
+            className="group mt-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[0.8125rem] font-medium leading-snug text-zinc-800 transition-colors hover:bg-white active:scale-[0.99] dark:text-gray-100 dark:hover:bg-gray-800"
+          >
+            <span className="min-w-0 flex-1">{recommendedLabel}</span>
+            <span aria-hidden className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#000080] text-white opacity-70 transition-opacity group-hover:opacity-100"><Plus size={12} /></span>
+          </button>
+          <p className="mt-1 text-[0.625rem] leading-relaxed text-zinc-500 dark:text-gray-400">
+            {lang === 'zh' ? `按你正在写的内容推荐，属于「${scaffoldGroup(recommended, lang)}」。用不用由你决定。` : `Suggested from what you are writing, in "${scaffoldGroup(recommended, lang)}". It is up to you.`}
+          </p>
+        </section>
+      )}
       {aiSuggestions.length > 0 && onPickAi && (
         <details className="group/suggestions rounded-lg border border-[#000080]/15 bg-[#000080]/[0.04] p-2 dark:border-blue-400/25 dark:bg-blue-950/30">
           <summary className="flex cursor-pointer list-none items-center gap-1 text-[0.6875rem] font-semibold text-[#000080] dark:text-blue-300 [&::-webkit-details-marker]:hidden">

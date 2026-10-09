@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import KbSourceCards, { citedNumbers, pagesText, parseKbSources } from './KbSourceCards';
+import KbSourceCards, { citedNumbers, pagesText, parseKbSources, visibleSources } from './KbSourceCards';
 
 /** 笔记 AI 回答下面的来源卡片：只列回答里标了 [n] 的；附件能点开原文，课程资料不能 */
 
@@ -57,5 +57,40 @@ describe('显示哪些', () => {
     expect(html).toContain('打开原文，跳到第 3–4 页');
     expect(html).toContain('>课程资料<');
     expect(render('见[1]').includes('<button')).toBe(false);
+  });
+});
+
+/** 2026-10-09 起回答写完后由 Jev 核对引用（api/src/services/kbCitationCheck.ts），卡片带 check */
+describe('核对过的卡片', () => {
+  const checked = (checks: Array<string | undefined>) => parseKbSources(SOURCES.map((s, i) => ({ ...s, ...(checks[i] ? { check: checks[i], checkP: 0.9 } : {}) })));
+
+  it('核对结果解析出来；不认识的值丢掉', () => {
+    const cards = parseKbSources([{ ...SOURCES[0], check: 'supported', checkP: 0.99 }, { ...SOURCES[1], check: 'maybe' }]);
+    expect(cards[0]).toMatchObject({ check: 'supported', checkP: 0.99 });
+    expect(cards[1]).not.toHaveProperty('check');
+  });
+
+  it('没标引用：只列回答真正用到的，标题换成「回答用到的课程资料」；一段都没用上就不列', () => {
+    expect(visibleSources(checked(['used', 'unused']), '没有标引用的回答', false)).toEqual({ shown: [expect.objectContaining({ n: 1 })], kind: 'used' });
+    expect(renderToStaticMarkup(createElement(KbSourceCards, { sources: checked(['used', 'unused']), content: '没标', streaming: false, lang: 'zh' })))
+      .toContain('回答用到的课程资料');
+    expect(renderToStaticMarkup(createElement(KbSourceCards, { sources: checked(['unused', 'unused']), content: '没标', streaming: false, lang: 'zh' }))).toBe('');
+  });
+
+  it('标了引用：核对上的给一个「已核对」，对不上的写明，上面提醒对照原文', () => {
+    const html = renderToStaticMarkup(createElement(KbSourceCards, {
+      sources: checked(['supported', 'contradicted']), content: '观点要改进[1]。讨论在第三周[2]。', streaming: false, lang: 'zh',
+    }));
+    expect(html).toContain('已核对');
+    expect(html).toContain('与资料不符');
+    expect(html).toContain('有 1 处引用和资料对不上');
+    const unsupported = renderToStaticMarkup(createElement(KbSourceCards, {
+      sources: checked([undefined, 'unsupported']), content: '讨论在第三周[2]。', streaming: false, lang: 'zh',
+    }));
+    expect(unsupported).toContain('未找到依据');
+  });
+
+  it('没有核对结果（旧消息、Jev 没开）：照原来的规则', () => {
+    expect(visibleSources(SOURCES, '没标', false)).toEqual({ shown: SOURCES, kind: 'found' });
   });
 });
