@@ -1,3 +1,4 @@
+import { courseSettingsError } from './errorText';
 import React, { useEffect, useId, useState } from 'react';
 import { CalendarClock, Loader2, Info } from 'lucide-react';
 import { Language } from '../../types';
@@ -49,7 +50,7 @@ const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
           if (cfg.schedule.length > 0) setSlots(cfg.schedule);
         }
       })
-      .catch(err => alive && setError(err?.message ?? (zh ? '读取失败' : 'Failed to load')))
+      .catch(err => alive && setError(courseSettingsError(err, zh, zh ? '加载失败，请重试。' : 'Unable to load data. Please try again.')))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
   }, [courseId, zh]);
@@ -88,7 +89,7 @@ const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
         ? `已排定 ${res.totalSessions} 次课${res.kept > 0 ? `，保留了 ${res.kept} 条已确认记录` : ''}。`
         : `${res.totalSessions} sessions scheduled${res.kept > 0 ? `, ${res.kept} confirmed records kept` : ''}.`);
     } catch (err: any) {
-      setError(err?.message ?? (zh ? '保存失败' : 'Failed to save'));
+      setError(courseSettingsError(err, zh, zh ? '保存失败，请重试。' : 'Unable to save changes. Please try again.'));
     } finally {
       setSaving(false);
     }
@@ -113,7 +114,7 @@ const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
             {zh ? '教学安排' : 'Teaching Schedule'}
           </h3>
           <p className="text-xs text-stone-500 dark:text-stone-400">
-            {zh ? '排定整学期课次，课后逐次确认，作为研究数据留存' : 'Plan the term, confirm each session afterwards'}
+            {zh ? '设置学期课次，并在课后确认教学记录。记录可用于教学研究。' : 'Schedule term sessions and confirm teaching records after class. Records may be used for teaching research.'}
           </p>
         </div>
       </div>
@@ -153,10 +154,10 @@ const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
             />
             {estimated > 0 && (
               <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                {zh ? `按当前安排约 ${estimated} 学时` : `≈ ${estimated} hours by current schedule`}
+                {zh ? `预计 ${estimated} 学时` : `Estimated hours: ${estimated}`}
                 {creditHours.trim() === '' && (
                   <button type="button" onClick={() => setCreditHours(String(estimated))} className="ml-2 underline underline-offset-2">
-                    {zh ? '用这个值' : 'Use this'}
+                    {zh ? '采用估算课时' : 'Use estimated hours'}
                   </button>
                 )}
               </p>
@@ -177,7 +178,7 @@ const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
             <label htmlFor={`${formId}-start`} className={labelClass}>{zh ? '开课日期' : 'Start Date'} <span className="text-rose-500">*</span></label>
             <input id={`${formId}-start`} type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`${inputClass} sm:max-w-xs`} />
             <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-              {zh ? '从这一天所在的那一周开始，按下面的时段逐周排课' : 'Sessions repeat weekly from this week onward'}
+              {zh ? '从开课日期所在周起，按每周上课时段排课。' : 'Schedule weekly sessions from the week containing the start date.'}
             </p>
           </div>
 
@@ -215,8 +216,8 @@ const CourseSchedule: React.FC<Props> = ({ courseId, lang }) => {
         {sessions.length > 0 && (
           <span className="text-xs text-stone-500 dark:text-stone-400">
             {zh
-              ? `当前共 ${sessions.length} 次课，首次 ${sessions[0].plannedDate} ${weekdayLabel(new Date(`${sessions[0].plannedDate}T00:00:00Z`).getUTCDay() || 7, zh)}`
-              : `${sessions.length} sessions, first on ${sessions[0].plannedDate}`}
+              ? `共 ${sessions.length} 次课 · 首次上课： ${sessions[0].plannedDate} ${weekdayLabel(new Date(`${sessions[0].plannedDate}T00:00:00Z`).getUTCDay() || 7, zh)}`
+              : `${sessions.length} sessions · First session: ${sessions[0].plannedDate}`}
           </span>
         )}
       </div>

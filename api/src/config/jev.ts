@@ -1,8 +1,7 @@
 /**
- * Optional server-side Jev judgment configuration.
- * Feedback modes: off, shadow (record alongside the primary model), or gate.
- * Answer-length judgments are optional. Without JEV_API_KEY both are disabled.
- * Keep credentials in server environment variables; consult the public update guide.
+ * Optional server-side Jev judgments for feedback, answer length and drawing.
+ * Keep JEV_API_KEY in the server environment. Without it the corresponding
+ * optional judgments are disabled. Validate behavior on your own examples.
  */
 
 export type JevFeedbackMode = 'off' | 'shadow' | 'gate';
@@ -26,6 +25,8 @@ export interface JevConfig {
   promisingThreshold: number;
   /** 用 Jev 判断问题难度来定回答长度；没有 key 时为 false */
   answerLength: boolean;
+  /** 用 Jev 判断要不要画、怎么画，并核对规划；没有 key 时为 false */
+  drawJudge: boolean;
 }
 
 export const JEV_DEFAULTS = {
@@ -60,6 +61,7 @@ export function readJevConfig(env: NodeJS.ProcessEnv): JevConfig {
     needThreshold: readNumber(env.JEV_NEED_THRESHOLD, JEV_DEFAULTS.needThreshold, 0.05, 0.95),
     promisingThreshold: readNumber(env.JEV_PROMISING_THRESHOLD, JEV_DEFAULTS.promisingThreshold, 0.05, 0.95),
     answerLength: hasKey && (env.JEV_ANSWER_LENGTH ?? '').trim().toLowerCase() !== 'off',
+    drawJudge: hasKey && (env.JEV_DRAWING ?? '').trim().toLowerCase() !== 'off',
   };
 }
 

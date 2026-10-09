@@ -1,3 +1,4 @@
+import { courseSettingsError } from './errorText';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { Language } from '../../types';
@@ -7,7 +8,7 @@ import { pagesText } from '../KbSourceCards';
 
 /**
  * 课程资料页上的「AI 知识库」（课程知识库第 3 步）：知识库概况、画布附件整门课的开关和清单、检索测试。
- * 每份资料自己的「进入知识库」开关和「重新解析」在资料卡片上（CourseMaterials.tsx）。
+ * 每份资料自己的「允许 AI 检索」开关和「重新解析」在资料卡片上（CourseMaterials.tsx）。
  */
 
 /** 开关：整行可点，点击区域不小于 44px */
@@ -37,65 +38,63 @@ export function KbSwitch({ checked, onChange, disabled, label }: {
 const T = {
   zh: {
     title: 'AI 知识库',
-    loadFailed: '知识库概况没取到：',
-    searchable: (n: number) => `AI 现在检索得到 ${n} 段`,
-    materials: (on: number, total: number) => `课程资料 ${total} 份，${on} 份开着`,
-    attachmentsCount: (n: number, on: boolean) => (on ? `画布附件 ${n} 份` : `画布附件 ${n} 份（已关闭）`),
-    vectors: (n: number) => `其中 ${n} 段的向量还在后台补，补好之前只能按关键词找到`,
-    retrievals: (days: number, total: number) => `近 ${days} 天被检索 ${total} 次`,
-    sources: { note_ai: '笔记 AI', workspace_ai: '空间助手', agent_tool: 'AI 调工具' } as Record<string, string>,
-    attachmentsSwitch: '知识空间里上传的附件也进知识库',
-    attachmentsHint: '学生在知识空间里上传的附件，只有进得去那个空间的人检索得到。关掉后，所有空间的附件都不进 AI 检索；文件本身不受影响。',
+    loadFailed: '知识库信息加载失败，请重试。',
+    searchable: (n: number) => `可检索内容：${n} 个段落`,
+    materials: (on: number, total: number) => `课程资料 ${total} 份 · 已启用检索 ${on} 份`,
+    attachmentsCount: (n: number, on: boolean) => (on ? `空间附件 ${n} 份` : `空间附件 ${n} 份（检索已关闭）`),
+    vectors: (n: number) => `${n} 个段落正在准备语义检索，当前仅支持关键词检索。`,
+    retrievals: (days: number, total: number) => `近 ${days} 天检索 ${total} 次`,
+    sources: { note_ai: 'Note AI 助手', workspace_ai: '知识空间智能体', agent_tool: 'AI 工具检索' } as Record<string, string>,
+    attachmentsSwitch: '允许检索知识空间附件',
+    attachmentsHint: '附件检索遵循知识空间的访问权限。关闭后，本课程所有知识空间附件均不参与 AI 检索，原文件保留。',
     attachmentsList: (n: number) => `附件清单（${n} 份）`,
-    noAttachments: '知识空间里还没有进入知识库的附件。',
+    noAttachments: '暂无已收录的空间附件。',
     passages: (n: number) => `${n} 段`,
     pageCount: (n: number) => `共 ${n} 页`,
-    status: { parsing: '解析中', pending: '排队中', failed: '出错' } as Record<string, string>,
-    switchFailed: '开关没改成：',
+    status: { parsing: '解析中', pending: '等待处理', failed: '处理失败' } as Record<string, string>,
+    switchFailed: '检索设置保存失败，请重试。',
     testTitle: '检索测试',
-    testPlaceholder: '输入一个学生可能问的问题，看 AI 会拿到哪几段',
-    testButton: '试一下',
-    testHint: '用你的身份检索：所有小组空间的附件都算在内；学生只检索得到自己进得去的空间。不记进检索记录。',
-    testFound: (n: number, ms: number) => `AI 会拿到这 ${n} 段（${(ms / 1000).toFixed(1)} 秒）`,
-    testNone: '没有一段够相关。AI 会如实说课程资料里没有相关内容，不会硬套。',
-    testEmpty: '没有找到。',
-    keywordOnly: '这次语义检索没连上，下面是按关键词找到的，可能不相关。',
+    testPlaceholder: '输入问题，查看相关资料',
+    testButton: '开始检索',
+    testHint: '测试按当前教师权限检索，范围包含所有小组空间；学生仅可检索有权访问的空间。本次测试不计入检索记录。',
+    testFound: (n: number, ms: number) => `找到 ${n} 个相关段落 · 耗时 ${(ms / 1000).toFixed(1)} 秒`,
+    testNone: '未找到符合相关度要求的资料。',
+    testEmpty: '未找到相关资料。',
+    keywordOnly: '本次未使用语义检索，以下为关键词匹配结果，请核对相关性。',
     relevance: (r: number) => `相关度 ${r.toFixed(2)}`,
     material: '课程资料',
-    testFailed: '检索没成功：',
+    testFailed: '检索失败，请重试。',
   },
   en: {
     title: 'AI knowledge base',
-    loadFailed: 'Could not load the knowledge base overview: ',
-    searchable: (n: number) => `The AI can search ${n} passages now`,
-    materials: (on: number, total: number) => `${total} course materials, ${on} switched on`,
-    attachmentsCount: (n: number, on: boolean) => (on ? `${n} canvas attachments` : `${n} canvas attachments (off)`),
-    vectors: (n: number) => `${n} passages are still being embedded and can only be found by keyword until then`,
-    retrievals: (days: number, total: number) => `searched ${total} times in the last ${days} days`,
-    sources: { note_ai: 'note AI', workspace_ai: 'space assistant', agent_tool: 'AI tool calls' } as Record<string, string>,
-    attachmentsSwitch: 'Include attachments uploaded in knowledge spaces',
-    attachmentsHint: 'Attachments students upload in a knowledge space can only be found by people who can enter that space. Switching this off takes every space\'s attachments out of AI search; the files themselves are not affected.',
+    loadFailed: 'Unable to load knowledge base information. Please try again.',
+    searchable: (n: number) => `Searchable content: ${n} passages`,
+    materials: (on: number, total: number) => `${total} course materials · ${on} enabled for retrieval`,
+    attachmentsCount: (n: number, on: boolean) => (on ? `${n} space attachments` : `${n} space attachments (retrieval off)`),
+    vectors: (n: number) => `${n} passages are being prepared for semantic retrieval. Only keyword search is currently available for these passages.`,
+    retrievals: (days: number, total: number) => `${total} searches in the last ${days} days`,
+    sources: { note_ai: 'Note AI assistant', workspace_ai: 'Knowledge space AI assistant', agent_tool: 'AI tool retrieval' } as Record<string, string>,
+    attachmentsSwitch: 'Allow retrieval of knowledge space attachments',
+    attachmentsHint: 'Attachment retrieval follows knowledge space access permissions. Turning this off excludes all knowledge space attachments in this course from AI retrieval. Original files are kept.',
     attachmentsList: (n: number) => `Attachments (${n})`,
-    noAttachments: 'No attachments from knowledge spaces are in the knowledge base yet.',
+    noAttachments: 'No indexed space attachments.',
     passages: (n: number) => `${n} passages`,
     pageCount: (n: number) => `${n} pages`,
-    status: { parsing: 'parsing', pending: 'queued', failed: 'failed' } as Record<string, string>,
-    switchFailed: 'Could not change the switch: ',
+    status: { parsing: 'parsing', pending: 'Awaiting processing', failed: 'Processing failed' } as Record<string, string>,
+    switchFailed: 'Unable to save retrieval settings. Please try again.',
     testTitle: 'Search test',
-    testPlaceholder: 'Type a question a student might ask to see which passages the AI gets',
-    testButton: 'Try it',
-    testHint: 'Searches as you: attachments in every group space count; students only search the spaces they can enter. Not recorded in the search log.',
-    testFound: (n: number, ms: number) => `The AI gets these ${n} passages (${(ms / 1000).toFixed(1)} s)`,
-    testNone: 'No passage is relevant enough. The AI will say the course materials do not cover this instead of forcing a match.',
-    testEmpty: 'Nothing found.',
-    keywordOnly: 'Semantic search was unavailable this time; these were found by keyword and may be unrelated.',
+    testPlaceholder: 'Enter a question to find related material',
+    testButton: 'Search',
+    testHint: 'This test uses your teacher permissions and includes all group spaces. Students can only search spaces they have access to. Test searches are excluded from retrieval logs.',
+    testFound: (n: number, ms: number) => `Found ${n} related passages · ${(ms / 1000).toFixed(1)} s`,
+    testNone: 'No material met the relevance threshold.',
+    testEmpty: 'No related material found.',
+    keywordOnly: 'Semantic retrieval was not used for this search. These are keyword matches; please check their relevance.',
     relevance: (r: number) => `relevance ${r.toFixed(2)}`,
     material: 'Course material',
-    testFailed: 'The search failed: ',
+    testFailed: 'Search failed. Please try again.',
   },
 };
-
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 interface Props {
   courseId: string;
@@ -120,9 +119,9 @@ export default function CourseKnowledgeBase({ courseId, lang, refreshKey }: Prop
       setOverview(await courseSettings.kbOverview(courseId));
       setError(null);
     } catch (err) {
-      setError(`${t.loadFailed}${message(err)}`);
+      setError(courseSettingsError(err, lang === 'zh', t.loadFailed));
     }
-  }, [courseId, t.loadFailed]);
+  }, [courseId, lang, t.loadFailed]);
 
   useEffect(() => {
     void load();
@@ -138,7 +137,7 @@ export default function CourseKnowledgeBase({ courseId, lang, refreshKey }: Prop
       await load();
     } catch (err) {
       setOverview(previous);
-      setError(`${t.switchFailed}${message(err)}`);
+      setError(courseSettingsError(err, lang === 'zh', t.switchFailed));
     } finally {
       setSavingAttachments(false);
     }
@@ -154,7 +153,7 @@ export default function CourseKnowledgeBase({ courseId, lang, refreshKey }: Prop
       setTest(await courseSettings.kbSearchTest(courseId, q));
     } catch (err) {
       setTest(null);
-      setTestError(`${t.testFailed}${message(err)}`);
+      setTestError(courseSettingsError(err, lang === 'zh', t.testFailed));
     } finally {
       setTesting(false);
     }

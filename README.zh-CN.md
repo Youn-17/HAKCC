@@ -2,9 +2,15 @@
 
 [English](README.md) · [访问平台](https://ideaweave.tech/) · [系统说明](write/SYSTEM_OVERVIEW.md) · [MIT 开源许可证](LICENSE)
 
-**作者与维护者：Zhenhai He（[Youn-17](https://github.com/Youn-17)）。** 本仓库开源应用代码、机制图和系统说明，英文为主、中文为辅。当前公开版本为 **v0.5.0**。
+**作者与维护者：Zhenhai He（[Youn-17](https://github.com/Youn-17)）。** 本仓库开源应用代码、机制图和系统说明，英文为主、中文为辅。当前公开版本为 **v0.6.0**。
 
-## 本次更新 · v0.5.0
+## 本次更新 · v0.6.0
+
+知识空间新增多人同步协作文档，提供 Word 风格工具栏、落盘确认、版本快照和基础 Word 导出。同步更新情境绘图、画布搜索、Build-on 折叠和 Node 22 配置。
+
+[功能、安装与限制](write/UPDATES_v0.6.0.md) · [English](write/UPDATES_v0.6.0.en.md)
+
+## 上一版 · v0.5.0
 
 知识空间与 Note AI 使用分页历史、持久化滚动记忆及当前学生在本课程中的相关记录提供指导。保留模型选择，按模型配置分配历史预算。个性化来自已保存情境的检索，未训练模型权重。
 

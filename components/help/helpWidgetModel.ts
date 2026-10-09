@@ -83,6 +83,17 @@ const TOP_RESERVE = 72;
  */
 const BOTTOM_RESERVE = { desktop: 96, compact: 160 };
 
+/**
+ * 知识空间里（画布、笔记页、文档、讨论室）用小号的球（2026-10-09 用户：太大了）。
+ * 球原本是 size-11，界面根字号放大到 19px 后实际有 52px，画布右边缘的卡片和详情栏常被它挡住。
+ * 手指点的设备、窄屏不缩：触控目标至少 44px。
+ */
+const WORKSPACE_SURFACES: ReadonlySet<HelpSurface> = new Set(['canvas', 'note-editor', 'document', 'discussion-room', 'ct-tool']);
+
+export function isSmallBall(surface: HelpSurface, coarsePointer: boolean, compact: boolean): boolean {
+  return !coarsePointer && !compact && WORKSPACE_SURFACES.has(surface);
+}
+
 export interface BallBounds { min: number; max: number }
 
 export function ballBounds(viewportHeight: number, ballHeight: number, compact: boolean): BallBounds {

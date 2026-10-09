@@ -10,6 +10,12 @@ import NoteEditorModal from './NoteEditorModal';
 import AiDialogueNote from './AiDialogueNote';
 import DrawingModal, { DrawingElement } from './DrawingModal';
 import FileViewerPage from './FileViewerPage';
+import { lazy, Suspense } from 'react';
+import { collaborativeDocuments } from '../services/apiClient';
+import { isCollaborativeDocument } from '../services/collaborativeDocuments';
+
+const CollaborativeDocumentEditor = lazy(() => import('./CollaborativeDocumentEditor'));
+const COLLAB_ENABLED = import.meta.env.VITE_ENABLE_COLLAB_DOCUMENTS === 'true';
 import AttachmentUploadModal from './AttachmentUploadModal';
 const AnalyticsModal = React.lazy(() => import('./AnalyticsModal'));
 import ViewPanel from './ViewPanel';
@@ -33,9 +39,15 @@ import ShapeLayer, { type ShapeDraft } from './ShapeLayer';
 import ShapeStylePanel, { type ShapeStyleValue } from './ShapeStylePanel';
 import ShapeGlyph from './ShapeGlyph';
 import { SHAPE_CATALOG, isLineShape } from './shapeGeometry';
-import { notePlainParagraphs, notePreviewText, plainTextToNoteHtml } from './noteText';
+import { formatNoteStamp, notePlainParagraphs, notePreviewText, plainTextToNoteHtml } from './noteText';
 import { hotBuildOnCounts, isNoteNew, isOwnNote, useMarkSeenAfterDwell, useNoteSeenVersion } from './noteBadges';
 import ViewTopicTicker from './ViewTopicTicker';
+import CanvasSearch, { type CanvasSearchItem } from './CanvasSearch';
+import BuildOnPeek, { type PeekItem } from './BuildOnPeek';
+import {
+  autoFoldIds, buildFoldGraph, effectiveFolds, foldStorageKey, foldSummaries, hiddenByFolds,
+  readFoldChoices, revealChoices, saveFoldChoices, toggleFold, type FoldChoices, type FoldGraph,
+} from './buildOnCollapse';
 import { notesFingerprint, useViewTopics } from './viewTopics';
 import type { ViewTopic } from '../services/apiClient';
 import { useSpaceData, apiNoteToNote, apiRelationToEdge, type NoteGeometry } from '../hooks/useSpaceData';
@@ -185,10 +197,35 @@ function apiScaffoldToScaffold(scaffold: ApiScaffold): Scaffold {
  */
 const SIDEBAR_WIDTH_KEY = 'hakcc-sidebar-width-v2';
 
+/**
+ * 右侧详情栏的类型、状态、知识缺口用中文说（原来直接显示 NOTE、promising、needed evidence）。
+ * 普通笔记不标类型：画布上几乎全是笔记，标了等于没标。
+ */
+const DETAIL_TYPE_LABELS: Record<Language, Partial<Record<Note['type'], string>>> = {
+  zh: { drawing: '绘图', attachment: '附件', video: '视频', link: '链接', view: '视图', riseabove: '综合升华', ai_dialogue: 'AI 对话' },
+  en: { drawing: 'Drawing', attachment: 'Attachment', video: 'Video', link: 'Link', view: 'View', riseabove: 'Rise Above', ai_dialogue: 'AI dialogue' },
+};
+const DETAIL_STATUS_LABELS: Record<Language, Record<string, string>> = {
+  zh: { promising: '有潜力', authoritative: '权威', needs_work: '待完善', unresolved: '未解决' },
+  en: { promising: 'Promising', authoritative: 'Authoritative', needs_work: 'Needs work', unresolved: 'Unresolved' },
+};
+const LACK_LABELS: Record<Language, Record<string, string>> = {
+  zh: { unanswered_question: '待回答的问题', confusion: '困惑', contradiction: '矛盾', needed_evidence: '需要证据', need_to_understand: '需要弄懂' },
+  en: { unanswered_question: 'Unanswered question', confusion: 'Confusion', contradiction: 'Contradiction', needed_evidence: 'Needs evidence', need_to_understand: 'Need to understand' },
+};
+
+const NO_FOLD_CHOICES: FoldChoices = { collapsed: [], expanded: [] };
+const NO_IDS: ReadonlySet<string> = new Set();
+/** 停住多久才列出 Build-on：鼠标只是路过不弹；从一张卡挪到另一张时快一点 */
+const PEEK_OPEN_MS = 450;
+const PEEK_SWITCH_MS = 150;
+/** 离开卡片后留一会儿，鼠标来得及挪到列表上 */
+const PEEK_CLOSE_MS = 220;
+
 const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle: _courseTitle, onExit, userRole, lang, setLang }) => {
   const { user, logout } = useAuth();
   // 本机刚报了「打开过」的笔记要马上摘掉 New；订阅一下，报的时候重渲染
-  useNoteSeenVersion();
+  const seenVersion = useNoteSeenVersion();
   const params = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -291,6 +328,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     notes, setNotes,
     edges, setEdges,
     loading: spaceLoading,
+    loadedSpaceId,
     refetch: refetchSpace,
     markGeometryPending,
     clearGeometryPending,
@@ -327,7 +365,10 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   }, [params]);
   
   // View Management State
+  // 主画布在顶栏和视图列表里就叫 Welcome（2026-10-09 用户：视图后面默认写 Welcome，不写别的）
   const [views, setViews] = useState<ViewDefinition[]>(INITIAL_VIEWS);
+  /** 视图列表是哪个空间的。没回来之前，指向别的视图的笔记会暂时落在主画布上 */
+  const [viewsLoadedFor, setViewsLoadedFor] = useState<string | null>(null);
   const [activeViewId, setActiveViewId] = useState<string>('view-welcome');
   const [isViewPanelOpen, setIsViewPanelOpen] = useState(false);
   /** 卡片 = 某个视图在某块画布上的一个落点。一个视图可以有任意多张，散在各处。 */
@@ -434,6 +475,12 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
 
   // File Viewer State
   const [viewingFile, setViewingFile] = useState<Note | null>(null);
+  const [collabDocument, setCollabDocument] = useState<Note | null>(null);
+  const [collabCreateOpen, setCollabCreateOpen] = useState(false);
+  const [collabTitle, setCollabTitle] = useState('');
+  const [collabCreating, setCollabCreating] = useState(false);
+  const [collabCreateError, setCollabCreateError] = useState('');
+  const collabAdapter = useMemo(() => collabDocument ? collaborativeDocuments.adapter(collabDocument.id) : null, [collabDocument?.id]);
   /** 从笔记 AI 的来源卡片打开时要跳到的页；阅读页一关就清掉，画布上双击打开的从第一页看 */
   const [viewingFilePage, setViewingFilePage] = useState<number | null>(null);
   useEffect(() => {
@@ -505,6 +552,57 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     noteId: viewingFile?.id ?? editingNote?.id ?? null,
   });
   const [isKnowledgePanelOpen, setIsKnowledgePanelOpen] = useState(false);
+
+  /**
+   * Build-on 分支的收起/展开（2026-10-09，规则在 buildOnCollapse.ts）。
+   * 学生自己点过的存在本机，每人每个空间一份；换了空间就按新空间的键读。
+   */
+  const foldKey = spaceId ? foldStorageKey(user?.id, spaceId) : null;
+  const [foldStore, setFoldStore] = useState<{ key: string | null; choices: FoldChoices }>({ key: null, choices: NO_FOLD_CHOICES });
+  const foldChoices = useMemo(
+    () => (foldStore.key === foldKey ? foldStore.choices : (foldKey ? readFoldChoices(foldKey) : NO_FOLD_CHOICES)),
+    [foldStore, foldKey],
+  );
+  const foldKeyRef = useRef(foldKey);
+  foldKeyRef.current = foldKey;
+  const updateFoldChoices = useCallback((change: (current: FoldChoices) => FoldChoices) => {
+    const key = foldKeyRef.current;
+    if (!key) return;
+    setFoldStore(prev => {
+      const current = prev.key === key ? prev.choices : readFoldChoices(key);
+      const next = change(current);
+      if (next === current && prev.key === key) return prev;
+      saveFoldChoices(key, next);
+      return { key, choices: next };
+    });
+  }, []);
+  /** 刚写的、刚连上的 Build-on 要看得见：把它接上的那条笔记展开 */
+  const openFold = useCallback((id: string) => {
+    updateFoldChoices(c => (c.expanded.includes(id) && !c.collapsed.includes(id)
+      ? c
+      : { collapsed: c.collapsed.filter(x => x !== id), expanded: [...c.expanded.filter(x => x !== id), id] }));
+  }, [updateFoldChoices]);
+
+  /** 鼠标停在有 Build-on 的卡片上，旁边列出建立在它上面的笔记（BuildOnPeek） */
+  const [peekNoteId, setPeekNoteId] = useState<string | null>(null);
+  const peekNoteIdRef = useRef<string | null>(null);
+  peekNoteIdRef.current = peekNoteId;
+  const peekOpenTimerRef = useRef(0);
+  const peekCloseTimerRef = useRef(0);
+  const closePeekNow = useCallback(() => {
+    window.clearTimeout(peekOpenTimerRef.current);
+    window.clearTimeout(peekCloseTimerRef.current);
+    setPeekNoteId(null);
+  }, []);
+  const keepPeekOpen = useCallback(() => window.clearTimeout(peekCloseTimerRef.current), []);
+  const releasePeek = useCallback(() => {
+    window.clearTimeout(peekCloseTimerRef.current);
+    peekCloseTimerRef.current = window.setTimeout(() => setPeekNoteId(null), PEEK_CLOSE_MS);
+  }, []);
+  useEffect(() => () => {
+    window.clearTimeout(peekOpenTimerRef.current);
+    window.clearTimeout(peekCloseTimerRef.current);
+  }, []);
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; noteId: string; type: string; } | null>(null);
   const [buildOnParentId, setBuildOnParentId] = useState<string | null>(null);
   const [buildOnRelationType, setBuildOnRelationType] = useState<RelationType>('extend');
@@ -572,6 +670,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   
   const [dragMode, setDragMode] = useState<'none' | 'pan' | 'note' | 'noteResize' | 'scrollX' | 'scrollY'>('none');
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
+  const dragModeRef = useRef(dragMode);
+  dragModeRef.current = dragMode;
   const [initialViewPort, setInitialViewPort] = useState({ x: 0, y: 0 }); 
   
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -699,11 +799,145 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     [visibleNotes],
   );
 
-  // Set of note IDs that are targets of at least one edge (i.e., have been built-upon)
-  const builtUponIds = useMemo(() => new Set(edges.map(e => e.target)), [edges]);
-
   // 被 Build-on 最多的笔记，卡片左上角一团火（口径见 hotBuildOnCounts）
   const hotBuildOnCountMap = useMemo(() => hotBuildOnCounts(edges), [edges]);
+
+  // ── Build-on 分支的收起 ─────────────────────────────────────────────
+  // 图只看笔记 id 和连线：拖动时 visibleNotes 每帧换新，不能每帧重建。
+  // AI 建议、还没被采纳的连线不算「建立在它上面」：没有人真的接着写。
+  const visibleIdsKey = useMemo(() => visibleNotes.map(n => n.id).join('\n'), [visibleNotes]);
+  const foldGraph = useMemo(
+    () => buildFoldGraph(
+      visibleIdsKey ? visibleIdsKey.split('\n') : [],
+      edges.filter(e => !(e.aiSuggested && !e.aiAccepted)),
+    ),
+    [visibleIdsKey, edges],
+  );
+  /**
+   * 默认收起哪些（旧的细枝末节）。我写的、我还没看过的（New）、被 Build-on 最多的（火）所在的分支不收。
+   * 签名里只放 id、时间和「要不要保护」，拖动时不变，autoFoldIds 不会每帧重算。
+   */
+  const foldProtectSig = useMemo(
+    () => visibleNotes
+      .map(n => `${n.id}|${n.createdAt ?? ''}|${isOwnNote(n, user?.id) || isNoteNew(n, user?.id) || hotBuildOnCountMap.has(n.id) ? 1 : 0}`)
+      .join('\n'),
+    // seenVersion：本机刚看过一条，它就不再是 New
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleNotes, user?.id, hotBuildOnCountMap, seenVersion],
+  );
+  const qualifiedAutoFolds = useMemo(() => autoFoldIds(
+    foldProtectSig
+      ? foldProtectSig.split('\n').map(line => {
+        const [id, createdAt, protect] = line.split('|');
+        return { id, createdAt: createdAt || undefined, protect: protect === '1' };
+      })
+      : [],
+    foldGraph,
+  ), [foldProtectSig, foldGraph]);
+  /**
+   * 进入一个视图、这个空间的笔记和视图都到齐时定一次，之后只会变少（分支里来了新笔记就不再默认收着）、
+   * 不会变多：学生看着看着，卡片不会自己藏起来。
+   */
+  const autoFoldKey = !spaceLoading && spaceId && loadedSpaceId === spaceId && viewsLoadedFor === spaceId
+    ? `${spaceId}:${activeViewId}`
+    : null;
+  const frozenAutoFoldsRef = useRef<{ key: string; ids: ReadonlySet<string> } | null>(null);
+  const autoFolds = useMemo<ReadonlySet<string>>(() => {
+    if (!autoFoldKey) return NO_IDS;
+    const frozen = frozenAutoFoldsRef.current;
+    if (frozen?.key === autoFoldKey) {
+      const kept = [...frozen.ids].filter(id => qualifiedAutoFolds.has(id));
+      if (kept.length === frozen.ids.size) return frozen.ids;
+      frozenAutoFoldsRef.current = { key: autoFoldKey, ids: new Set(kept) };
+    } else {
+      frozenAutoFoldsRef.current = { key: autoFoldKey, ids: new Set(qualifiedAutoFolds) };
+    }
+    return frozenAutoFoldsRef.current.ids;
+  }, [autoFoldKey, qualifiedAutoFolds]);
+  const foldedIds = useMemo(() => effectiveFolds(autoFolds, foldChoices), [autoFolds, foldChoices]);
+  const foldHidden = useMemo(() => hiddenByFolds(foldGraph, foldedIds), [foldGraph, foldedIds]);
+  const newNoteKey = useMemo(
+    () => visibleNotes.filter(n => isNoteNew(n, user?.id)).map(n => n.id).join('\n'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleNotes, user?.id, seenVersion],
+  );
+  /** 卡片下沿开关用的摘要。拖动时不变，卡片的 memo 才拦得住 */
+  const foldMap = useMemo(() => {
+    const fresh = new Set(newNoteKey ? newNoteKey.split('\n') : []);
+    return foldSummaries(foldGraph, foldedIds, foldHidden, id => fresh.has(id));
+  }, [foldGraph, foldedIds, foldHidden, newNoteKey]);
+  /** 回调里读最新的，回调本身保持不变 */
+  const foldRef = useRef<{ graph: FoldGraph; auto: ReadonlySet<string>; folded: ReadonlySet<string>; hidden: ReadonlySet<string> }>({
+    graph: foldGraph, auto: autoFolds, folded: foldedIds, hidden: foldHidden,
+  });
+  foldRef.current = { graph: foldGraph, auto: autoFolds, folded: foldedIds, hidden: foldHidden };
+  const foldTotals = useMemo(() => {
+    let branches = 0;
+    for (const sum of foldMap.values()) if (sum.collapsed && sum.hiddenCount > 0) branches += 1;
+    return { branches, notes: foldHidden.size };
+  }, [foldMap, foldHidden]);
+
+  /** 要看的笔记藏在收起的分支里：沿路把挡着的收起打开（搜索、我的笔记、讨论主题、各处的「定位」） */
+  const revealNotes = useCallback((ids: readonly string[]) => {
+    const { graph, auto, hidden } = foldRef.current;
+    if (!ids.some(id => hidden.has(id))) return;
+    updateFoldChoices(current => {
+      let next = current;
+      for (const id of ids) {
+        const folded = effectiveFolds(auto, next);
+        next = revealChoices(graph, next, folded, hiddenByFolds(graph, folded), id);
+      }
+      return next;
+    });
+  }, [updateFoldChoices]);
+
+  const handleToggleFold = useCallback((note: Note) => {
+    const collapsed = foldRef.current.folded.has(note.id);
+    updateFoldChoices(c => toggleFold(c, note.id, collapsed));
+    if (spaceId && UUID_RE.test(note.id)) {
+      trackEvent({
+        event_type: collapsed ? 'buildon_branch_expanded' : 'buildon_branch_folded',
+        object_type: 'note',
+        object_id: note.id,
+        space_id: spaceId,
+        metadata_json: { child_count: foldRef.current.graph.children.get(note.id)?.length ?? 0, view_id: activeViewId },
+      });
+    }
+  }, [updateFoldChoices, spaceId, activeViewId]);
+
+  const expandAllFolds = useCallback(() => {
+    const { auto, folded } = foldRef.current;
+    updateFoldChoices(c => ({ collapsed: [], expanded: Array.from(new Set([...c.expanded, ...auto, ...folded])) }));
+    if (spaceId) {
+      trackEvent({
+        event_type: 'buildon_branches_expanded_all',
+        object_type: 'space',
+        object_id: spaceId,
+        space_id: spaceId,
+        metadata_json: { folded_count: folded.size, view_id: activeViewId },
+      });
+    }
+  }, [updateFoldChoices, spaceId, activeViewId]);
+
+  const handleNoteHover = useCallback((note: Note, hovering: boolean) => {
+    window.clearTimeout(peekOpenTimerRef.current);
+    if (!hovering) {
+      releasePeek();
+      return;
+    }
+    if (dragModeRef.current !== 'none' || !foldRef.current.graph.children.get(note.id)?.length) return;
+    window.clearTimeout(peekCloseTimerRef.current);
+    if (peekNoteIdRef.current === note.id) return;
+    peekOpenTimerRef.current = window.setTimeout(() => {
+      if (dragModeRef.current === 'none') setPeekNoteId(note.id);
+    }, peekNoteIdRef.current ? PEEK_SWITCH_MS : PEEK_OPEN_MS);
+  }, [releasePeek]);
+
+  /** 「这个视图有几条 Build-on」只数两头都在这个视图里的，和画布上的连线对得上 */
+  const viewEdgeCount = useMemo(() => {
+    const here = new Set(visibleIdsKey ? visibleIdsKey.split('\n') : []);
+    return edges.filter(e => here.has(e.source) && here.has(e.target)).length;
+  }, [edges, visibleIdsKey]);
 
   // Per-note move-type counts derived from edges (for NoteItem dots)
   const moveCountsMap = useMemo(() => {
@@ -1002,6 +1236,9 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
       case 'attachment':
         setIsAttachmentModalOpen(true);
         break;
+      case 'collaborative_document':
+        if (COLLAB_ENABLED) { setCollabTitle(''); setCollabCreateError(''); setCollabCreateOpen(true); }
+        break;
       case 'assessment':
         setIsAnalyticsOpen(true);
         break;
@@ -1274,8 +1511,9 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         if (cancelled) return;
         setViews([...INITIAL_VIEWS, ...loaded.map(apiViewToView)]);
         setViewCards(cards);
+        setViewsLoadedFor(spaceId);
       })
-      .catch(() => { if (!cancelled) { setViews(INITIAL_VIEWS); setViewCards([]); } });
+      .catch(() => { if (!cancelled) { setViews(INITIAL_VIEWS); setViewCards([]); setViewsLoadedFor(spaceId); } });
     return () => { cancelled = true; };
   }, [spaceId]);
 
@@ -1723,6 +1961,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
    */
   const createBuildOnRelation = useCallback(async (noteId: string, buildOn: BuildOnIntent): Promise<Edge> => {
     if (!spaceId) throw new Error('No space');
+    openFold(buildOn.parentId);
     const { relation } = await relationsApi.create({
       source_note_id: noteId,
       target_note_id: buildOn.parentId,
@@ -1748,7 +1987,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     }
     return apiRelationToEdge(relation);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spaceId, user]);
+  }, [spaceId, user, openFold]);
 
   /** 类型选择器在「关联」模式下的确认：只在两条已有笔记之间建关系。 */
   const handleLinkExistingNotes = useCallback(async () => {
@@ -1765,6 +2004,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
       });
       const edge = apiRelationToEdge(relation);
       setEdges(prev => prev.some(e => e.id === edge.id) ? prev : [...prev, edge]);
+      openFold(targetId);
       trackEvent({
         event_type: 'buildon_created',
         object_type: 'relation',
@@ -1783,7 +2023,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     } finally {
       setLinkingNotes(false);
     }
-  }, [spaceId, buildOnLinkSourceId, buildOnParentId, buildOnRelationType, linkingNotes, setEdges, clearBuildOn, lang]);
+  }, [spaceId, buildOnLinkSourceId, buildOnParentId, buildOnRelationType, linkingNotes, setEdges, clearBuildOn, lang, openFold]);
 
   /**
    * AI 对话要求笔记先落库（对话线程的 note_id 不能为空），所以学生在新笔记里第一次问 AI 时
@@ -1936,6 +2176,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
 
       // Add optimistic edge immediately so the connection renders right away
       if (buildOn) {
+        openFold(buildOn.parentId);
         setEdges(prev => [...prev, {
           id: `e-temp-${Date.now()}`,
           source: tempId,
@@ -1997,7 +2238,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     closeNoteEditor();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCreatingNew, editingNote, buildOnParentId, buildOnRelationType, notes, viewPort, activeViewId, activeScaffold,
-      spaceId, user, currentSpace?.inquiry_question, closeNoteEditor, createBuildOnRelation, canEditNote, lang, refetchSpace]);
+      spaceId, user, currentSpace?.inquiry_question, closeNoteEditor, createBuildOnRelation, canEditNote, lang, refetchSpace, openFold]);
 
   const handleAiNotePublished = useCallback((
     createdNote: Parameters<typeof apiNoteToNote>[0],
@@ -2007,7 +2248,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     const nextEdge = apiRelationToEdge(createdRelation);
     setNotes(prev => prev.some(note => note.id === nextNote.id) ? prev : [...prev, nextNote]);
     setEdges(prev => prev.some(edge => edge.id === nextEdge.id) ? prev : [...prev, nextEdge]);
-  }, [setEdges, setNotes, user?.name]);
+    openFold(nextEdge.target);
+  }, [setEdges, setNotes, user?.name, openFold]);
   
   const handleSaveDrawing = useCallback(async (title: string, elements: DrawingElement[]) => {
     if (drawingToEdit) {
@@ -2289,6 +2531,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     } else if (note.type === 'drawing') {
         setDrawingToEdit(note);
         setIsDrawingOpen(true);
+    } else if (isCollaborativeDocument(note)) {
+        setCollabDocument(note);
     } else if (note.fileUrl) {
         setViewingFile(note);
     } else {
@@ -2334,6 +2578,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   
   const handleMouseDownCanvas = (e: React.MouseEvent) => {
     if (contextMenu?.visible) closeContextMenu();
+    closePeekNow();
     setSelectedNoteId(null);
     // Clear multi-selection on plain canvas click (not shift)
     if (!e.shiftKey) setMultiSelectedIds(new Set());
@@ -2348,6 +2593,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   const handleMouseDownNote = useCallback((e: React.MouseEvent, note: Note) => {
     e.stopPropagation();
     setContextMenu(prev => (prev?.visible ? null : prev));
+    closePeekNow();
     if (e.button !== 0) return;
 
     if (e.shiftKey) {
@@ -2365,6 +2611,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     setMultiSelectedIds(new Set());
     setSelectedNoteId(note.id);
     if (note.isFixed) return; // 固定的对象只选中，不进入拖动
+    dragModeRef.current = 'note';
     setDragMode('note');
     setDraggingNoteId(note.id);
     draggingNoteIdRef.current = note.id;
@@ -2387,12 +2634,13 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
     dragMovedRef.current = false;
     pendingDeltaRef.current = { dx: 0, dy: 0 };
-  }, []);
+  }, [closePeekNow]);
 
   /** 右下角手柄：只改尺寸，不进入位移。 */
   const handleNoteResizeStart = useCallback((e: React.MouseEvent, note: Note) => {
     if (e.button !== 0 || note.isFixed) return;
     e.stopPropagation();
+    closePeekNow();
     setContextMenu(prev => (prev?.visible ? null : prev));
     setMultiSelectedIds(new Set());
     setSelectedNoteId(note.id);
@@ -2412,7 +2660,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
     dragMovedRef.current = false;
     pendingDeltaRef.current = { dx: 0, dy: 0 };
-  }, []);
+  }, [closePeekNow]);
   
   const handleScrollbarXMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2613,11 +2861,12 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   const focusNote = useCallback((noteId: string) => {
     const targetNote = notes.find(note => note.id === noteId);
     if (!targetNote) return;
+    revealNotes([targetNote.id]);
     const newX = -targetNote.x * viewPort.zoom + window.innerWidth / 2;
     const newY = -targetNote.y * viewPort.zoom + window.innerHeight / 2;
     setViewPort(prev => ({ ...prev, x: newX, y: newY }));
     setSelectedNoteId(targetNote.id);
-  }, [notes, viewPort.zoom]);
+  }, [notes, viewPort.zoom, revealNotes]);
 
   const openTimelineNote = async (id:string, targetSpace?:string) => {
     try {
@@ -2670,8 +2919,9 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     if (myNotes.length === 0) return;
     const next = ((index % myNotes.length) + myNotes.length) % myNotes.length;
     setMineIndex(next);
+    revealNotes([myNotes[next].id]);
     panToNote(myNotes[next]);
-  }, [myNotes, panToNote]);
+  }, [myNotes, panToNote, revealNotes]);
   const toggleMineFocus = useCallback(() => {
     if (mineFocus) {
       setMineFocus(false);
@@ -2679,8 +2929,11 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     }
     setMineFocus(true);
     setMineIndex(0);
-    if (myNotes.length > 0) panToNote(myNotes[0]);
-  }, [mineFocus, myNotes, panToNote]);
+    if (myNotes.length > 0) {
+      revealNotes([myNotes[0].id]);
+      panToNote(myNotes[0]);
+    }
+  }, [mineFocus, myNotes, panToNote, revealNotes]);
   useEffect(() => { setMineIndex(0); }, [activeViewId]);
   useEffect(() => {
     if (!mineFocus) return;
@@ -2697,15 +2950,95 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   const viewTopicList = useViewTopics(spaceId, activeViewId, topicFingerprint);
   const [topicHighlight, setTopicHighlight] = useState<ReadonlySet<string>>(() => new Set());
   const topicHighlightTimer = useRef(0);
-  const selectTopic = useCallback((topic: ViewTopic) => {
-    const ids = topic.noteIds.filter(id => visibleNoteById.has(id));
-    if (ids.length === 0) return;
-    panToNote(visibleNoteById.get(ids[0])!);
+  /** 相关的几条亮四秒（讨论主题、搜索结果、悬停列表里点的那条） */
+  const flashNotes = useCallback((ids: readonly string[]) => {
     setTopicHighlight(new Set(ids));
     window.clearTimeout(topicHighlightTimer.current);
     topicHighlightTimer.current = window.setTimeout(() => setTopicHighlight(new Set()), 4000);
-  }, [visibleNoteById, panToNote]);
+  }, []);
+  const selectTopic = useCallback((topic: ViewTopic) => {
+    const ids = topic.noteIds.filter(id => visibleNoteById.has(id));
+    if (ids.length === 0) return;
+    revealNotes(ids);
+    panToNote(visibleNoteById.get(ids[0])!);
+    flashNotes(ids);
+  }, [visibleNoteById, panToNote, revealNotes, flashNotes]);
   useEffect(() => () => window.clearTimeout(topicHighlightTimer.current), []);
+
+  /** 搜索结果、悬停列表里点了一条：藏着就先展开，画布移过去，选中（右侧出详情），亮几秒 */
+  const locateNote = useCallback((id: string) => {
+    const note = visibleNoteById.get(id);
+    if (!note) return;
+    closePeekNow();
+    revealNotes([id]);
+    panToNote(note);
+    setMultiSelectedIds(new Set());
+    setSelectedNoteId(id);
+    flashNotes([id]);
+  }, [visibleNoteById, closePeekNow, revealNotes, panToNote, flashNotes]);
+
+  /**
+   * 画布搜索（2026-10-09）。当前视图的笔记（含收起藏着的）+ 其他视图的笔记。
+   * 拖卡片时 notes 每帧换新，这份清单沿用上一次的，不然搜索框每帧把全部正文重新取一遍。
+   */
+  const searchItemsRef = useRef<CanvasSearchItem[]>([]);
+  const searchItems = useMemo<CanvasSearchItem[]>(() => {
+    if (dragMode === 'note' || dragMode === 'noteResize') return searchItemsRef.current;
+    const here = new Set(visibleNotes.map(n => n.id));
+    const viewTitles = new Map(views.map(v => [v.id, v.title]));
+    const items: CanvasSearchItem[] = [];
+    for (const note of visibleNotes) {
+      if (note.type !== 'view') items.push({ note, folded: foldHidden.has(note.id) });
+    }
+    for (const note of notes) {
+      if (here.has(note.id) || note.type === 'view') continue;
+      const viewId = note.views?.find(v => v !== activeViewId && viewTitles.has(v));
+      if (viewId) items.push({ note, viewId, viewTitle: viewTitles.get(viewId) });
+    }
+    searchItemsRef.current = items;
+    return items;
+  }, [dragMode, visibleNotes, notes, views, activeViewId, foldHidden]);
+  /** 正在搜：当前视图里命中的笔记；其余卡片调淡 */
+  const [searchMatches, setSearchMatches] = useState<ReadonlySet<string> | null>(null);
+  /** 点了别的视图里的笔记：先切过去，那边的笔记到了再定位 */
+  const [pendingLocate, setPendingLocate] = useState<{ id: string; viewId: string } | null>(null);
+  const handleSearchPick = useCallback((item: CanvasSearchItem) => {
+    if (spaceId && UUID_RE.test(item.note.id)) {
+      trackEvent({
+        event_type: 'canvas_search_picked',
+        object_type: 'note',
+        object_id: item.note.id,
+        space_id: spaceId,
+        metadata_json: { other_view: Boolean(item.viewId), folded: Boolean(item.folded), view_id: activeViewId },
+      });
+    }
+    if (item.viewId && item.viewId !== activeViewId) {
+      setPendingLocate({ id: item.note.id, viewId: item.viewId });
+      goToView(item.viewId);
+      return;
+    }
+    locateNote(item.note.id);
+  }, [spaceId, activeViewId, goToView, locateNote]);
+  useEffect(() => {
+    if (!pendingLocate) return;
+    if (pendingLocate.viewId !== activeViewId) { setPendingLocate(null); return; }
+    if (!visibleNoteById.has(pendingLocate.id)) return;
+    setPendingLocate(null);
+    locateNote(pendingLocate.id);
+  }, [pendingLocate, activeViewId, visibleNoteById, locateNote]);
+  const handlePeekPick = useCallback((id: string) => {
+    if (spaceId && UUID_RE.test(id)) {
+      trackEvent({
+        event_type: 'buildon_peek_picked',
+        object_type: 'note',
+        object_id: id,
+        space_id: spaceId,
+        target_note_id: peekNoteIdRef.current && UUID_RE.test(peekNoteIdRef.current) ? peekNoteIdRef.current : undefined,
+        metadata_json: { view_id: activeViewId },
+      });
+    }
+    locateNote(id);
+  }, [spaceId, activeViewId, locateNote]);
 
   const headerTitle = courseTitle || currentSpace?.title || (lang === 'zh' ? '知识空间' : 'Workspace');
 
@@ -2728,10 +3061,19 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         isWorkspaceAgentOpen={isWorkspaceAgentOpen}
         onToggleWorkspaceAgent={() => setIsWorkspaceAgentOpen(v => !v)}
         onOpenAnalytics={() => setIsAnalyticsOpen(true)}
+        afterTitle={spaceId ? (
+          <CanvasSearch
+            lang={lang === 'zh' ? 'zh' : 'en'}
+            items={searchItems}
+            onPick={handleSearchPick}
+            onMatchesChange={setSearchMatches}
+          />
+        ) : undefined}
       />
       
       <div className="gsap-workspace-toolbar flex flex-1 overflow-hidden relative bg-gray-100 dark:bg-gray-950">
         <Sidebar
+          collaborativeDocumentsEnabled={COLLAB_ENABLED}
           activeTool={activeTool}
           onToolSelect={handleToolSelect}
           onToolOpen={handleToolOpen}
@@ -2760,8 +3102,10 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
               style={{ cursor: 'pointer' }}
             >
               <RemixIcon name="focus-3-line" size={14} className="shrink-0 text-[#000080] dark:text-blue-300" />
-              <span className="text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-gray-400 shrink-0" style={{ fontVariant: 'small-caps', fontFamily: 'ui-monospace, monospace' }}>
-                {lang === 'zh' ? 'inquiry' : 'inquiry'}
+              {/* 这一栏是问题、讨论主题和几个数，合起来是讨论的概况（2026-10-09 把英文 inquiry 换掉）。
+                  不叫「AI 概况」：问题是老师写的、数是统计出来的，只有滚动的主题是 AI 归纳的。 */}
+              <span className="shrink-0 text-[0.6875rem] font-semibold tracking-wide text-gray-500 dark:text-gray-400">
+                {lang === 'zh' ? '讨论概况' : 'Overview'}
               </span>
               <span className={`min-w-0 truncate text-xs font-medium text-gray-800 dark:text-gray-200 ${viewTopicList.length > 0 ? 'max-w-[42%] shrink' : 'flex-1'}`}>
                 {currentSpace?.inquiry_question || (lang === 'zh' ? '我们共同讨论的问题' : 'The question we are working on together')}
@@ -2774,8 +3118,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
               )}
               <span className="flex items-center gap-3 shrink-0 text-[0.6875rem] text-gray-500">
                 <span><span className="font-semibold text-gray-700 dark:text-gray-300">{visibleNotes.length}</span> {lang === 'zh' ? '想法' : 'ideas'}</span>
-                <span><span className="font-semibold text-gray-700 dark:text-gray-300">{edges.length}</span> Build-on</span>
-                <span><span className="font-semibold text-gray-700 dark:text-gray-300">{visibleNotes.filter(n => n.type === 'riseabove').length}</span> Rise-above</span>
+                <span><span className="font-semibold text-gray-700 dark:text-gray-300">{viewEdgeCount}</span> Build-on</span>
+                <span><span className="font-semibold text-gray-700 dark:text-gray-300">{visibleNotes.filter(n => n.type === 'riseabove').length}</span> {lang === 'zh' ? '综合升华' : 'Rise Above'}</span>
               </span>
               <RemixIcon
                 name={isKnowledgePanelOpen ? 'arrow-up-s-line' : 'arrow-down-s-line'}
@@ -2920,6 +3264,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                    const source = visibleNoteById.get(edge.source);
                    const target = visibleNoteById.get(edge.target);
                    if (!source || !target) return null;
+                   // 收起的分支里的连线不画
+                   if (foldHidden.has(source.id) || foldHidden.has(target.id)) return null;
 
                    const sDims = getNoteDimensions(source);
                    const tDims = getNoteDimensions(target);
@@ -2987,14 +3333,13 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
              })}
 
              {/* Notes Layer */}
-             {visibleNotes.map(note => (
+             {visibleNotes.map(note => foldHidden.has(note.id) ? null : (
                 <NoteItem
                   key={note.id}
                   note={note}
                   lang={lang}
                   isSelected={selectedNoteId === note.id || draggingNoteId === note.id}
                   isMultiSelected={multiSelectedIds.has(note.id)}
-                  hasBuildOns={builtUponIds.has(note.id)}
                   moveCounts={moveCountsMap.get(note.id)}
                   synthesisDepth={synthesisDepthMap.get(note.id)}
                   isNew={isNoteNew(note, user?.id)}
@@ -3003,6 +3348,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                   className={[
                     'gsap-note-item transition-opacity duration-200 motion-reduce:transition-none',
                     mineFocus && !myNoteIds.has(note.id) ? 'opacity-30' : '',
+                    // 正在搜索：没命中的调淡
+                    searchMatches && !searchMatches.has(note.id) ? 'opacity-30' : '',
                     // 点了上面的讨论主题：相关的几条亮几秒
                     topicHighlight.has(note.id) ? 'rounded-lg ring-2 ring-amber-400 ring-offset-2 ring-offset-transparent' : '',
                   ].filter(Boolean).join(' ')}
@@ -3010,14 +3357,61 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                   onDoubleClick={handleDoubleClickNote}
                   onContextMenu={handleContextMenu}
                   onResizeStart={handleNoteResizeStart}
+                  fold={foldMap.get(note.id)}
+                  onToggleFold={handleToggleFold}
+                  onHoverChange={handleNoteHover}
                 />
              ))}
           </div>
 
+          {/* 鼠标停在有 Build-on 的卡片上：旁边列出建立在它上面的笔记，收起的也看得到 */}
+          {peekNoteId && dragMode === 'none' && (() => {
+            const anchorNote = visibleNoteById.get(peekNoteId);
+            if (!anchorNote || foldHidden.has(anchorNote.id)) return null;
+            const kids = foldGraph.children.get(anchorNote.id) ?? [];
+            if (kids.length === 0) return null;
+            const items: PeekItem[] = kids
+              .map(id => visibleNoteById.get(id))
+              .filter((n): n is Note => Boolean(n))
+              .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))
+              .map(child => ({
+                id: child.id,
+                title: child.title || child.fileName || '',
+                author: child.author,
+                relationType: edges.find(e => e.source === child.id && e.target === anchorNote.id)?.relationType,
+                hidden: foldHidden.has(child.id),
+                isNew: isNoteNew(child, user?.id),
+              }));
+            const { w, h } = getNoteDimensions(anchorNote);
+            const summary = foldMap.get(anchorNote.id);
+            return (
+              <BuildOnPeek
+                lang={lang === 'zh' ? 'zh' : 'en'}
+                anchor={{
+                  left: anchorNote.x * viewPort.zoom + viewPort.x,
+                  top: anchorNote.y * viewPort.zoom + viewPort.y,
+                  width: w * viewPort.zoom,
+                  height: h * viewPort.zoom,
+                }}
+                container={{
+                  width: canvasRef.current?.clientWidth ?? window.innerWidth,
+                  height: canvasRef.current?.clientHeight ?? window.innerHeight,
+                }}
+                items={items}
+                collapsed={Boolean(summary?.collapsed)}
+                hiddenCount={summary?.hiddenCount ?? 0}
+                onPick={handlePeekPick}
+                onToggle={() => handleToggleFold(anchorNote)}
+                onPointerEnter={keepPeekOpen}
+                onPointerLeave={releasePeek}
+              />
+            );
+          })()}
+
           {/* ── Multi-select Floating Toolbar ── */}
           {multiSelectedIds.size >= 2 && (() => {
             // Compute bounding box of selected notes in world coords
-            const selNotes = visibleNotes.filter(n => multiSelectedIds.has(n.id));
+            const selNotes = visibleNotes.filter(n => multiSelectedIds.has(n.id) && !foldHidden.has(n.id));
             if (selNotes.length < 2) return null;
             let minX = Infinity, maxX = -Infinity, minY = Infinity;
             selNotes.forEach(n => {
@@ -3277,6 +3671,24 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
 
           {/* Zoom + Controls Bar */}
           <div className="absolute bottom-5 right-5 flex items-center gap-2 z-30">
+            {foldTotals.branches > 0 && (
+              <div
+                data-canvas-overlay
+                onMouseDown={e => e.stopPropagation()}
+                className="flex items-center overflow-hidden rounded-lg border border-gray-200 bg-white/90 text-xs text-gray-600 shadow backdrop-blur-sm"
+              >
+                <span className="px-2.5 py-1 tabular-nums">
+                  {lang === 'zh' ? `已收起 ${foldTotals.notes} 条 Build-on` : `${foldTotals.notes} build-ons folded`}
+                </span>
+                <button
+                  type="button"
+                  onClick={expandAllFolds}
+                  className="border-l border-gray-200 px-2.5 py-1 font-medium text-[#000080] transition-colors hover:bg-[#000080]/[0.06] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400"
+                >
+                  {lang === 'zh' ? '全部展开' : 'Expand all'}
+                </button>
+              </div>
+            )}
             <div className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-xs font-mono text-gray-600 shadow border border-gray-200 pointer-events-none">
               {Math.round(viewPort.zoom * 100)}%
             </div>
@@ -3366,11 +3778,26 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
               view: MORANDI.stone,
               riseabove: MORANDI.mauve,
             };
+            const zhLang: Language = lang === 'zh' ? 'zh' : 'en';
+            const typeLabel = DETAIL_TYPE_LABELS[zhLang][sel.type];
+            const statusLabel = sel.epistemicStatus && sel.epistemicStatus !== 'standard'
+              ? (DETAIL_STATUS_LABELS[zhLang][sel.epistemicStatus] ?? sel.epistemicStatus)
+              : null;
+            // 写这条时的问题和现在的共同问题一样，问题栏上已经写着，不再重复一遍
+            const writtenUnder = sel.inquiryQuestion?.trim() && sel.inquiryQuestion.trim() !== (currentSpace?.inquiry_question ?? '').trim()
+              ? sel.inquiryQuestion.trim()
+              : null;
             const strippedContent = notePlainParagraphs(sel.content);
             const openKnowledgeLacks = sel.knowledgeLacks?.filter(lack => !lack.resolvedAt) ?? [];
             const receivedEdges = relatedEdges.filter(edge => edge.target === sel.id);
             const sentEdges = relatedEdges.filter(edge => edge.source === sel.id);
             const aiUptakeCount = (sel.content?.match(/data-ai-source="genai"/g) ?? []).length;
+            const trailStats = [
+              { key: 'revisions', count: sel.metrics?.revisionCount ?? 0, label: lang === 'zh' ? '次修订' : 'revisions' },
+              { key: 'received', count: receivedEdges.length, label: lang === 'zh' ? '收到 Build-on' : 'received' },
+              { key: 'sent', count: sentEdges.length, label: lang === 'zh' ? '发出 Build-on' : 'sent' },
+              { key: 'ai', count: aiUptakeCount, label: lang === 'zh' ? 'AI 采纳段' : 'AI uptakes' },
+            ].filter(stat => stat.count > 0);
             const relationMoveCounts = receivedEdges.reduce<Record<string, number>>((acc, edge) => {
               const key = edge.relationType ?? 'extend';
               acc[key] = (acc[key] ?? 0) + 1;
@@ -3380,6 +3807,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
               <div
                 /* 浮层标记：画布的滚轮缩放监听器据此放行，否则面板滚不动 */
                 data-canvas-overlay
+                data-note-detail
                 /* 面板就长在画布容器里，不拦住的话每一次点击都会冒泡到
                    handleMouseDownCanvas，那里无条件清空 selectedNoteId —— 
                    点面板里任何东西，面板自己就没了。 */
@@ -3391,15 +3819,19 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/80">
                   <div className="flex items-center gap-2">
-                    <span
-                      className="rounded-full border px-2 py-0.5 text-[0.6875rem] font-bold"
-                      style={chipStyle(typeTone[sel.type] ?? MORANDI.stone)}
-                    >
-                      {sel.type.toUpperCase()}
-                    </span>
-                    {sel.epistemicStatus && sel.epistemicStatus !== 'standard' && (
+                    {typeLabel ? (
+                      <span
+                        className="rounded-full border px-2 py-0.5 text-[0.6875rem] font-semibold"
+                        style={chipStyle(typeTone[sel.type] ?? MORANDI.stone)}
+                      >
+                        {typeLabel}
+                      </span>
+                    ) : !statusLabel && (
+                      <span className="text-[0.6875rem] font-medium text-gray-500">{lang === 'zh' ? '笔记详情' : 'Note details'}</span>
+                    )}
+                    {statusLabel && (
                       <span className="text-[0.6875rem] font-medium px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">
-                        {sel.epistemicStatus}
+                        {statusLabel}
                       </span>
                     )}
                   </div>
@@ -3418,7 +3850,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="text-[0.6875rem] text-gray-500">{sel.author}</span>
                       <span className="text-gray-300">·</span>
-                      <span className="text-[0.6875rem] text-gray-400">{sel.date}</span>
+                      <span className="text-[0.6875rem] text-gray-400 tabular-nums">{formatNoteStamp(sel)}</span>
                     </div>
                   </div>
                   {strippedContent && (
@@ -3439,12 +3871,12 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                       </div>
                     </div>
                   )}
-                  {(sel.inquiryQuestion || currentSpace?.inquiry_question) && (
+                  {writtenUnder && (
                     <div className="rounded-lg border border-blue-100 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/30 p-3">
-                      <div className="mb-1 flex items-center gap-1.5 text-[0.6875rem] font-bold uppercase tracking-wider text-[#000080] dark:text-blue-300">
-                        <RemixIcon name="focus-3-line" size={12} />{lang === 'zh' ? '连接到共同问题' : 'Linked inquiry'}
+                      <div className="mb-1 flex items-center gap-1.5 text-[0.6875rem] font-semibold text-[#000080] dark:text-blue-300">
+                        <RemixIcon name="focus-3-line" size={12} />{lang === 'zh' ? '写这条时的问题' : 'Question when written'}
                       </div>
-                      <p className="text-xs leading-5 text-gray-700 dark:text-gray-300">{sel.inquiryQuestion || currentSpace?.inquiry_question}</p>
+                      <p className="text-xs leading-5 text-gray-700 dark:text-gray-300">{writtenUnder}</p>
                     </div>
                   )}
                   {(sel.promisingReason || sel.epistemicStatus === 'promising') && (
@@ -3465,31 +3897,28 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                       <div className="space-y-1">
                         {openKnowledgeLacks.slice(0, 3).map(lack => (
                           <div key={lack.id} className="rounded-lg border px-2.5 py-2 text-xs leading-5" style={noticeStyle(MORANDI.rose)}>
-                            <span className="mr-1 font-semibold">{lack.type.replace(/_/g, ' ')}</span>
+                            <span className="mr-1 font-semibold">{LACK_LABELS[zhLang][lack.type] ?? lack.type.replace(/_/g, ' ')}</span>
                             {lack.text}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
+                  {/* 只列不是零的：一排「0 次修订」「0 AI 采纳段」只是噪音 */}
+                  {(trailStats.length > 0 || Object.keys(relationMoveCounts).length > 0) && (
                   <div>
                     <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
                       {lang === 'zh' ? '改进轨迹' : 'Improvement trail'}
                     </div>
-                    <div className="grid grid-cols-2 gap-1.5 text-[0.6875rem]">
-                      <div className="rounded-lg bg-gray-50 px-2 py-1.5 text-gray-600">
-                        <span className="font-bold text-gray-900">{sel.metrics?.revisionCount ?? 0}</span> {lang === 'zh' ? '次修订' : 'revisions'}
+                    {trailStats.length > 0 && (
+                      <div className="grid grid-cols-2 gap-1.5 text-[0.6875rem]">
+                        {trailStats.map(stat => (
+                          <div key={stat.key} className="rounded-lg bg-gray-50 px-2 py-1.5 text-gray-600">
+                            <span className="font-bold text-gray-900">{stat.count}</span> {stat.label}
+                          </div>
+                        ))}
                       </div>
-                      <div className="rounded-lg bg-gray-50 px-2 py-1.5 text-gray-600">
-                        <span className="font-bold text-gray-900">{receivedEdges.length}</span> {lang === 'zh' ? '收到 Build-on' : 'received'}
-                      </div>
-                      <div className="rounded-lg bg-gray-50 px-2 py-1.5 text-gray-600">
-                        <span className="font-bold text-gray-900">{sentEdges.length}</span> {lang === 'zh' ? '发出 Build-on' : 'sent'}
-                      </div>
-                      <div className="rounded-lg bg-gray-50 px-2 py-1.5 text-gray-600">
-                        <span className="font-bold text-gray-900">{aiUptakeCount}</span> {lang === 'zh' ? 'AI 采纳段' : 'AI uptakes'}
-                      </div>
-                    </div>
+                    )}
                     {Object.keys(relationMoveCounts).length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1">
                         {Object.entries(relationMoveCounts).map(([type, count]) => (
@@ -3500,6 +3929,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                       </div>
                     )}
                   </div>
+                  )}
                   {relatedEdges.length > 0 && (
                     <div>
                       <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
@@ -3511,12 +3941,31 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                           const otherId = isOut ? e.target : e.source;
                           const other = notes.find(n => n.id === otherId);
                           const c = RELATION_COLORS[e.relationType ?? 'extend'] ?? '#6b7280';
-                          return (
-                            <div key={e.id} className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                          const direction = isOut
+                            ? (lang === 'zh' ? '这条建立在它上面' : 'This note builds on it')
+                            : (lang === 'zh' ? '它建立在这条上面' : 'It builds on this note');
+                          const row = (
+                            <>
                               <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
-                              <span className="text-[0.6875rem] font-medium" style={{ color: c }}>{RELATION_LABELS[lang]?.[e.relationType ?? 'extend'] ?? e.relationType}</span>
-                              <span className="text-gray-300">{isOut ? '→' : '←'}</span>
-                              <span className="truncate text-gray-700">{other?.title ?? otherId.slice(0, 8)}</span>
+                              <span className="shrink-0 whitespace-nowrap text-[0.6875rem] font-medium" style={{ color: c }}>{RELATION_LABELS[lang]?.[e.relationType ?? 'extend'] ?? e.relationType}</span>
+                              <span className="shrink-0 text-gray-300" aria-hidden="true">{isOut ? '→' : '←'}</span>
+                              <span className="min-w-0 truncate text-gray-700">{other?.title ?? otherId.slice(0, 8)}</span>
+                            </>
+                          );
+                          // 在这块画布上的，点一下画布移过去（收起的也会展开）
+                          return visibleNoteById.has(otherId) ? (
+                            <button
+                              key={e.id}
+                              type="button"
+                              title={direction}
+                              onClick={() => locateNote(otherId)}
+                              className="flex w-full items-center gap-2 rounded-lg bg-gray-50 px-2.5 py-1.5 text-left text-xs text-gray-600 transition-colors hover:bg-gray-100 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                            >
+                              {row}
+                            </button>
+                          ) : (
+                            <div key={e.id} title={direction} className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                              {row}
                             </div>
                           );
                         })}
@@ -3525,7 +3974,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                   )}
                   {sel.tags && sel.tags.length > 0 && (
                     <div>
-                      <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Tags</div>
+                      <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-gray-400 mb-1.5">{lang === 'zh' ? '标签' : 'Tags'}</div>
                       <div className="flex flex-wrap gap-1">
                         {sel.tags.map(tag => (
                           <span key={tag} className="rounded-full border px-2 py-0.5 text-[0.6875rem]" style={chipStyle(MORANDI.dustyBlue)}>{tag}</span>
@@ -3820,6 +4269,31 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         initialData={drawingToEdit ? { title: drawingToEdit.title, elements: drawingToEdit.drawingData || [] } : undefined}
         lang={lang}
       />
+
+      {collabCreateOpen && <div className="fixed inset-0 z-[200] bg-slate-950/30 flex items-center justify-center" data-canvas-overlay>
+        <form className="bg-white dark:bg-slate-900 rounded-xl p-6 w-[min(440px,90vw)] shadow-xl" onSubmit={async event => {
+          event.preventDefault();
+          if (!spaceId || collabCreating) return;
+          setCollabCreating(true); setCollabCreateError('');
+          try {
+            const rect = canvasRef.current?.getBoundingClientRect();
+            const created = await collaborativeDocuments.create(spaceId, { title: collabTitle, viewId: activeViewId,
+              x: ((rect?.width ?? 800) / 2 - viewPort.x) / viewPort.zoom,
+              y: ((rect?.height ?? 600) / 2 - viewPort.y) / viewPort.zoom });
+            const note = apiNoteToNote(created, user?.name);
+            setNotes(previous => previous.some(item => item.id === note.id) ? previous : [...previous, note]);
+            setCollabCreateOpen(false); setCollabDocument(note);
+          } catch (error) { setCollabCreateError(error instanceof Error ? error.message : '创建失败'); }
+          finally { setCollabCreating(false); }
+        }}>
+          <h2 className="text-lg font-semibold mb-3">{lang === 'zh' ? '创建协作文档' : 'Create shared document'}</h2>
+          <label className="block text-sm">{lang === 'zh' ? '文档标题' : 'Document title'}<input autoFocus required maxLength={200} value={collabTitle} onChange={event => setCollabTitle(event.target.value)} className="block w-full border rounded-lg p-2 mt-2 bg-transparent" /></label>
+          <p className="text-xs text-slate-500 my-3">{lang === 'zh' ? '本空间成员可共同编辑；小组空间保持组内共享。' : 'Members of this space can write together. Group spaces stay within the group.'}</p>
+          {collabCreateError && <p role="alert" className="text-sm text-red-600 mb-3">{collabCreateError}</p>}
+          <div className="flex gap-3 justify-end"><button type="button" disabled={collabCreating} onClick={() => setCollabCreateOpen(false)}>{lang === 'zh' ? '取消' : 'Cancel'}</button><button disabled={collabCreating} className="bg-indigo-700 text-white rounded-lg px-4 py-2">{collabCreating ? '…' : lang === 'zh' ? '创建' : 'Create'}</button></div>
+        </form>
+      </div>}
+      {collabAdapter && <Suspense fallback={<div className="fixed inset-6 z-[200] bg-white p-8" data-canvas-overlay>正在打开协作文档…</div>}><CollaborativeDocumentEditor key={collabDocument!.id} adapter={collabAdapter} onClose={() => setCollabDocument(null)} /></Suspense>}
 
       {viewingFile && (
         <FileViewerPage 

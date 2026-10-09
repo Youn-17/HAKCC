@@ -26,6 +26,8 @@ interface HeaderProps {
   isWorkspaceAgentOpen?: boolean;
   onToggleWorkspaceAgent?: () => void;
   onOpenAnalytics?: () => void;
+  /** 放在课程名后面的东西：知识空间里是搜索笔记的框（2026-10-09 用户要求挪到这里） */
+  afterTitle?: React.ReactNode;
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -33,7 +35,7 @@ const Header: React.FC<HeaderProps> = ({
   views = [], activeViewId, onViewSelect, onOpenViewManager,
   notifications = [], onNotificationClick,
   isWorkspaceAgentOpen, onToggleWorkspaceAgent,
-  onOpenAnalytics,
+  onOpenAnalytics, afterTitle,
 }) => {
   const displayName = userName || 'User';
   // 顶栏展示的始终是当前登录用户，直接读 auth，不必从 Workspace 一路透传
@@ -92,7 +94,7 @@ const Header: React.FC<HeaderProps> = ({
     logout:        zh ? '退出登录' : 'Logout',
     switchView:    zh ? '切换视图' : 'Switch View',
     manageViews:   zh ? '管理视图' : 'Manage Views',
-    welcome:       zh ? '主视图' : 'Welcome',
+    welcome:       'Welcome',
     notifications: zh ? '消息通知' : 'Notifications',
     noNotif:       zh ? '暂无新消息' : 'No new notifications',
     role: {
@@ -116,7 +118,7 @@ const Header: React.FC<HeaderProps> = ({
   const smallCaps: React.CSSProperties = { fontVariant: 'small-caps' };
 
   return (
-    <div className="h-11 bg-white/85 backdrop-blur-xl flex items-stretch z-30 border-b border-gray-200 dark:border-gray-800 dark:bg-gray-950/90 select-none flex-shrink-0">
+    <div data-workspace-header className="relative h-11 bg-white/85 backdrop-blur-xl flex items-stretch z-40 border-b border-gray-200 dark:border-gray-800 dark:bg-gray-950/90 select-none flex-shrink-0">
 
       {/* ── Brand + breadcrumb ── */}
       <div className="flex items-center gap-2 px-3 border-r border-gray-200 dark:border-gray-800 min-w-0">
@@ -135,6 +137,8 @@ const Header: React.FC<HeaderProps> = ({
         <span className="sm:hidden text-[0.6875rem] font-medium text-gray-700">HAKCC</span>
       </div>
 
+      {afterTitle && <div className="flex min-w-0 items-center px-2">{afterTitle}</div>}
+
       <div className="flex-1" />
 
       {/* ── View Selector ── */}
@@ -144,7 +148,7 @@ const Header: React.FC<HeaderProps> = ({
             onClick={() => setIsViewMenuOpen(!isViewMenuOpen)}
             className="flex items-center text-xs px-3 h-full border-r border-gray-200 dark:border-gray-800 transition-colors hover:bg-gray-100 dark:hover:bg-gray-900"
           >
-            <span className="text-[0.6875rem] text-gray-400 tracking-[0.06em] font-mono" style={smallCaps}>view</span>
+            <span className="text-[0.6875rem] text-gray-400 tracking-[0.06em] font-mono" style={smallCaps}>{t.view}</span>
             <span className="font-medium text-[#000080] text-[0.6875rem] ml-1.5 truncate max-w-[14rem]">{activeViewTitle}</span>
             <RemixIcon name="arrow-down-s-line" size={12} className="ml-1 text-gray-400" />
           </button>
@@ -210,10 +214,10 @@ const Header: React.FC<HeaderProps> = ({
             ${isWorkspaceAgentOpen
               ? 'bg-[#000080] text-white'
               : 'text-[#000080] hover:bg-gray-100 dark:hover:bg-gray-900'}`}
-          title={zh ? '知识空间 AI 助手' : 'Knowledge Space AI'}
+          title={zh ? '知识空间智能体' : 'Knowledge space agent'}
         >
           <RemixIcon name={isWorkspaceAgentOpen ? 'sparkling-2-fill' : 'sparkling-2-line'} size={14} />
-          <span className="hidden lg:inline text-[0.6875rem] tracking-[0.05em] font-mono font-medium" style={smallCaps}>{zh ? '助手' : 'agent'}</span>
+          <span className="hidden lg:inline text-[0.6875rem] tracking-[0.05em] font-mono font-medium" style={smallCaps}>{zh ? '智能体' : 'agent'}</span>
         </button>
       )}
 

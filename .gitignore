@@ -71,3 +71,11 @@ test-results/
 publication/local/
 figure/references/
 demo/
+
+# Collaborative editor development output and persistent state
+dist-collab-demo/
+collab/data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*

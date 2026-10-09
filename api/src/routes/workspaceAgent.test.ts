@@ -17,7 +17,7 @@ const h = vi.hoisted(() => {
   type Note = { id: string; space_id: string; title: string; content: string; author_id: string; created_at: string; deleted_at?: string | null };
   type Relation = { source_note_id: string; target_note_id: string; relation_type: string; space_id: string; created_at: string };
   type Conversation = { id: string; user_id: string; space_id: string | null; course_id: string; agent_type?: string; title?: string; updated_at?: string };
-  type Message = { id?: string; conversation_id: string; role: string; content: string; created_at?: string };
+  type Message = { id?: string; conversation_id: string; role: string; content: string; created_at?: string; ai_metadata?: Record<string, unknown> };
   type Feedback = { id: string; note_id: string; space_id: string; user_id: string; trigger_type: string; status: string; rejection_tag: string | null; published_note_id: string | null; trigger_context?: Record<string, unknown> };
   type Insertion = { id: string; note_id: string; space_id: string; user_id: string; scaffold_id: string | null; reason_tag: string | null; feedback_id: string | null; source_message_id: string | null };
 
@@ -189,6 +189,9 @@ const h = vi.hoisted(() => {
     // 默认这门课没有资料；「课程资料」那一组用例自己给检索结果
     startKbRetrieval: vi.fn((_params: unknown) => ({ available: Promise.resolve(false), result: Promise.resolve(null) as Promise<unknown> })),
     collectGroupNotesForDigest: vi.fn(async () => [{ id: 'n-a1' }]),
+    // 要不要画：默认用真的 routeDrawRequest（测试里 Jev 没开，按说法认）；Jev 那几条用例自己给判断
+    routeDrawRequest: vi.fn(),
+    realRouteDrawRequest: null as unknown as typeof import('../services/drawJudge').routeDrawRequest,
     streamDrawTurn: vi.fn(async (res: { write: (s: string) => void; end: () => void }) => {
       res.write('data: {"drawing":{}}\n\n');
       res.write('data: [DONE]\n\n');
@@ -228,8 +231,16 @@ vi.mock('../services/aiProviderConfig', () => ({
   listCourseAiConfigs: async () => [{ providerId: 'deepseek' }],
 }));
 vi.mock('../services/agentLoop', () => ({ runAgentLoopStream: h.runAgentLoopStream }));
-vi.mock('../services/drawTurn', () => ({ streamDrawTurn: h.streamDrawTurn }));
-vi.mock('../services/studentLearningContext', () => ({ loadStudentLearningContext: vi.fn(async () => '') }));
+vi.mock('../services/drawJudge', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/drawJudge')>();
+  h.realRouteDrawRequest = actual.routeDrawRequest;
+  return { ...actual, routeDrawRequest: h.routeDrawRequest };
+});
+vi.mock('../services/drawTurn', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/drawTurn')>()),
+  streamDrawTurn: h.streamDrawTurn,
+}));
+vi.mock('../services/studentLearningContext', () => ({ loadStudentLearningContext: vi.fn(async () => 'LEARNER-RECORDS') }));
 vi.mock('../services/agentContext', () => ({
   buildAgentContext: h.buildAgentContext,
   stripHtml: (value: string) => value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
@@ -330,6 +341,8 @@ beforeEach(() => {
   h.runAgentLoopStream.mockClear();
   h.buildAgentContext.mockClear();
   h.streamDrawTurn.mockClear();
+  h.routeDrawRequest.mockReset();
+  h.routeDrawRequest.mockImplementation((text: string, opts?: Parameters<typeof h.realRouteDrawRequest>[1]) => h.realRouteDrawRequest(text, opts));
   h.executeTool.mockClear();
   h.startKbRetrieval.mockClear();
 });
@@ -754,10 +767,114 @@ describe('「画图」按钮', () => {
     expect(h.runAgentLoopStream).not.toHaveBeenCalled();
   });
 
+  it('画之前带上这段对话和它的记忆、空间里的笔记和 Build-on；学生还带上自己的记录（2026-10-09）', async () => {
+    h.state.relations = [{ source_note_id: 'n-a2', target_note_id: 'n-a1', relation_type: 'question', space_id: 'space-a', created_at: '2026-09-21T00:00:00Z' }];
+    h.state.conversations = [{ id: 'conv-mine', user_id: 'student-a', space_id: 'space-a', course_id: 'course-1', conversation_memory: { version: 1, summary: '在比较第一组的两个想法' } } as never];
+    h.state.messages = [
+      { conversation_id: 'conv-mine', role: 'user', content: '第一组都说了什么？', created_at: '2026-09-22T00:00:01Z' },
+      { conversation_id: 'conv-mine', role: 'assistant', content: '想法一和想法二', created_at: '2026-09-22T00:00:02Z' },
+    ];
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a', conversation_id: 'conv-mine', content: '画一张这两个想法的关系图' });
+
+    expect(h.streamDrawTurn).toHaveBeenCalledTimes(1);
+    const opts = (h.streamDrawTurn.mock.calls[0] as unknown[])[1] as { prompt: string; context: { history: unknown[]; memory: string; background: string; learner: string } };
+    expect(opts.prompt).toBe('画一张这两个想法的关系图');
+    expect(opts.context.history).toEqual([
+      { role: 'user', content: '第一组都说了什么？' },
+      { role: 'assistant', content: '想法一和想法二' },
+    ]);
+    expect(opts.context.memory).toBe('在比较第一组的两个想法');
+    expect(opts.context.background).toContain('第一组的想法一');
+    expect(opts.context.background).toContain('builds on');
+    // 别组的笔记照样进不来
+    expect(opts.context.background).not.toContain(h.SECRET);
+    expect(opts.context.learner).toBe('LEARNER-RECORDS');
+    expect(h.runAgentLoopStream).not.toHaveBeenCalled();
+  });
+
+  it('教职画图不带「学生自己的记录」', async () => {
+    h.state.user = { id: 'teacher-1', role: 'teacher' };
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-shared', content: '画一张思维导图总结这节课' });
+    const opts = (h.streamDrawTurn.mock.calls[0] as unknown[])[1] as { context: { learner: string } };
+    expect(opts.context.learner).toBe('');
+  });
+
   it('没按按钮、也没说要画：照常对话', async () => {
     await call('POST', '/workspace-agent/course-1/stream', { ...ASK, content: '一棵知识之树' });
     expect(h.streamDrawTurn).not.toHaveBeenCalled();
     expect(h.runAgentLoopStream).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** 2026-10-09：要不要画、改上一张还是新画、画成哪种，由 Jev 判断（drawJudge.routeDrawRequest） */
+describe('Jev 判断要不要画', () => {
+  const route = (over: Record<string, unknown>) => ({ draw: true, mode: 'new', form: null, decidedBy: 'jev', rule: false, ...over });
+  // 换一个学生：路由按人限流（每分钟 20 次），这组用例别把后面用例的额度用掉
+  beforeEach(() => {
+    h.state.user = { id: 'student-j', role: 'student' };
+    h.state.groupsOf['student-j'] = ['group-a'];
+  });
+
+  it('换了说法（没有「画」字）：Jev 判断要画、画成思维导图，种类和判断经过交给画图', async () => {
+    h.routeDrawRequest.mockResolvedValueOnce(route({ form: 'tree' }));
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, content: '能把这节课的内容整理成一张图吗' });
+
+    expect(h.routeDrawRequest).toHaveBeenCalledWith('能把这节课的内容整理成一张图吗', { previous: null, lastReply: null, forced: false });
+    expect(h.streamDrawTurn).toHaveBeenCalledTimes(1);
+    expect((h.streamDrawTurn.mock.calls[0] as unknown[])[1]).toMatchObject({
+      prompt: '能把这节课的内容整理成一张图吗', form: 'tree', previous: null, route: { draw: true, decided_by: 'jev', form: 'tree' },
+    });
+    expect(h.runAgentLoopStream).not.toHaveBeenCalled();
+  });
+
+  it('上一条是 AI 刚画的图：把它交给判断；判断是改图，就照着那张改', async () => {
+    h.state.conversations = [{ id: 'conv-mine', user_id: 'student-j', space_id: 'space-a', course_id: 'course-1' } as never];
+    const diagram = { type: 'graph', nodes: [{ id: 'a', label: '观点一' }, { id: 'b', label: '观点二' }], edges: [{ from: 'a', to: 'b', label: '质疑' }] };
+    h.state.messages = [
+      { conversation_id: 'conv-mine', role: 'user', content: '画一张这两个想法的关系图', created_at: '2026-10-09T00:00:01Z' },
+      {
+        conversation_id: 'conv-mine', role: 'assistant', content: '![关系图](u)\n\n画了两个想法的关系。', created_at: '2026-10-09T00:00:02Z',
+        ai_metadata: { direct_image: true, drawing: { kind: 'diagram', caption: '画了两个想法的关系。', diagram } },
+      },
+    ];
+    h.routeDrawRequest.mockResolvedValueOnce(route({ mode: 'edit', form: 'graph' }));
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a', conversation_id: 'conv-mine', content: '把第二个框改成检索练习' });
+
+    const previous = { request: '画一张这两个想法的关系图', caption: '画了两个想法的关系。', kind: 'diagram', diagram };
+    expect(h.routeDrawRequest).toHaveBeenCalledWith('把第二个框改成检索练习', { previous, lastReply: null, forced: false });
+    expect((h.streamDrawTurn.mock.calls[0] as unknown[])[1]).toMatchObject({ previous, form: 'graph', route: { mode: 'edit' } });
+  });
+
+  it('上一条是文字回答：回答交给判断（「把上面的画成图」）；判断是新画就不带上一张', async () => {
+    h.state.conversations = [{ id: 'conv-mine', user_id: 'student-j', space_id: 'space-a', course_id: 'course-1' } as never];
+    h.state.messages = [
+      { conversation_id: 'conv-mine', role: 'user', content: '检索练习怎么做？', created_at: '2026-10-09T00:00:01Z' },
+      { conversation_id: 'conv-mine', role: 'assistant', content: '分四步：合上材料、回想、对答案、找错。', created_at: '2026-10-09T00:00:02Z' },
+    ];
+    h.routeDrawRequest.mockResolvedValueOnce(route({ form: 'timeline' }));
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a', conversation_id: 'conv-mine', content: '把上面的步骤用流程图表示出来' });
+    expect(h.routeDrawRequest).toHaveBeenCalledWith('把上面的步骤用流程图表示出来', { previous: null, lastReply: '分四步：合上材料、回想、对答案、找错。', forced: false });
+    expect((h.streamDrawTurn.mock.calls[0] as unknown[])[1]).toMatchObject({ previous: null, form: 'timeline' });
+  });
+
+  it('正则会误认的「画一张图需要注意什么」：Jev 判断不是要画，照常对话', async () => {
+    h.routeDrawRequest.mockResolvedValueOnce(route({ draw: false, rule: true }));
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, content: '画一张图需要注意什么？' });
+    expect(h.streamDrawTurn).not.toHaveBeenCalled();
+    expect(h.runAgentLoopStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('按了「画图」：一定画，判断只定改图还是新画', async () => {
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, content: '一棵知识之树', force_draw: true });
+    expect(h.routeDrawRequest).toHaveBeenCalledWith('一棵知识之树', expect.objectContaining({ forced: true }));
+    expect(h.streamDrawTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('带了附件：不问要不要画，照常对话', async () => {
+    await call('POST', '/workspace-agent/course-1/stream', {
+      ...ASK, content: '画一张这张图的示意图', attachments: [{ name: 'a.png', mime_type: 'image/png', data_url: 'data:image/png;base64,iVBORw0KGgo=' }],
+    });
+    expect(h.routeDrawRequest).not.toHaveBeenCalled();
   });
 });
 

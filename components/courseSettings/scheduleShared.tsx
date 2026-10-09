@@ -105,7 +105,7 @@ export const ScheduleSlotsEditor: React.FC<SlotsEditorProps> = ({ slots, onChang
         onClick={() => onChange([...slots, { weekday: slots[slots.length - 1]?.weekday ?? 1, start: '14:00', minutes: 90 }])}
         className="rounded-lg border border-dashed border-stone-300 px-3 py-2 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-900"
       >
-        {zh ? '+ 增加一个时段' : '+ Add time slot'}
+        {zh ? '添加时段' : 'Add time slot'}
       </button>
     </div>
   );

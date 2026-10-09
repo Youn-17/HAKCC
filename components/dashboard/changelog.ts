@@ -32,6 +32,24 @@ export interface ChangelogEntry {
 /** 最新的排最前面。加新版本就往数组头部插。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v0.6.0', date: '2026-10-09',
+    titleZh: '协作文档与情境绘图', titleEn: 'Shared documents and contextual drawing',
+    items: [
+      { zh: '知识空间新增协作文档，可多人同步编辑，保存版本并导出 Word。', en: 'Knowledge spaces add shared documents with real-time coediting, version snapshots and Word export.' },
+      { zh: '协作文档提供开始、插入和视图工具栏、纸张视图、标尺及缩放。', en: 'Shared documents provide Home, Insert and View tools, a paper view, ruler and zoom.' },
+      { zh: 'AI 绘图结合对话与可访问的 Note 情境，支持结构图与修改上一张图。', en: 'AI drawing uses conversation and accessible Note context, supports diagrams and revises the previous drawing.' },
+      { zh: '画布新增搜索和 Build-on 折叠，改进中英文与课程设置。', en: 'Canvas search and Build-on folding are added, with language and course-setting improvements.' },
+    ],
+  },
+  {
+    version: 'v0.5.0', date: '2026-10-08',
+    titleZh: '对话记忆与学生情境', titleEn: 'Conversation memory and student context',
+    items: [
+      { zh: '知识空间与 Note AI 恢复历史对话，保留滚动记忆并检索本人本课记录。', en: 'Knowledge-space and Note AI restore history, retain rolling memory and retrieve student-owned course records.' },
+      { zh: '保留模型选择，按配置的模型上限分配历史情境。', en: 'Model choice is retained, with history budgets based on configured model limits.' },
+    ],
+  },
+  {
     version: 'v0.4.0', date: '2026-10-07',
     titleZh: '课程知识库与来源追溯', titleEn: 'Course knowledge base and source tracing',
     items: [

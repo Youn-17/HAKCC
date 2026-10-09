@@ -120,8 +120,7 @@
 .assistant-tools > button:last-child { width: 2rem; height: 2rem; }
 .assistant-welcome { margin: auto; max-width: 21rem; padding: 1.75rem .25rem; text-align: left; }
 .assistant-welcome-icon { display: inline-flex; align-items: center; justify-content: center; height: 3rem; width: 3rem; border: 1px solid var(--assistant-line); border-radius: 1rem; background: var(--assistant-paper); color: var(--assistant-accent); box-shadow: 0 5px 16px rgb(20 35 65 / 4%); }
-.assistant-eyebrow { margin-top: 1.25rem; font-size: .5625rem; font-weight: 600; letter-spacing: .16em; color: var(--assistant-muted); }
-.assistant-welcome h3 { margin: .4rem 0 .65rem; font-size: 1.25rem; font-weight: 600; line-height: 1.4; letter-spacing: -.04em; color: var(--assistant-ink); }
+.assistant-welcome h3 { margin: 1.1rem 0 .65rem; font-size: 1.25rem; font-weight: 600; line-height: 1.4; letter-spacing: -.04em; color: var(--assistant-ink); }
 .assistant-welcome-description { font-size: .75rem; line-height: 1.8; color: var(--assistant-muted); }
 .assistant-suggestions { display: flex; flex-direction: column; gap: .5rem; margin-top: 1.5rem; }
 .assistant-suggestions button { display: flex; align-items: center; gap: .65rem; min-height: 2.6rem; padding: .6rem .75rem; border: 1px solid var(--assistant-line); border-radius: .65rem; background: var(--assistant-paper); color: var(--assistant-ink); text-align: left; font-size: .75rem; transition: border-color 160ms, background 160ms; }

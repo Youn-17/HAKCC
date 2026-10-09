@@ -95,6 +95,8 @@ function createBackend() {
       apiNote(DIALOGUE_ID, '和 AI 的一段对话', 4200, 200, { type: 'ai_dialogue' }),
     ] as any[],
     relations: [] as any[],
+    /** 主画布以外的视图 */
+    views: [] as any[],
     /** 问题栏后面滚动的讨论主题 */
     viewTopics: [] as Array<{ label: string; noteIds: string[]; count: number }>,
     /**
@@ -153,6 +155,7 @@ function createBackend() {
     }
     if (method === 'GET' && path === `/spaces/${SPACE_ID}/notes`) return json({ notes: state.notes });
     if (method === 'GET' && path === `/spaces/${SPACE_ID}/relations`) return json({ relations: state.relations });
+    if (method === 'GET' && path === `/spaces/${SPACE_ID}/views`) return json({ views: state.views, cards: [] });
     if (method === 'POST' && path === `/spaces/${SPACE_ID}/notes`) {
       if (state.noteCreateGate) await state.noteCreateGate;
       const note = apiNote(nextId(), body.title, body.x, body.y, {
@@ -265,6 +268,11 @@ function createBackend() {
         attachment: { file_url: `https://files.example.test/${body.path}`, file_name: body.file_name, mime_type: body.mime_type, file_size: 16 },
         text: '第三章讲检索练习。', textTruncated: false, textSource: 'pdf',
       });
+    }
+    // 要不要画（真后端问 Jev）：这里按句子里有没有「画」「可视化」
+    if (method === 'POST' && path === '/ai/draw-route') {
+      const draw = /画|可视化/.test(String(body?.text ?? ''));
+      return json({ draw, mode: 'new', form: draw ? 'picture' : null, decided_by: 'jev', route: { draw, decided_by: 'jev' } });
     }
     const imageMatch = path.match(/^\/note-conversations\/([^/]+)\/image$/);
     if (method === 'POST' && imageMatch) {
@@ -594,7 +602,7 @@ describe('没贡献就关掉 Build-on 编辑器', () => {
   it('之后从支架库开的新笔记不会接到那条父笔记上', async () => {
     await abandonBuildOn();
 
-    await click(document.querySelector('button[aria-label="Scaffold"]')!);
+    await click(document.querySelector('button[aria-label="支架"]')!);
     await click(await waitFor(() => buttonWith('插入笔记'), '支架库'));
     await waitFor(() => editorOpen(), '编辑器');
     expect(document.body.textContent).not.toContain('正在 Build-on 已有想法');
@@ -631,7 +639,7 @@ describe('没贡献就关掉 Build-on 编辑器', () => {
     await act(async () => { navigate!(-1); });
     await waitFor(() => !editorOpen(), '后退回画布');
 
-    await click(document.querySelector('button[aria-label="Scaffold"]')!);
+    await click(document.querySelector('button[aria-label="支架"]')!);
     await click(await waitFor(() => buttonWith('插入笔记'), '支架库'));
     await waitFor(() => editorOpen(), '编辑器');
     expect(document.body.textContent).not.toContain('正在 Build-on 已有想法');
@@ -1093,7 +1101,7 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
       card.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 }));
       window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 10, clientY: 10 }));
     });
-    await waitFor(() => document.querySelector('[data-canvas-overlay]'), '详情栏');
+    await waitFor(() => document.querySelector('[data-note-detail]'), '详情栏');
     // 旧规则是详情栏停 1.2 秒就算；现在停多久都不算
     await settle(1500);
     expect(backend.state.requests.some(r => r.path === `/notes/${FAR_ID}/seen`)).toBe(false);
@@ -1119,7 +1127,7 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
       card.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 }));
       window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 10, clientY: 10 }));
     });
-    expect(document.querySelector('[data-canvas-overlay]')).toBeNull();
+    expect(document.querySelector('[data-note-detail]')).toBeNull();
     await act(async () => {
       card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
     });
@@ -1127,7 +1135,7 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
     await click(buttonWith('关闭')!);
     await waitFor(() => !editorOpen(), '编辑器关闭');
     // 不双击：过一会儿详情栏照常出来
-    await waitFor(() => document.querySelector('[data-canvas-overlay]'), '详情栏');
+    await waitFor(() => document.querySelector('[data-note-detail]'), '详情栏');
   });
 
   it('AI 助手里说「画一只……」：不走对话模型，直接出图；等图的时候放绘图动画', async () => {
@@ -1140,9 +1148,12 @@ describe('别人的笔记：只读 + 右下角 Build-on；卡片上的 New 和�
       () => backend.state.requests.some(r => r.method === 'POST' && /^\/note-conversations\/[^/]+\/image$/.test(r.path)),
       '出图请求',
     );
+    // 先问过要不要画，画的时候把判断带上
+    expect(backend.state.requests.find(r => r.path === '/ai/draw-route')?.body).toMatchObject({ text: '画一只在月球上看书的猫', forced: false });
+    expect(backend.state.requests.find(r => /\/image$/.test(r.path))?.body).toMatchObject({ prompt: '画一只在月球上看书的猫', mode: 'new', form: 'picture' });
     expect(streamThreads()).toEqual([]);
     const progress = await waitFor(() => document.querySelector('[role="status"][aria-label^="正在画"]'), '绘图动画');
-    expect(progress.textContent).toContain('读懂你的描述');
+    expect(progress.textContent).toContain('读懂你的意思');
 
     release();
     await waitFor(() => !document.querySelector('[role="status"][aria-label^="正在画"]'), '画完');
@@ -1728,5 +1739,227 @@ describe('笔记页切过页签再贡献', () => {
     await waitFor(() => putsToMine().length > 0, '保存请求');
     expect(putsToMine()).toHaveLength(1);
     expect(putsToMine()[0].body).toMatchObject({ title: '我自己的观点', content: MINE_HTML });
+  });
+});
+
+/**
+ * 2026-10-09 用户：进了知识空间，想找一条要 Build-on 的笔记找起来很麻烦；Note 要能收起建立在它上面的 Note，
+ * 默认把旧的细枝末节收起来，鼠标停在 Note 上能看到建立在它上面的 Note 的标题。
+ */
+describe('画布：搜索笔记、收起 Build-on 分支、停住看标题（2026-10-09）', () => {
+  const CHILD = '00000000-0000-4000-8000-0000000000c1';
+  const GRAND = '00000000-0000-4000-8000-0000000000c2';
+  const ELSEWHERE = '00000000-0000-4000-8000-0000000000c3';
+  const MINE_CHILD = '00000000-0000-4000-8000-0000000000c4';
+  const UNSEEN_CHILD = '00000000-0000-4000-8000-0000000000c5';
+  const OLD = '2026-09-20T08:00:00.000Z';
+  const card = (title: string) => (noteCard(title)?.closest('.gsap-note-item') as HTMLElement | null) ?? null;
+  const foldToggle = (title: string) => card(title)?.querySelector<HTMLButtonElement>('[data-fold-toggle]') ?? null;
+  const searchInput = () => document.querySelector<HTMLInputElement>('input[aria-label="搜索笔记"]')!;
+  const results = () => document.querySelector<HTMLElement>('[role="listbox"][aria-label="搜索结果"]');
+  const option = (title: string) => all<HTMLElement>('[role="option"]').find(o => o.textContent?.includes(title)) ?? null;
+  const peek = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="建立在这条上的笔记"]');
+  const edgeCount = () => document.querySelectorAll('svg path[marker-end]').length;
+  const canvasTransform = () => {
+    let el: HTMLElement | null = card('被接的观点')?.parentElement ?? null;
+    while (el && !el.style.transform.includes('scale(')) el = el.parentElement;
+    return el?.style.transform ?? '';
+  };
+  const rel = (source: string, target: string, created = '2026-09-21T08:00:00.000Z') => ({
+    id: `rel-${source.slice(-3)}-${target.slice(-3)}`, space_id: SPACE_ID, source_note_id: source, target_note_id: target,
+    relation_type: 'extend', creator_id: 'user-3', ai_suggested: false, created_at: created,
+  });
+  const search = async (text: string) => {
+    const input = searchInput();
+    await act(async () => { input.focus(); });
+    await typeInto(input, text);
+  };
+  const remount = async () => {
+    await act(async () => { root?.unmount(); });
+    host?.remove();
+    await mount();
+    await settle(20);
+  };
+
+  it('问题栏前写「讨论概况」，不再是英文 inquiry；Build-on 只数两头都在这个视图里的', async () => {
+    backend.state.views = [{ id: 'view-2', spaceId: SPACE_ID, title: '第二块画布', creatorId: 'user-2', createdAt: OLD, lastModified: OLD }];
+    backend.state.notes.push(apiNote(ELSEWHERE, '另一块画布上的想法', 500, 500, { views: ['view-2'] }));
+    backend.state.relations.push(rel(ELSEWHERE, PARENT_ID));
+    await mount();
+    await settle(20);
+    const strip = all('span').find(el => el.textContent === '讨论概况')!;
+    expect(strip).toBeTruthy();
+    expect(strip.parentElement!.textContent).not.toMatch(/inquiry/i);
+    const count = all('span').find(el => el.textContent?.endsWith(' Build-on') && el.querySelector('span'))!;
+    expect(count.textContent).toBe('0 Build-on');
+    // 顶栏：视图菜单写「视图」，主画布照旧叫 Welcome（2026-10-09 用户：视图后面默认写 Welcome，不写别的）
+    const header = document.querySelector<HTMLElement>('[data-workspace-header]')!;
+    expect(header.textContent).toContain('视图');
+    expect(header.textContent).toContain('Welcome');
+    expect(document.body.textContent).not.toContain('主画布');
+  });
+
+  it('有 Build-on 的卡片下沿能收起：建立在它上面的卡片和连线一起藏起来，点开又回来；下次进来还记得', async () => {
+    backend.state.notes.push(apiNote(CHILD, '接着写的一条', 600, 200), apiNote(GRAND, '再往下的一条', 1000, 200));
+    backend.state.relations.push(rel(CHILD, PARENT_ID), rel(GRAND, CHILD));
+    await mount();
+    await waitFor(() => noteCard('再往下的一条'), '整枝都在画布上');
+    expect(edgeCount()).toBe(2);
+    const toggle = foldToggle('被接的观点')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-label')).toContain('1 条 Build-on 建立在这条上');
+    expect(foldToggle('远处的观点')).toBeNull();
+    // 「已有 Build-on」的字样拿掉了，开关上写着有几条
+    expect(card('被接的观点')!.textContent).not.toContain('已有 Build-on');
+
+    await click(toggle);
+    expect(noteCard('接着写的一条')).toBeNull();
+    expect(noteCard('再往下的一条')).toBeNull();
+    expect(edgeCount()).toBe(0);
+    expect(foldToggle('被接的观点')!.textContent).toContain('+2');
+    expect(document.body.textContent).toContain('已收起 2 条 Build-on');
+    expect(buttonWith('全部展开')).not.toBeNull();
+
+    await remount();
+    expect(noteCard('接着写的一条')).toBeNull();
+
+    await click(foldToggle('被接的观点')!);
+    await waitFor(() => noteCard('再往下的一条'), '展开后整枝回来');
+    expect(edgeCount()).toBe(2);
+    expect(buttonWith('全部展开')).toBeNull();
+  });
+
+  it('笔记多了，旧的小分支进来时默认收着；分支里有最近的、我写的、我还没看过的就不收；「全部展开」都打开', async () => {
+    for (let i = 0; i < 13; i++) {
+      backend.state.notes.push(apiNote(`00000000-0000-4000-8000-0000000001${String(i).padStart(2, '0')}`, `旧笔记 ${i}`, 300 + i * 260, 3000, { created_at: OLD }));
+    }
+    backend.state.notes.push(
+      apiNote(CHILD, '接着写的一条', 600, 200, { created_at: '2026-09-21T08:00:00.000Z' }),
+      apiNote(GRAND, '最近接上的一条', 4600, 2400, { created_at: '2026-10-08T08:00:00.000Z' }),
+      apiNote(MINE_CHILD, '我接的一条', 300, 3300, { created_at: '2026-09-21T08:00:00.000Z', author_id: USER.id, users: { name: USER.name } }),
+      apiNote(UNSEEN_CHILD, '还没看过的一条', 820, 3300, { created_at: '2026-09-21T08:00:00.000Z', seen_by_me: false }),
+    );
+    backend.state.relations.push(
+      rel(CHILD, PARENT_ID),
+      rel(GRAND, FAR_ID, '2026-10-08T08:00:00.000Z'),
+      rel(MINE_CHILD, '00000000-0000-4000-8000-000000000100'),
+      rel(UNSEEN_CHILD, '00000000-0000-4000-8000-000000000102'),
+    );
+    await mount();
+    await settle(20);
+    expect(noteCard('接着写的一条')).toBeNull();
+    expect(foldToggle('被接的观点')!.getAttribute('aria-expanded')).toBe('false');
+    expect(noteCard('最近接上的一条')).not.toBeNull();
+    expect(noteCard('我接的一条')).not.toBeNull();
+    expect(noteCard('还没看过的一条')).not.toBeNull();
+
+    await click(buttonWith('全部展开')!);
+    await waitFor(() => noteCard('接着写的一条'), '全部展开');
+    // 展开过就不再默认收：下次进来还是开着
+    await remount();
+    expect(noteCard('接着写的一条')).not.toBeNull();
+  });
+
+  it('搜索框按作者、标题、正文找：没命中的卡片变淡；点一条结果，画布移过去、选中它、亮几秒', async () => {
+    backend.state.notes.push(apiNote(CHILD, '检索练习：先自己回想', 1500, 900, {
+      users: { name: '赵一凡' }, content: '<p>Roediger &amp; Karpicke 的实验</p>',
+    }));
+    await mount();
+    await search('赵一凡');
+    await waitFor(() => results(), '搜索结果');
+    expect(option('检索练习：先自己回想')).not.toBeNull();
+    expect(option('被接的观点')).toBeNull();
+    expect(card('被接的观点')!.className).toContain('opacity-30');
+    expect(card('检索练习：先自己回想')!.className).not.toContain('opacity-30');
+
+    await typeInto(searchInput(), 'karpicke');
+    expect(option('检索练习：先自己回想')).not.toBeNull();
+
+    const before = canvasTransform();
+    await click(option('检索练习：先自己回想')!);
+    expect(canvasTransform()).not.toBe(before);
+    expect(card('检索练习：先自己回想')!.className).toContain('ring-amber-400');
+    expect(card('被接的观点')!.className).not.toContain('opacity-30');
+    const detail = await waitFor(() => document.querySelector<HTMLElement>('[data-note-detail]'), '详情栏');
+    expect(detail.textContent).toContain('检索练习：先自己回想');
+  });
+
+  it('搜索框在顶栏里、课程名后面（2026-10-09 用户要求从画布左上角挪过去）', async () => {
+    await mount();
+    const header = document.querySelector<HTMLElement>('[data-workspace-header]')!;
+    const input = searchInput();
+    expect(header.contains(input)).toBe(true);
+    const title = Array.from(header.querySelectorAll('span')).find(s => s.textContent === '主讨论空间')!;
+    expect(title).toBeTruthy();
+    expect(title.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('按「/」把光标放进搜索框；正在别处打字时不抢', async () => {
+    await mount();
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true })); });
+    expect(document.activeElement).toBe(searchInput());
+  });
+
+  it('收起藏着的笔记也搜得到，标着「在收起的分支里」；点它沿路展开', async () => {
+    backend.state.notes.push(apiNote(CHILD, '接着写的一条', 600, 200), apiNote(GRAND, '再往下的一条', 1000, 200));
+    backend.state.relations.push(rel(CHILD, PARENT_ID), rel(GRAND, CHILD));
+    await mount();
+    await click(foldToggle('被接的观点')!);
+    expect(noteCard('再往下的一条')).toBeNull();
+    await search('再往下');
+    const hit = await waitFor(() => option('再往下的一条'), '搜索结果');
+    expect(hit.textContent).toContain('在收起的分支里');
+    await click(hit);
+    await waitFor(() => noteCard('再往下的一条'), '沿路展开');
+    expect(foldToggle('被接的观点')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('别的视图里的笔记单独列在后面；点它切到那个视图再定位', async () => {
+    backend.state.views = [{ id: 'view-2', spaceId: SPACE_ID, title: '第二块画布', creatorId: 'user-2', createdAt: OLD, lastModified: OLD }];
+    backend.state.notes.push(apiNote(ELSEWHERE, '另一块画布上的想法', 500, 500, { views: ['view-2'] }));
+    await mount();
+    await settle(20);
+    expect(noteCard('另一块画布上的想法')).toBeNull();
+    await search('另一块');
+    const hit = await waitFor(() => option('另一块画布上的想法'), '其他视图的结果');
+    expect(results()!.textContent).toContain('其他视图');
+    expect(hit.textContent).toContain('视图：第二块画布');
+    await click(hit);
+    await waitFor(() => noteCard('另一块画布上的想法'), '切到第二块画布');
+    expect(noteCard('被接的观点')).toBeNull();
+    await waitFor(() => card('另一块画布上的想法')!.className.includes('ring-amber-400'), '定位');
+  });
+
+  it('鼠标停在有 Build-on 的卡片上：旁边列出建立在它上面的笔记，收起的也看得到；点一条画布移过去', async () => {
+    backend.state.notes.push(apiNote(CHILD, '接着写的一条', 600, 200));
+    backend.state.relations.push(rel(CHILD, PARENT_ID));
+    await mount();
+    await click(foldToggle('被接的观点')!);
+    // 没有 Build-on 的卡片停住不弹
+    await act(async () => { card('远处的观点')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })); });
+    await settle(600);
+    expect(peek()).toBeNull();
+
+    await act(async () => { card('被接的观点')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })); });
+    const list = await waitFor(() => peek(), '悬停列表');
+    expect(list.textContent).toContain('接着写的一条');
+    expect(list.textContent).toContain('展开 1 条');
+    await click([...list.querySelectorAll('button')].find(b => b.textContent?.includes('接着写的一条'))!);
+    await waitFor(() => noteCard('接着写的一条'), '展开并定位');
+    expect(card('接着写的一条')!.className).toContain('ring-amber-400');
+    expect(peek()).toBeNull();
+  });
+
+  it('在收起的笔记上写 Build-on：贡献后它展开，新写的这条就在画布上', async () => {
+    backend.state.notes.push(apiNote(CHILD, '接着写的一条', 600, 200));
+    backend.state.relations.push(rel(CHILD, PARENT_ID));
+    await mount();
+    await click(foldToggle('被接的观点')!);
+    expect(noteCard('接着写的一条')).toBeNull();
+    await startBuildOn('Question');
+    await writeNote('我的追问', '<p>为什么会这样？</p>');
+    await click(buttonWith('贡献')!);
+    await waitFor(() => noteCard('我的追问'), '新写的 Build-on 在画布上');
+    expect(noteCard('接着写的一条')).not.toBeNull();
   });
 });

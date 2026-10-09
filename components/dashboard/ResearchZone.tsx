@@ -1644,6 +1644,8 @@ const ExportModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId, z
   const [dataset, setDataset] = useState<ExportDatasetKey>('notes');
   const [spaceIds, setSpaceIds] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
+  /** 按人导出（2026-10-09）：空 = 全部参与者 */
+  const [personId, setPersonId] = useState('');
   const [viewId, setViewId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -1661,6 +1663,7 @@ const ExportModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId, z
     setTable(null);
     setSpaceIds([]);
     setGroupIds([]);
+    setPersonId('');
     setViewId('');
     setEnglishName('');
     researchApi.exportOptions(courseId)
@@ -1678,7 +1681,8 @@ const ExportModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId, z
     include_suppressed: includeSuppressed,
     include_deleted: includeDeleted,
     include_names: includeNames,
-  }), [spaceIds, groupIds, viewId, from, to, includeAi, includeSuppressed, includeDeleted, includeNames]);
+    participant_id: personId || undefined,
+  }), [spaceIds, groupIds, viewId, from, to, includeAi, includeSuppressed, includeDeleted, includeNames, personId]);
 
   const hasEnglishName = !!options?.course.englishName;
 
@@ -1705,6 +1709,14 @@ const ExportModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId, z
 
   const toggle = <T,>(list: T[], value: T): T[] =>
     list.includes(value) ? list.filter(v => v !== value) : [...list, value];
+
+  const people = options?.people ?? [];
+  const selectedPerson = people.find(p => p.userId === personId) ?? null;
+  /** 一个人的全部数据：除了全班层面的表（课次记录）都要 */
+  const personDatasets = useMemo(
+    () => (options?.datasets ?? []).map(d => d.key).filter(k => !(options?.notPerPerson ?? ['sessions']).includes(k)),
+    [options],
+  );
 
   const saveEnglishName = async () => {
     if (englishName.trim().length < 2) return;
@@ -1735,7 +1747,7 @@ const ExportModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId, z
         header_lang: headerLang,
         columns: datasets.length === 1 ? visibleColumns.map(c => c.key) : undefined,
       });
-      const abbr = options?.course.abbr ?? 'course';
+      const abbr = selectedPerson?.code ?? options?.course.abbr ?? 'course';
       const stamp = new Date().toISOString().slice(0, 10);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1856,6 +1868,43 @@ const ExportModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId, z
             </Chip>
           ))}
         </FilterRow>
+
+        {people.length > 0 && (
+          <FilterRow label={zh ? '参与者' : 'Participant'} hint={zh ? '不选 = 全部；可只导出一个人' : 'none = everyone'}>
+            <select
+              value={personId}
+              onChange={e => setPersonId(e.target.value)}
+              aria-label={zh ? '只导出一个人的数据' : 'Export one participant only'}
+              className="min-w-[14rem] rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs dark:border-gray-800 dark:bg-gray-950"
+            >
+              <option value="">{zh ? '全部参与者' : 'Everyone'}</option>
+              {people.map(p => (
+                <option key={p.userId} value={p.userId}>
+                  {[p.code, p.name, p.groupName ?? (p.role === 'teacher' ? (zh ? '教师' : 'Teacher') : '')].filter(Boolean).join(' · ')}
+                </option>
+              ))}
+            </select>
+            {selectedPerson && (
+              <button
+                type="button"
+                onClick={() => download(personDatasets)}
+                disabled={!!downloading}
+                className="flex items-center gap-1.5 rounded-lg bg-[#000080] px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-[#000080]/90 active:scale-[0.98] disabled:opacity-50"
+              >
+                {downloading === 'bundle'
+                  ? <><RemixIcon name="loader-4-line" size={13} className="animate-spin" />{zh ? '打包中…' : 'Packaging…'}</>
+                  : <><RemixIcon name="folder-user-line" size={13} />{zh ? `导出 ${selectedPerson.code} 的全部数据 (ZIP)` : `Export all of ${selectedPerson.code} (ZIP)`}</>}
+              </button>
+            )}
+            {selectedPerson && (
+              <p className="w-full text-[0.6875rem] leading-relaxed text-gray-500 dark:text-gray-400">
+                {zh
+                  ? '每张表只留和这个人有关的行：Ta 的笔记；Ta 发起和接收的互动（同学在 Ta 的笔记上 Build-on 也算）；Ta 发的消息、Ta 和 AI 对话里 AI 的回复、同学私聊 Ta 的消息；Ta 收到的 AI 反馈；Ta 的操作记录和求助。课次记录是全班的，不含。上面的空间、时间等筛选照样有效。'
+                  : 'Each table keeps only the rows involving this person: their notes, interactions they started or received, their messages and the AI replies to them, AI feedback they received, their events and help requests. Class sessions are course-wide and left out. The other filters still apply.'}
+              </p>
+            )}
+          </FilterRow>
+        )}
 
         <FilterRow label="View" hint={zh ? '按画布视图筛选' : 'by canvas view'}>
           <Chip active={!viewId} onClick={() => setViewId('')}>{zh ? '全部' : 'All'}</Chip>

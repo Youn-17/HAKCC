@@ -82,20 +82,31 @@ describe('NoteItem workspace card', () => {
     expect(html).toContain('2025/11/20');
   });
 
-  it('uses Knowledge Building status terminology for incoming build-ons', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(NoteItem, {
-        note: baseNote,
-        lang: 'zh',
-        hasBuildOns: true,
-        onMouseDown: noop,
-        onDoubleClick: noop,
-        onContextMenu: noop,
-      })
-    );
+  it('有 Build-on 的卡片下沿是收起/展开开关，说法用 Build-on（2026-10-09 取代「已有 Build-on」字样）', () => {
+    const render = (fold?: { childCount: number; collapsed: boolean; hiddenCount: number; hasNewHidden: boolean }) =>
+      renderToStaticMarkup(
+        React.createElement(NoteItem, {
+          note: baseNote,
+          lang: 'zh',
+          fold,
+          onMouseDown: noop,
+          onDoubleClick: noop,
+          onContextMenu: noop,
+        })
+      );
 
-    expect(html).toContain('已有 Build-on');
-    expect(html).not.toContain('Built-upon');
-    expect(html).not.toContain('被引用');
+    const open = render({ childCount: 2, collapsed: false, hiddenCount: 0, hasNewHidden: false });
+    expect(open).toContain('2 条 Build-on 建立在这条上');
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).not.toContain('已有 Build-on');
+    expect(open).not.toContain('Built-upon');
+    expect(open).not.toContain('被引用');
+
+    const folded = render({ childCount: 2, collapsed: true, hiddenCount: 5, hasNewHidden: true });
+    expect(folded).toContain('已收起 5 条 Build-on');
+    expect(folded).toContain('+5');
+    expect(folded).toContain('aria-expanded="false"');
+
+    expect(render()).not.toContain('data-fold-toggle');
   });
 });

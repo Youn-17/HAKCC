@@ -1,3 +1,4 @@
+import { courseSettingsError } from './errorText';
 /**
  * 一个学习任务的学生提交，课程教职在这里批改。
  *
@@ -37,48 +38,46 @@ const TRANSLATIONS = {
   en: {
     title: 'Student submissions',
     close: 'Close',
-    empty: 'No student has submitted this assignment yet.',
-    loadFailed: 'The submissions could not be loaded: ',
+    empty: 'No student submissions yet.',
+    loadFailed: 'Unable to load submissions. Please try again.',
     statusLabels: { pending: 'Not submitted', submitted: 'Submitted', graded: 'Graded', returned: 'Returned' } as Record<TaskSubmissionStatus, string>,
     submittedAt: (time: string) => `Submitted ${time}`,
     notSubmitted: 'Not submitted yet',
     unnamed: 'Unnamed',
     file: 'Attachment',
     video: 'Video link',
-    drawing: 'Includes a drawing, which cannot be shown here yet.',
+    drawing: 'This submission includes a drawing. Preview is not yet supported.',
     points: (max: number) => `Score (out of ${max})`,
     feedback: 'Feedback',
-    feedbackPlaceholder: 'Feedback for the student (optional)',
+    feedbackPlaceholder: 'Feedback (optional)',
     save: 'Save grade',
     saved: 'Saved',
     pointsInvalid: (max: number) => `The score must be a whole number from 0 to ${max}.`,
-    gradeFailed: 'The grade was not saved: ',
+    gradeFailed: 'Unable to save the grade. Please try again.',
     pointsUnit: (n: number) => `${n} pts`,
   },
   zh: {
     title: '学生提交',
     close: '关闭',
-    empty: '还没有学生提交这个任务。',
-    loadFailed: '提交列表没有读取成功：',
+    empty: '暂无学生提交。',
+    loadFailed: '提交记录加载失败，请重试。',
     statusLabels: { pending: '未提交', submitted: '已提交', graded: '已批改', returned: '已退回' } as Record<TaskSubmissionStatus, string>,
     submittedAt: (time: string) => `提交于 ${time}`,
     notSubmitted: '尚未提交',
     unnamed: '未填写姓名',
     file: '附件',
     video: '视频链接',
-    drawing: '附有绘图，这里还不能显示。',
+    drawing: '此提交包含绘图，当前暂不支持预览。',
     points: (max: number) => `得分（满分 ${max}）`,
     feedback: '评语',
-    feedbackPlaceholder: '写给学生的评语（选填）',
+    feedbackPlaceholder: '评语（选填）',
     save: '保存批改',
     saved: '已保存',
-    pointsInvalid: (max: number) => `得分要填 0 到 ${max} 之间的整数。`,
-    gradeFailed: '批改没有保存成功：',
+    pointsInvalid: (max: number) => `得分须为 0–${max} 的整数。`,
+    gradeFailed: '批改保存失败，请重试。',
     pointsUnit: (n: number) => `${n} 分`,
   },
 };
-
-const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** 只把 http(s) 链接做成可点的；后端也只收这两种，这里再挡一道 */
 const isHttpUrl = (url: string | null | undefined): url is string => !!url && /^https?:\/\//i.test(url);
@@ -114,7 +113,7 @@ const TaskSubmissionsView: React.FC<TaskSubmissionsViewProps> = ({ courseId, tas
         setDrafts(Object.fromEntries(list.map(s => [s.id, draftOf(s)])));
       })
       .catch(err => {
-        if (alive) setLoadError(`${t.loadFailed}${messageOf(err)}`);
+        if (alive) setLoadError(courseSettingsError(err, lang === 'zh', t.loadFailed));
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -170,7 +169,7 @@ const TaskSubmissionsView: React.FC<TaskSubmissionsViewProps> = ({ courseId, tas
       setSavedId(submission.id);
       onGraded();
     } catch (err) {
-      setRowError(submission.id, `${t.gradeFailed}${messageOf(err)}`);
+      setRowError(submission.id, courseSettingsError(err, lang === 'zh', t.gradeFailed));
     } finally {
       setSavingId(null);
     }

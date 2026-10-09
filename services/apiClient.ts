@@ -6,6 +6,7 @@
 
 import type { CourseGoal, CourseTask, CourseTaskStatus, KnowledgeLack, TaskSubmission, TaskSubmissionStatus } from '../types';
 import { recordApiFailure } from './clientDiagnostics';
+import type { CollaborationAdapter, CollaborationSession } from './collaborativeDocuments';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const SESSION_ID = Math.random().toString(36).slice(2);
@@ -17,6 +18,45 @@ export const clientVersion = CLIENT_VERSION;
 export const AUTH_TOKEN_KEY = 'hakcc-access-token';
 export const AUTH_REFRESH_TOKEN_KEY = 'hakcc-refresh-token';
 export const AUTH_SESSION_CLEARED_EVENT = 'hakcc-auth-session-cleared';
+
+export const collaborativeDocuments = {
+  create: (spaceId: string, input: { title: string; x: number; y: number; viewId: string }) =>
+    request<ApiNote>('POST', `/spaces/${encodeURIComponent(spaceId)}/collaborative-documents`, input),
+  adapter: (id: string): CollaborationAdapter => {
+    const path = `/collaborative-documents/${encodeURIComponent(id)}`;
+    return {
+      session: () => request<CollaborationSession>('GET', `${path}/session`),
+      token: async () => {
+        await request<CollaborationSession>('GET', `${path}/session`); // refreshes expired login token
+        const token = getAuthToken();
+        if (!token) throw new Error('请重新登录');
+        return token;
+      },
+      export: () => requestBlob('GET', `${path}/export`),
+      snapshot: async () => { await request('POST', `${path}/snapshots`); },
+    };
+  },
+};
+
+/** 画成哪种：画面、关系图、思维导图、时间线（和 api/src/services/drawJudge.ts 的 DRAW_FORMS 一致） */
+export type DrawFormChoice = 'picture' | 'graph' | 'tree' | 'timeline';
+
+/** 上一轮 AI 画的那张：判断「是不是要改它」、照着改时带上 */
+export interface PreviousDrawingPayload {
+  request: string;
+  caption: string;
+  kind: 'picture' | 'diagram';
+  prompt?: string;
+  diagram?: unknown;
+}
+
+export interface DrawRouteResult {
+  draw: boolean;
+  mode: 'new' | 'edit';
+  form: DrawFormChoice | null;
+  decided_by: 'rule' | 'jev' | 'forced';
+  route: Record<string, unknown>;
+}
 
 // ── Auth token management ──────────────────────────────────────
 
@@ -1738,9 +1778,36 @@ export const ai = {
     feature?: 'doc_ai' | 'prompt_refine';
   }) => request<{ reply: string; provider_id: string; model: string; search_results?: SearchResult[] }>('POST', '/ai/chat', data),
 
-  /** 对话里说了「画一张……」时直接出图（不经对话模型）。markdown 是现成的 ![描述](地址) */
-  image: (data: { course_id: string; prompt: string; feature?: 'doc_ai' }) =>
-    request<{ url: string; markdown: string; provider_id: string; model: string }>('POST', '/ai/image', data),
+  /**
+   * 这一句要不要画、改上一张还是新画、画成哪种（服务端问 Jev，没开时按「画一张……」这类说法认）。
+   * route 在画的时候原样带回去，记进这张图的元数据。
+   */
+  drawRoute: (data: { text: string; previous?: PreviousDrawingPayload | null; last_reply?: string | null; forced?: boolean }) =>
+    request<DrawRouteResult>('POST', '/ai/draw-route', data),
+
+  /**
+   * 对话里要画图时直接出图（不经对话模型）。markdown 是现成的 ![描述](地址)，有说明时下面跟一句说明。
+   * context：界面上正在看的东西（文档标题、正文、这段对话；改上一张时带上那张），服务端先读它们弄清楚要画什么。
+   * 回来的 drawing 留着：下一句要改这张时作为 context.previous 带回去。
+   */
+  image: (data: {
+    course_id: string;
+    prompt: string;
+    feature?: 'doc_ai';
+    context?: {
+      title?: string;
+      text?: string;
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+      previous?: PreviousDrawingPayload | null;
+    };
+    mode?: 'new' | 'edit';
+    form?: DrawFormChoice | null;
+    route?: Record<string, unknown>;
+  }) =>
+    request<{
+      url: string; markdown: string; provider_id: string; model: string; caption?: string; kind?: 'picture' | 'diagram';
+      drawing?: { kind: 'picture' | 'diagram'; prompt?: string; diagram?: unknown };
+    }>('POST', '/ai/image', data),
 
   /** 把一段文字读出来。回的是音频字节，直接丢给 <audio> 或 URL.createObjectURL。 */
   speak: async (data: {
@@ -2071,12 +2138,16 @@ export const noteConversations = {
   },
 
   /** 只生图，不跑智能体。整轮从 41s 降到一次生图的时间。 */
-  generateImage: (threadId: string, data: { prompt: string }) =>
+  /** mode / form / route 来自 aiApi.drawRoute：改上一张时服务端从这段对话里找出那张照着改 */
+  generateImage: (threadId: string, data: { prompt: string; mode?: 'new' | 'edit'; form?: DrawFormChoice | null; route?: Record<string, unknown> }) =>
     request<{
       userMessage: NoteConversationMessage;
       assistantMessage: NoteConversationMessage;
       imageUrl: string;
       model: string;
+      /** 画的是什么、依据是什么（先规划过才有） */
+      caption?: string;
+      kind?: 'picture' | 'diagram';
     }>('POST', `/note-conversations/${threadId}/image`, data),
 
   uploadAttachment: (threadId: string, data: {
@@ -2750,6 +2821,8 @@ export interface ExportFilterPayload {
   include_suppressed?: boolean;
   include_deleted?: boolean;
   include_names?: boolean;
+  /** 只导出这一个人的数据（用户 id）；不给就是全部 */
+  participant_id?: string;
   datasets?: ExportDatasetKey[];
   columns?: string[];
   header_lang?: 'zh' | 'en';
@@ -2808,6 +2881,10 @@ export const research = {
       groups: { id: string; name: string; condition: 'treatment' | 'control' | null; memberCount: number }[];
       views: { id: string; noteCount: number }[];
       dateRange: { earliest: string | null; latest: string | null };
+      /** 按人导出的名单：有编号的成员，学生在前（旧版后端没有） */
+      people?: { userId: string; code: string; name: string; role: 'student' | 'teacher'; groupName: string | null }[];
+      /** 按人导出时不含的表（课次记录是全班的） */
+      notPerPerson?: ExportDatasetKey[];
       datasets: {
         key: ExportDatasetKey; zh: string; en: string; descZh: string; descEn: string;
         columns: ExportColumnDef[];

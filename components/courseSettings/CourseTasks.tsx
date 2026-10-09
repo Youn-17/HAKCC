@@ -1,3 +1,4 @@
+import { courseSettingsError } from './errorText';
 /**
  * 学习任务。
  *
@@ -60,11 +61,11 @@ const TRANSLATIONS = {
     addTask: 'New assignment',
     readOnly: 'Only the course creator and course managers can change assignments.',
     emptyStaff: 'No assignments yet.',
-    emptyReadOnly: 'This course has no assignments yet.',
+    emptyReadOnly: 'No assignments yet.',
     titlePlaceholder: 'Assignment title',
-    descriptionPlaceholder: 'What students should do (optional)',
+    descriptionPlaceholder: 'Assignment requirements (optional)',
     dueDate: 'Due',
-    clearDue: 'Remove due date',
+    clearDue: 'Clear due date',
     points: 'Points',
     pointsHint: '0 means not scored',
     status: 'Status',
@@ -72,7 +73,7 @@ const TRANSLATIONS = {
     statusOption: {
       draft: 'Draft (hidden from students)',
       published: 'Published (students can submit)',
-      closed: 'Closed (no more submissions)',
+      closed: 'Closed (submissions disabled)',
     } as Record<CourseTaskStatus, string>,
     save: 'Save',
     cancel: 'Cancel',
@@ -86,60 +87,58 @@ const TRANSLATIONS = {
     stats: (submitted: number, graded: number) => `${submitted} submitted · ${graded} graded`,
     titleRequired: 'Enter a title first.',
     pointsInvalid: `Points must be a whole number from 0 to ${POINTS_MAX}.`,
-    dueInvalid: 'The due date is not a valid time.',
+    dueInvalid: 'Enter a valid due date and time.',
     deleteConfirm: (title: string, submissions: number) => submissions > 0
-      ? `Delete "${title}"? The ${submissions} submission(s) students handed in are deleted with it and cannot be restored.`
+      ? `Delete "${title}"? This also deletes ${submissions} student submissions and cannot be undone.`
       : `Delete "${title}"?`,
-    addFailed: 'The assignment was not created: ',
-    updateFailed: 'The assignment was not saved: ',
-    deleteFailed: 'The assignment was not deleted: ',
-    gone: 'This assignment no longer exists (it may have been deleted by another teacher).',
+    addFailed: 'Unable to create the assignment. Please try again.',
+    updateFailed: 'Unable to save the assignment. Please try again.',
+    deleteFailed: 'Unable to delete the assignment. Please try again.',
+    gone: 'This assignment no longer exists. Please refresh the list.',
   },
   zh: {
     title: '学习任务',
     addTask: '布置任务',
     readOnly: '只有课程创建者和课程管理员可以修改学习任务。',
-    emptyStaff: '还没有布置学习任务。',
-    emptyReadOnly: '这门课还没有学习任务。',
+    emptyStaff: '暂无学习任务。',
+    emptyReadOnly: '暂无学习任务。',
     titlePlaceholder: '任务标题',
-    descriptionPlaceholder: '要学生做什么（选填）',
+    descriptionPlaceholder: '任务要求（选填）',
     dueDate: '截止时间',
-    clearDue: '去掉截止时间',
+    clearDue: '清除截止时间',
     points: '分值',
     pointsHint: '0 表示不计分',
     status: '状态',
     statusShort: { draft: '草稿', published: '已发布', closed: '已关闭' } as Record<CourseTaskStatus, string>,
     statusOption: {
-      draft: '草稿（学生看不到）',
+      draft: '草稿（学生不可见）',
       published: '已发布（学生可以提交）',
-      closed: '已关闭（不再收提交）',
+      closed: '已关闭（停止接收提交）',
     } as Record<CourseTaskStatus, string>,
     save: '保存',
     cancel: '取消',
     edit: '编辑任务',
     remove: '删除任务',
     viewSubmissions: '查看提交',
-    noDue: '没有截止时间',
-    overdue: '（已过截止时间）',
+    noDue: '未设置截止时间',
+    overdue: '（已截止）',
     notScored: '不计分',
     pointsUnit: (n: number) => `${n} 分`,
-    stats: (submitted: number, graded: number) => `已交 ${submitted} 份 · 已批改 ${graded} 份`,
+    stats: (submitted: number, graded: number) => `已提交 ${submitted} 份 · 已批改 ${graded} 份`,
     titleRequired: '请先填写任务标题。',
-    pointsInvalid: `分值要填 0 到 ${POINTS_MAX} 之间的整数。`,
-    dueInvalid: '截止时间不是有效的时间。',
+    pointsInvalid: `分值须为 0–${POINTS_MAX} 的整数。`,
+    dueInvalid: '请输入有效的截止时间。',
     deleteConfirm: (title: string, submissions: number) => submissions > 0
-      ? `确定删除任务「${title}」吗？学生已经交的 ${submissions} 份提交会一起删除，不能恢复。`
+      ? `删除任务「${title}」？将同时删除 ${submissions} 份学生提交，且无法恢复。`
       : `确定删除任务「${title}」吗？`,
-    addFailed: '任务没有布置成功：',
-    updateFailed: '任务没有保存成功：',
-    deleteFailed: '任务没有删除成功：',
-    gone: '这个任务已经不在了，可能被其他教师删掉了。',
+    addFailed: '创建任务失败，请重试。',
+    updateFailed: '保存失败，请重试。',
+    deleteFailed: '删除失败，请重试。',
+    gone: '该任务已不存在，请刷新列表。',
   },
 };
 
 type Texts = typeof TRANSLATIONS['zh'];
-
-const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -318,7 +317,7 @@ const CourseTasks: React.FC<CourseTasksProps> = ({ courseId, tasks, onTasksChang
       onTasksChange(prev => [task, ...prev]);
       closeAdd();
     } catch (err) {
-      setError(`${t.addFailed}${messageOf(err)}`);
+      setError(courseSettingsError(err, lang === 'zh', t.addFailed));
     } finally {
       setBusyId(null);
     }
@@ -372,7 +371,7 @@ const CourseTasks: React.FC<CourseTasksProps> = ({ courseId, tasks, onTasksChang
       onTasksChange(prev => prev.map(item => (item.id === task.id ? updated : item)));
       cancelEdit();
     } catch (err) {
-      if (!dropIfGone(err, task.id)) setError(`${t.updateFailed}${messageOf(err)}`);
+      if (!dropIfGone(err, task.id)) setError(courseSettingsError(err, lang === 'zh', t.updateFailed));
     } finally {
       setBusyId(null);
     }
@@ -387,7 +386,7 @@ const CourseTasks: React.FC<CourseTasksProps> = ({ courseId, tasks, onTasksChang
       onTasksChange(prev => prev.filter(item => item.id !== task.id));
       if (editingId === task.id) cancelEdit();
     } catch (err) {
-      if (!dropIfGone(err, task.id)) setError(`${t.deleteFailed}${messageOf(err)}`);
+      if (!dropIfGone(err, task.id)) setError(courseSettingsError(err, lang === 'zh', t.deleteFailed));
     } finally {
       setBusyId(null);
     }

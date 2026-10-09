@@ -63,6 +63,7 @@ const MODEL_NAMES: Record<string, string | { zh: string; en: string }> = {
   'qwen3-vl-plus': 'Qwen3-VL Plus',
   'qwen3-vl-8b-thinking': 'Qwen3-VL 8B Thinking',
   'qwen-image-plus': { zh: '通义万相 Plus', en: 'Qwen Image Plus' },
+  'doubao-seedream-4-5-251128': { zh: '豆包 Seedream 4.5', en: 'Seedream 4.5' },
   'MiniMax-M3': 'MiniMax M3',
   'MiniMax-M2.7': 'MiniMax M2.7',
   'MiniMax-Text-01': 'MiniMax Text 01',
@@ -148,6 +149,9 @@ export function modelSpeedHint(providerId: string, model: string, lang: Lang = '
   if (providerId === 'dmx' || providerId === 'dmxapi') {
     if (model === 'qwen-image-plus') {
       return hint('fast', ['约 6–8 秒一张', 'about 6–8 s per image'], ['2026-09-06 实测 6.2–8.3 秒', 'measured 6.2–8.3 s'], lang);
+    }
+    if (model === 'doubao-seedream-4-5-251128') {
+      return hint('medium', ['约 20 秒一张', 'about 20 s per image'], ['2026-10-09 实测 20 秒，最贴着描述画', 'measured 20 s; follows the description most closely'], lang);
     }
     if (model === 'gpt-image-2') {
       return hint('slow', ['约 23 秒一张', 'about 23 s per image'], ['2026-09-06 实测 22.6 秒', 'measured 22.6 s'], lang);

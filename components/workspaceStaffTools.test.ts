@@ -239,7 +239,7 @@ describe('侧栏的「成员」', () => {
 
 describe('支架管理', () => {
   const openScaffolds = async () => {
-    await click(sidebarTool('Scaffold')!);
+    await click(sidebarTool('支架')!);
     await waitFor(() => document.body.textContent?.includes('支架管理'), '支架管理弹窗');
   };
   const policySwitch = () => all('[role="switch"]').find(el => el.textContent?.includes('强制使用支架')) ?? null;

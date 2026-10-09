@@ -8,7 +8,7 @@ import {
 import { auth } from '../../services/apiClient';
 import ThemeToggle from '../ThemeToggle';
 import { LangSwitcher3, Lang3 } from '../LangSwitcher';
-import { readPublicLanguage, saveLanguagePreference } from '../../utils/languagePreference';
+import { useLanguagePreference } from '../../hooks/useLanguagePreference';
 
 type Lang = Lang3;
 type Tab  = 'login' | 'register';
@@ -355,7 +355,7 @@ function PrivacyModal({ onClose, title, lang }: { onClose: () => void; title: st
 // ── Main Component ────────────────────────────────────────────────────
 export default function LoginPage() {
   const { login, register, error, clearError, loading } = useAuth();
-  const [lang, setLangState] = useState<Lang>(() => readPublicLanguage('en'));
+  const [lang, setLang] = useLanguagePreference();
   const [tab, setTab]   = useState<Tab>('login');
   const [submitting, setSubmitting]   = useState(false);
   const [successMsg, setSuccessMsg]   = useState<string | null>(null);
@@ -377,11 +377,6 @@ export default function LoginPage() {
   const [regAcceptPrivacy, setRegAcceptPrivacy]  = useState(false);
 
   const t = T[lang];
-
-  const setLang = (nextLang: Lang) => {
-    saveLanguagePreference(nextLang);
-    setLangState(nextLang);
-  };
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';

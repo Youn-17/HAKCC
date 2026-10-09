@@ -1,5 +1,6 @@
 
 import React from 'react';
+import RemixIcon from './RemixIcon';
 import {
   FileText, Video, Image as ImageIcon, Link2, PenTool, Layout, Layers,
   FileSpreadsheet, File, FileCode, Presentation, Table, Sparkles, Lightbulb, MessageCircle
@@ -10,6 +11,8 @@ import { RELATION_COLORS } from './relationColors';
 import { MINE_CARD, MORANDI } from './morandiPalette';
 import UserAvatar from './UserAvatar';
 import NoteCornerBadges from './NoteCornerBadges';
+import type { FoldSummary } from './buildOnCollapse';
+import { formatNoteStamp } from './noteText';
 import {
   STANDARD_NOTE_WIDTH, STANDARD_NOTE_HEIGHT,
   VIEW_NOTE_WIDTH, VIEW_NOTE_HEIGHT,
@@ -27,7 +30,6 @@ interface NoteItemProps {
   lang?: Language;
   isSelected?: boolean;
   isMultiSelected?: boolean;
-  hasBuildOns?: boolean;
   moveCounts?: MoveCounts;
   synthesisDepth?: number;
   /** 别人发的、我还没打开过的笔记：左上角标红色 New */
@@ -42,6 +44,11 @@ interface NoteItemProps {
   onContextMenu: (e: React.MouseEvent, note: Note) => void;
   /** 拖右下角手柄改卡片大小；不传则该卡不可调整。 */
   onResizeStart?: (e: React.MouseEvent, note: Note) => void;
+  /** 建立在这条上的笔记（当前视图里）：有就在卡片下沿显示收起/展开的开关 */
+  fold?: FoldSummary;
+  onToggleFold?: (note: Note) => void;
+  /** 鼠标进出卡片：画布据此显示建立在它上面的笔记标题 */
+  onHoverChange?: (note: Note, hovering: boolean) => void;
 }
 
 /**
@@ -105,19 +112,8 @@ const MoveTypeDots: React.FC<{ counts: MoveCounts; lang: Language }> = ({ counts
 // no badge, so a pinned card looks exactly like any other on the board.
 const dragCursor = (note: Note) => note.isFixed ? 'cursor-default' : 'cursor-grab active:cursor-grabbing';
 
-/**
- * 作者名 + 时间：卡片上认领自己想法的唯一线索，所以要够大够黑。
- * 年份始终显示 —— 课程跨学期复用同一个空间，只看月日会把去年的笔记
- * 误认成本周的。
- */
-const formatStamp = (note: Note): string => {
-  const iso = note.createdAt;
-  const d = iso ? new Date(iso) : null;
-  if (!d || Number.isNaN(d.getTime())) return note.date ? note.date.split(' ')[0] : '';
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`;
-};
+// 作者名 + 时间：卡片上认领自己想法的唯一线索，所以要够大够黑（时间格式见 formatNoteStamp）。
+const formatStamp = formatNoteStamp;
 
 /**
  * 卡片上的作者头像。真人一律走全站共用的 UserAvatar（同一个人在画布、
@@ -173,16 +169,57 @@ const NoteByline: React.FC<{ note: Note; nameColor?: string; avatarSize?: number
   </div>
 );
 
-const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMultiSelected, hasBuildOns, moveCounts, synthesisDepth = 1, isNew, hotCount, isMine, className = '', onMouseDown, onDoubleClick, onContextMenu, onResizeStart }) => {
+/**
+ * 卡片下沿的收起/展开开关（2026-10-09）。展开时显示直接建立在这条上的笔记数，收起时显示藏起来的条数；
+ * 藏起来的里面有我还没看过的，旁边一个红点。挂在左下角，右下角是改大小的手柄。
+ */
+const FoldToggle: React.FC<{ note: Note; fold: FoldSummary; lang: Language; onToggle?: (note: Note) => void }> = ({
+  note, fold, lang, onToggle,
+}) => {
+  const zh = lang === 'zh';
+  const label = fold.collapsed
+    ? (zh ? `已收起 ${fold.hiddenCount} 条 Build-on，点一下展开` : `${fold.hiddenCount} build-on notes folded. Click to expand`)
+    : (zh ? `${fold.childCount} 条 Build-on 建立在这条上，点一下收起` : `${fold.childCount} build-on notes. Click to fold`);
+  return (
+    <button
+      type="button"
+      aria-expanded={!fold.collapsed}
+      aria-label={label}
+      title={label}
+      data-fold-toggle=""
+      onMouseDown={e => e.stopPropagation()}
+      onDoubleClick={e => e.stopPropagation()}
+      onContextMenu={e => e.stopPropagation()}
+      onClick={e => { e.stopPropagation(); onToggle?.(note); }}
+      className={`absolute -bottom-3.5 left-3 z-30 flex h-7 items-center gap-1 rounded-full border px-2 text-[14px] font-semibold leading-none shadow-sm transition-colors duration-150 before:absolute before:-inset-2 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 motion-reduce:transition-none ${
+        fold.collapsed
+          ? 'border-[#000080]/35 bg-white text-[#000080] hover:bg-[#000080]/[0.06]'
+          : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800'
+      }`}
+    >
+      <svg width="13" height="13" viewBox="0 0 10 10" aria-hidden="true" className="shrink-0">
+        {fold.collapsed
+          ? <path d="M3.5 2 L7 5 L3.5 8" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          : <path d="M2 3.5 L5 7 L8 3.5" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+      </svg>
+      <span className="tabular-nums">{fold.collapsed ? `+${fold.hiddenCount}` : fold.childCount}</span>
+      {fold.collapsed && fold.hasNewHidden && <span className="ml-0.5 h-2 w-2 rounded-full bg-rose-500" aria-hidden="true" />}
+    </button>
+  );
+};
+
+const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMultiSelected, moveCounts, synthesisDepth = 1, isNew, hotCount, isMine, className = '', onMouseDown, onDoubleClick, onContextMenu, onResizeStart, fold, onToggleFold, onHoverChange }) => {
   const grip = <ResizeGrip note={note} onResizeStart={onResizeStart} visible={isSelected || isMultiSelected} />;
   const mineLabel = isMine ? (lang === 'zh' ? '我' : 'Me') : undefined;
   const cardBg = isMine ? MINE_CARD.bgClass : 'bg-white';
   const restingBorder = isMine ? MINE_CARD.borderClass : 'border-gray-200/80';
   const badges = <NoteCornerBadges isNew={isNew} hotCount={hotCount} lang={lang} />;
-  const builtOnLabel = lang === 'zh' ? '已有 Build-on' : 'Built on';
-  const builtOnTitle = lang === 'zh'
-    ? '已有后续 Note 在这个想法基础上继续建构'
-    : 'This idea has incoming build-on notes';
+  const foldToggle = fold ? <FoldToggle note={note} fold={fold} lang={lang} onToggle={onToggleFold} /> : null;
+  // 有 Build-on 的卡片停住时画布会列出建立在它上面的标题；这时再弹浏览器自带的标题提示就重了
+  const hoverProps = onHoverChange
+    ? { onMouseEnter: () => onHoverChange(note, true), onMouseLeave: () => onHoverChange(note, false) }
+    : {};
+  const nativeTitle = (text: string | undefined) => (fold ? undefined : text);
   
   // --- Custom Styled Notes ---
   if (note.customStyle) {
@@ -199,7 +236,8 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         onMouseDown={(e) => onMouseDown(e, note)}
         onDoubleClick={(e) => onDoubleClick(e, note)}
         onContextMenu={(e) => onContextMenu(e, note)}
-        title={note.title}
+        {...hoverProps}
+        title={nativeTitle(note.title)}
       >
         <span className="pointer-events-none text-center px-4">{note.title}</span>
       </div>
@@ -223,7 +261,8 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
             onMouseDown={(e) => onMouseDown(e, note)}
             onDoubleClick={(e) => onDoubleClick(e, note)}
             onContextMenu={(e) => onContextMenu(e, note)}
-            title={note.title}
+            {...hoverProps}
+            title={nativeTitle(note.title)}
         >
             <div className={`h-full w-full overflow-hidden rounded-lg ${cardBg} relative p-2`}>
                 <svg width="100%" height="100%" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet" className="pointer-events-none">
@@ -245,6 +284,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
             </div>
             {grip}
         {badges}
+        {foldToggle}
         </div>
       );
   }
@@ -266,7 +306,8 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         onMouseDown={(e) => onMouseDown(e, note)}
         onDoubleClick={(e) => onDoubleClick(e, note)} // Double click to zoom/open
         onContextMenu={(e) => onContextMenu(e, note)}
-        title={note.title}
+        {...hoverProps}
+        title={nativeTitle(note.title)}
       >
         {note.mimeType?.startsWith('video/') ? (
           <video src={note.fileUrl} draggable={false} controls className="w-full h-full object-contain rounded-md bg-black" />
@@ -282,6 +323,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
 
         {grip}
         {badges}
+        {foldToggle}
         {!isImage && (
           <div className="absolute bottom-0 left-0 right-0 rounded-b-md bg-black/50 text-white text-xs p-1 px-2 truncate">
             {note.title}
@@ -302,6 +344,9 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
    * 颜色取自莫兰迪色板，和画布上其余部分同一套。
    */
   const getIcon = () => {
+    if ((note.metadata?.collaborative_document as { version?: number } | undefined)?.version === 1) {
+      return <RemixIcon name="file-edit-line" size={16} style={{ color: MORANDI.dustyBlue }} />;
+    }
     const mt = note.mimeType || '';
     const fn = (note.fileName || '').toLowerCase();
     const ext = (re: RegExp) => re.test(fn);
@@ -341,7 +386,8 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         onMouseDown={(e) => onMouseDown(e, note)}
         onDoubleClick={(e) => onDoubleClick(e, note)}
         onContextMenu={(e) => onContextMenu(e, note)}
-        title={note.fileName || note.title}
+        {...hoverProps}
+        title={nativeTitle(note.fileName || note.title)}
         data-mine={isMine || undefined}
       >
         <div className={`
@@ -356,6 +402,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
             <NoteByline note={note} avatarSize={20} nameSize={14} mineLabel={mineLabel} />
           </div>
         </div>
+        {foldToggle}
       </div>
     );
   }
@@ -383,7 +430,8 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         onMouseDown={(e) => onMouseDown(e, note)}
         onDoubleClick={(e) => onDoubleClick(e, note)}
         onContextMenu={(e) => onContextMenu(e, note)}
-        title={note.title}
+        {...hoverProps}
+        title={nativeTitle(note.title)}
       >
         <div className="bg-blue-50 border border-blue-200 rounded-t-xl p-2.5 flex items-center gap-2">
           {getIcon()}
@@ -391,6 +439,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         </div>
         {grip}
         {badges}
+        {foldToggle}
         <div className="bg-white border-x border-b border-blue-100 rounded-b-xl p-3 min-h-[60px]">
           <div className="flex flex-wrap gap-1">
              <div className="text-xs text-gray-500 font-medium">{note.author}</div>
@@ -416,10 +465,12 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         onMouseDown={(e) => onMouseDown(e, note)}
         onDoubleClick={(e) => onDoubleClick(e, note)}
         onContextMenu={(e) => onContextMenu(e, note)}
-        title={note.title}
+        {...hoverProps}
+        title={nativeTitle(note.title)}
       >
         {grip}
         {badges}
+        {foldToggle}
         <div className={`relative z-10 ${cardBg} border border-purple-200 rounded-xl flex flex-col h-full overflow-hidden`} data-mine={isMine || undefined}>
            {/* Header — compact, canvas-native */}
            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-purple-100 px-3 py-1.5 flex items-center justify-between">
@@ -469,7 +520,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
    */
   const titleLines = (() => {
     const h = note.height ?? STANDARD_NOTE_HEIGHT;
-    const extras = (hasBuildOns || (moveCounts?.challenge ?? 0) > 0) ? 18 : 0;
+    const extras = (moveCounts?.challenge ?? 0) > 0 ? 18 : 0;
     // 50 = 署名行最坏情况（窄卡上时间换到第二行占两行 44）+ 它与标题的间距 6
     const usable = h - 4 - 20 - 50 - extras;   // 色条 + 内边距 + 署名行
     return Math.max(1, Math.floor(usable / NOTE_TITLE_LINE_BOX));
@@ -495,7 +546,8 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
       onMouseDown={(e) => onMouseDown(e, note)}
       onDoubleClick={(e) => onDoubleClick(e, note)}
       onContextMenu={(e) => onContextMenu(e, note)}
-      title={note.title}
+      {...hoverProps}
+      title={nativeTitle(note.title)}
     >
       {note.unreadFeedback && (
         <span className="absolute -top-1 -left-1 z-10 flex h-3 w-3 pointer-events-none">
@@ -542,24 +594,23 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
           <div className="mt-auto pt-1.5">
             <NoteByline note={note} mineLabel={mineLabel} />
           </div>
-          {(hasBuildOns || (moveCounts?.challenge ?? 0) > 0) && (
+          {/* 「已有 Build-on」的字样拿掉了：卡片下沿的收起开关已经写着有几条（2026-10-09） */}
+          {(moveCounts?.challenge ?? 0) > 0 && (
             <div className="flex items-center gap-1 mt-1">
-              {hasBuildOns && (
-                <span className="text-[11px] font-medium text-emerald-600" title={builtOnTitle}>
-                  {builtOnLabel}
-                </span>
-              )}
-              {(moveCounts?.challenge ?? 0) > 0 && (
-                <span className="ml-auto flex-shrink-0 rounded-full px-1.5 text-[11px] font-bold leading-4 text-white" style={{ backgroundColor: RELATION_COLORS.challenge }}>
-                  ! {moveCounts!.challenge}
-                </span>
-              )}
+              <span
+                className="ml-auto flex-shrink-0 rounded-full px-1.5 text-[11px] font-bold leading-4 text-white"
+                style={{ backgroundColor: RELATION_COLORS.challenge }}
+                title={lang === 'zh' ? `${moveCounts!.challenge} 条质疑` : `${moveCounts!.challenge} challenge${moveCounts!.challenge === 1 ? '' : 's'}`}
+              >
+                ! {moveCounts!.challenge}
+              </span>
             </div>
           )}
         </div>
       </div>
       {grip}
         {badges}
+        {foldToggle}
     </div>
   );
 };

@@ -29,8 +29,10 @@ import {
   getAgentModeToolNames,
 } from '../services/noteAgentCatalog';
 import { runAgentLoopStream } from '../services/agentLoop';
-import { detectDrawIntent } from '../services/drawIntent';
-import { streamDrawTurn } from '../services/drawTurn';
+import { lengthInstruction, lengthPlanMetadata, maxTokensFor, parseAnswerLength, planAnswerLength, thinkingLikely } from '../services/answerLength';
+import { drawRouteSummary, routeDrawRequest } from '../services/drawJudge';
+import { lastReplyFromTurns, loadLastExchange, loadRecentTurns, loadStoredMemory, streamDrawTurn } from '../services/drawTurn';
+import { loadStudentLearningContext } from '../services/studentLearningContext';
 import { isDmxProvider, pickModel, pickNativeModel, reportModelFailure, reportModelSuccess, reportProviderFailure, reportProviderSuccess, orderConfigsByHealth } from '../services/modelRouter';
 import {
   applyPickerToConfigs,
@@ -369,6 +371,7 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
     module,
     history = [],
     conversation_id,
+    answer_length,
   } = req.body as {
     content?: string;
     provider_id?: string;
@@ -379,6 +382,7 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
     module?: unknown;
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
     conversation_id?: string;
+    answer_length?: unknown;
   };
   const conversationModule = normalizeConversationModule(module) ?? 'chat';
   const contextCourseId = typeof context_course_id === 'string' && context_course_id ? context_course_id : undefined;
@@ -584,19 +588,53 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
     content: content.trim(),
   });
 
-  // 「画一张……」这类绘图指令：不经对话模型，直接出图（DMX 优先，用这门课的 key），前端放绘图动画
-  const drawIntent = detectDrawIntent(content);
-  if (drawIntent && resolvedCourseId) {
+  // 要不要画、是不是改上一张、画成哪种：Jev 判断（drawJudge），没开或出错时按「画一张……」这类说法认。
+  // 要画就不经对话模型，直接出图（DMX 优先，用这门课的 key），前端放绘图动画
+  const continuing = Boolean(conversation_id && convId === conversation_id);
+  const clientTurns = history
+    .filter(m => m.content?.trim())
+    .slice(-12)
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content }));
+  const lastExchange = !resolvedCourseId
+    ? { previous: null, lastReply: null }
+    : continuing
+      ? await loadLastExchange('agent', String(convId), content)
+      : { previous: null, lastReply: lastReplyFromTurns(clientTurns) };
+  const drawRoute = resolvedCourseId
+    ? await routeDrawRequest(content, { previous: lastExchange.previous, lastReply: lastExchange.lastReply })
+    : null;
+  if (drawRoute?.draw && resolvedCourseId) {
+    // 画之前先读这段对话、它的记忆、选了课时能看到的笔记、学生自己的记录（drawPlanner）
+    const [recent, memory, learner] = await Promise.all([
+      continuing
+        ? loadRecentTurns('agent', String(convId), content)
+        : Promise.resolve(clientTurns),
+      continuing ? loadStoredMemory('agent', String(convId)) : Promise.resolve(''),
+      effectiveRole === 'student' && contextCourseId === resolvedCourseId
+        ? loadStudentLearningContext({ userId, courseId: resolvedCourseId, question: content }).catch(() => '')
+        : Promise.resolve(''),
+    ]);
+    const background = contextNotes.length > 0
+      ? ['Notes the learner can see in this course (most recently updated first):',
+        ...contextNotes.map((n, i) => `${i + 1}. "${n.title}" — ${stripHtml(n.content ?? '').slice(0, 160)}`)].join('\n')
+      : '';
     await streamDrawTurn(res, {
       courseId: resolvedCourseId,
       conversationId: String(convId),
-      prompt: drawIntent.prompt,
+      prompt: content.trim(),
       userId,
       spaceId: contextSpaceId,
       triggerType: 'personal_agent_direct_image',
+      context: { history: recent, memory, background, learner },
+      previous: drawRoute.mode === 'edit' ? lastExchange.previous : null,
+      form: drawRoute.form,
+      route: drawRouteSummary(drawRoute),
     });
     return;
   }
+
+  // 回答写多长：学生选的档位 + 问题深浅（Jev），和下面装上下文同时进行（2026-10-09 起「AI 对话」也有）
+  const lengthPlanPromise = planAnswerLength(content.trim(), parseAnswerLength(answer_length));
 
   // Build agent context with personal-agent-specific system prompt additions
   // 检索课程资料查的是 context.courseId（取 key 的那门课）：只有学生选了课、而且就是这门课时才给，
@@ -644,9 +682,13 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
   }
 
   const identity = personalSystemAddition(toolNames);
-  const systemPrompt = crossModuleCtx
-    ? `${identity}\n\n${crossModuleCtx}\n\n${agentContext.systemPrompt}`
-    : `${identity}\n\n${agentContext.systemPrompt}`;
+  const lengthPlan = await lengthPlanPromise;
+  const systemPrompt = [
+    identity,
+    crossModuleCtx,
+    agentContext.systemPrompt,
+    lengthInstruction(lengthPlan),
+  ].filter(Boolean).join('\n\n');
 
   // ── Lifecycle: start run for chat ──
   let chatRunId: string | null = null;
@@ -683,6 +725,8 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
   const allToolCalls: Array<{ id: string; name: string }> = [];
   const allToolsUsed = new Set<string>();
   let agentIterations = 0;
+  let continuations = 0;
+  let truncated = false;
   const isAutoMode = provider_id === 'auto';
   // DMX gets model-level retries within the same key (router swaps to a
   // healthy model), so even a single-provider setup survives 429 storms.
@@ -735,7 +779,8 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
           })),
           tools,
           executeToolFn: (name, args) => agentRegistry.executeTool(name, args, toolContext),
-          maxTokens: PERSONAL_AGENT_MAX_TOKENS,
+          // 写到上限会自动接着写（agentLoop），这里只按目标字数留足余量
+          maxTokens: Math.max(PERSONAL_AGENT_MAX_TOKENS, maxTokensFor(lengthPlan.target, thinkingLikely(resolvedProviderId, resolvedModel))),
         });
 
         const toolStartedAt = new Map<string, number>();
@@ -761,6 +806,8 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
               break;
             case 'done':
               agentIterations = event.result.iterations;
+              continuations = event.result.continuations ?? 0;
+              truncated = event.result.truncated === true;
               break;
             case 'error': {
               const isRateish = /\b(429|5\d\d|overloaded|rate.?limit|too many)/i.test(event.error);
@@ -836,6 +883,7 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
           iterations: agentIterations,
           provider_id: resolvedProviderId,
           model: resolvedModel,
+          answer_length: lengthPlanMetadata(lengthPlan, fullReply, { continuations, truncated }),
         },
       }).select('id').single();
 

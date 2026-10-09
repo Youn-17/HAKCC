@@ -55,9 +55,10 @@ import {
   settingsFromRows,
 } from '../services/aiFeatureModels';
 import { buildDiscussionDigest, collectDigestNotes, type DigestScope } from '../services/discussionDigest';
-import { detectDrawIntent } from '../services/drawIntent';
+import { drawRouteSummary, routeDrawRequest, type DrawRoute, type PreviousDrawing } from '../services/drawJudge';
 import { lengthInstruction, lengthPlanMetadata, maxTokensFor, parseAnswerLength, planAnswerLength, thinkingLikely } from '../services/answerLength';
-import { streamDrawTurn } from '../services/drawTurn';
+import { lastReplyFromTurns, loadLastExchange, loadRecentTurns, loadStoredMemory, streamDrawTurn } from '../services/drawTurn';
+import { loadStudentLearningContext } from '../services/studentLearningContext';
 import { detectQuestionLanguage, languageDirective } from '../services/finalAnswer';
 import { fetchSpaceBuildOnGraph, formatBuildOnSection } from '../services/buildOnContext';
 import { fetchAiInteractionData, formatAiInteractionSection } from '../services/aiInteractionContext';
@@ -262,7 +263,7 @@ function buildWorkspaceNote(
 // ---------------------------------------------------------------------------
 
 const WORKSPACE_IDENTITY = [
-  'You are a Workspace Agent — a course-scoped AI assistant inside a Knowledge Building platform.',
+  'You are a Workspace Agent — a course-scoped AI assistant inside a Knowledge Building platform. The Chinese interface calls you 「知识空间智能体」; use that name if a user asks who you are in Chinese.',
   'Unlike the per-note agent, you can see ALL notes in the current workspace.',
   'Help users analyze participation patterns, find connections across notes, plan lessons, and understand the community knowledge landscape.',
   'The Build-on links between notes are written out below, after the note list. Use them to answer who built on whom, which ideas are built on most, and which notes nobody has built on yet. Never say you cannot see Build-on relations; if the list says there are none, say there are none.',
@@ -501,18 +502,64 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     content: content.trim(),
   });
 
-  // 「画一张……」这类绘图指令，或学生按了「画图」：不经对话模型，直接出图（DMX 优先），前端放绘图动画
-  const drawIntent = attachments.length === 0
-    ? (force_draw ? { prompt: content.trim() } : detectDrawIntent(content))
-    : null;
-  if (drawIntent) {
+  // 要不要画、是不是改上一张、画成哪种：Jev 判断（drawJudge），没开或出错时按「画一张……」这类说法认；
+  // 学生按了「画图」一定画。要画就不经对话模型，直接出图（DMX 优先），前端放绘图动画
+  const continuing = Boolean(conversation_id && convId === conversation_id);
+  const clientTurns = (clientHistory ?? [])
+    .filter(m => m.content?.trim())
+    .slice(-12)
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content }));
+  let drawRoute: DrawRoute | null = null;
+  let previousDrawing: PreviousDrawing | null = null;
+  if (attachments.length === 0) {
+    const last = continuing
+      ? await loadLastExchange('agent', String(convId), content)
+      : { previous: null, lastReply: lastReplyFromTurns(clientTurns) };
+    previousDrawing = last.previous;
+    drawRoute = await routeDrawRequest(content, { previous: last.previous, lastReply: last.lastReply, forced: Boolean(force_draw) });
+  }
+  if (drawRoute?.draw) {
+    // 画之前先读上下文（drawPlanner）：这段对话、它的记忆、空间里的笔记和 Build-on、学生自己的记录。
+    // 「画一张我们讨论的观点关系图」里「我们讨论的」就靠这些对上号
+    const spaceNotes = await fetchWorkspaceNotes(space.id);
+    const chosen = Array.isArray(note_ids) && note_ids.length > 0 ? spaceNotes.filter(n => note_ids.includes(n.id)) : [];
+    const listed = (chosen.length > 0 ? chosen : spaceNotes).slice(0, 40);
+    const [history, memory, buildOnSection, learner] = await Promise.all([
+      continuing
+        ? loadRecentTurns('agent', String(convId), content)
+        : Promise.resolve(clientTurns),
+      continuing ? loadStoredMemory('agent', String(convId)) : Promise.resolve(''),
+      listed.length > 0
+        ? fetchSpaceBuildOnGraph(space.id, new Map(spaceNotes.map(n => [n.id, n.title])))
+          .then(graph => formatBuildOnSection({
+            listed: listed.map(n => ({ id: n.id, title: n.title })),
+            links: graph.links,
+            titles: graph.titles,
+            focusIds: chosen.length > 0 ? new Set(chosen.map(n => n.id)) : undefined,
+          }))
+          .catch(() => '')
+        : Promise.resolve(''),
+      isCourseStaff(standing)
+        ? Promise.resolve('')
+        : loadStudentLearningContext({ userId: req.user!.id, courseId: String(courseId), question: content }).catch(() => ''),
+    ]);
+    const background = [
+      `Knowledge space "${space.name}".`,
+      chosen.length > 0 ? `The learner selected these ${chosen.length} note(s):` : `Notes in this space (most recently updated first):`,
+      ...listed.map((n, i) => `${i + 1}. "${n.title}" — ${stripHtml(n.content).slice(0, chosen.length > 0 ? 600 : 160)}`),
+      buildOnSection,
+    ].filter(Boolean).join('\n');
     await streamDrawTurn(res, {
       courseId: String(courseId),
       conversationId: String(convId),
-      prompt: drawIntent.prompt,
+      prompt: content.trim(),
       userId: req.user!.id,
       spaceId: space.id,
       triggerType: 'workspace_agent_direct_image',
+      context: { history, memory, background, learner },
+      previous: drawRoute.mode === 'edit' ? previousDrawing : null,
+      form: drawRoute.form,
+      route: drawRouteSummary(drawRoute),
     });
     return;
   }

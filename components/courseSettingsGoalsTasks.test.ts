@@ -264,7 +264,7 @@ describe('学习目标', () => {
     await click(buttonWith('保存')!);
 
     const alert = await waitFor(() => document.querySelector('[role="alert"]'), '失败提示');
-    expect(alert.textContent).toBe('目标没有添加成功：目标标题最多 200 字');
+    expect(alert.textContent).toBe('目标标题不能超过 200 字。');
     expect(byLabel<HTMLInputElement>('目标标题')?.value).toBe('一个目标');
     expect(goalTitles()).toHaveLength(3);
   });
@@ -288,7 +288,7 @@ describe('学习目标', () => {
 
     backend.state.goneGoal = 'g-high';
     await click(byLabel('删除目标 能在别人的观点上建构')!);
-    await waitFor(() => text().includes('这条目标已经不在了'), '已不存在的说明');
+    await waitFor(() => text().includes('该目标已不存在'), '已不存在的说明');
     expect(goalTitles()).toEqual(['读懂并复述论证结构']);
   });
 
@@ -296,8 +296,8 @@ describe('学习目标', () => {
   it('课内只是普通成员：整页说明没有权限，看不到目标列表，也没有增删改', async () => {
     await mount('goals', { standing: 'member' });
     await waitFor(() => document.querySelector('[data-course-settings-denied]'), '没有权限的说明');
-    expect(text()).toContain('没有权限管理这门课');
-    expect(text()).toContain('课程管理只对课程创建者和课程管理员开放');
+    expect(text()).toContain('暂无课程管理权限');
+    expect(text()).toContain('课程管理仅对课程创建者和课程管理员开放');
     expect(goalTitles()).toEqual([]);
     expect(buttonWith('添加目标')).toBeNull();
     expect(buttonWith('返回首页')).not.toBeNull();
@@ -322,7 +322,7 @@ describe('学习任务', () => {
     await mount('tasks');
     await waitFor(() => text().includes('读书报告'), '任务列表');
     expect(text()).toContain('23:59');
-    expect(text()).toContain('已交 2 份 · 已批改 1 份');
+    expect(text()).toContain('已提交 2 份 · 已批改 1 份');
 
     await click(byLabel('编辑任务 读书报告')!);
     const due = document.querySelector<HTMLInputElement>('input[type="datetime-local"]')!;
@@ -336,7 +336,7 @@ describe('学习任务', () => {
     expect(writes()).toEqual([{ method: 'PUT', path: `/courses/${COURSE}/tasks/t-report`, body: { title: '读书报告（修订）' } }]);
   });
 
-  it('改截止时间发带时区的 ISO；去掉截止时间发 null', async () => {
+  it('改截止时间发带时区的 ISO；清除截止时间发 null', async () => {
     await mount('tasks');
     await waitFor(() => text().includes('读书报告'), '任务列表');
 
@@ -348,9 +348,9 @@ describe('学习任务', () => {
 
     await click(byLabel('编辑任务 读书报告')!);
     expect(document.querySelector<HTMLInputElement>('input[type="datetime-local"]')!.value).toBe('2026-10-08T20:00');
-    await click(buttonWith('去掉截止时间')!);
+    await click(buttonWith('清除截止时间')!);
     await click(buttonWith('保存')!);
-    await waitFor(() => text().includes('没有截止时间') && !byLabel('任务标题'), '去掉截止时间');
+    await waitFor(() => text().includes('未设置截止时间') && !byLabel('任务标题'), '清除截止时间');
     expect(writes().at(-1)).toEqual({ method: 'PUT', path: `/courses/${COURSE}/tasks/t-report`, body: { due_date: null } });
   });
 
@@ -385,7 +385,7 @@ describe('学习任务', () => {
     await typeInto(byLabel<HTMLInputElement>('任务标题')!, '实地观察记录');
     await typeInto(document.querySelector<HTMLInputElement>('input[type="number"]')!, '2.5');
     await click(buttonWith('保存')!);
-    await waitFor(() => text().includes('分值要填 0 到 1000 之间的整数。'), '分值提示');
+    await waitFor(() => text().includes('分值须为 0–1000 的整数。'), '分值提示');
     expect(writes()).toEqual([]);
   });
 
@@ -416,7 +416,7 @@ describe('批改学生提交', () => {
     expect(score.max).toBe('100');
     await typeInto(score, '120');
     await click(buttonWith('保存批改')!);
-    await waitFor(() => dialog.textContent?.includes('得分要填 0 到 100 之间的整数。'), '得分提示');
+    await waitFor(() => dialog.textContent?.includes('得分须为 0–100 的整数。'), '得分提示');
     expect(writes()).toEqual([]);
 
     await typeInto(score, '88');
@@ -429,16 +429,17 @@ describe('批改学生提交', () => {
     }]);
     expect(dialog.textContent).toContain('已批改');
     expect(dialog.textContent).toContain('88 分');
-    await waitFor(() => text().includes('已交 2 份 · 已批改 2 份'), '任务列表的统计');
+    await waitFor(() => text().includes('已提交 2 份 · 已批改 2 份'), '任务列表的统计');
   });
 
-  it('提交列表没取到：说出原因，不显示成「还没有学生提交」', async () => {
+  it('提交列表没取到：说出原因，不显示成「暂无学生提交」', async () => {
     await mount('tasks');
     backend.state.failSubmissions = true;
     await waitFor(() => text().includes('读书报告'), '任务列表');
     await click(byLabel('查看提交 读书报告')!);
     const dialog = await waitFor(() => document.querySelector('[role="dialog"]'), '提交弹窗');
-    await waitFor(() => dialog.textContent?.includes('提交列表没有读取成功'), '失败提示');
-    expect(dialog.textContent).not.toContain('还没有学生提交');
+    await waitFor(() => dialog.textContent?.includes('提交记录加载失败'), '失败提示');
+    expect(dialog.textContent).not.toContain('暂无学生提交');
+    expect(dialog.textContent).not.toContain('Service temporarily unavailable');
   });
 });

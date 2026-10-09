@@ -1,0 +1,36 @@
+name: hakcc-collab-pilot
+services:
+  collaboration:
+    build:
+      context: ..
+      dockerfile: collab/Dockerfile
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: 4310
+      COLLAB_DEMO: 'true'
+      COLLAB_SECRET: ${COLLAB_SECRET:?Run scripts/start_collab_demo.sh first}
+      COLLAB_ORIGINS: http://localhost:3110,http://127.0.0.1:3110
+    volumes:
+      - collab-data:/data
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:4310/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.collab-demo
+    ports:
+      - '127.0.0.1:3110:80'
+    depends_on:
+      collaboration:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 128m
+volumes:
+  collab-data:

@@ -27,7 +27,7 @@ import { supabase } from '../config/supabase';
 import { verifyJWT, requireRole } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
 import { callTavilySearch } from '../services/tavilySearch';
-import { ensureCourseInstructor, ensureCourseMember } from '../services/accessControl';
+import { ensureCourseInstructor, ensureCourseMember, isCourseStaff } from '../services/accessControl';
 import { invalidateConditionCache } from '../services/experimentCondition';
 import { assertSafePublicUrl } from '../services/urlGuard';
 import {
@@ -72,7 +72,10 @@ import {
 import { extractChatContent } from '../services/modelCatalog';
 import { CHAT_ENDPOINTS, MINIMAX_ENDPOINTS, MODELS_ENDPOINTS } from '../services/providerEndpoints';
 import { synthesizeMinimaxSpeech } from '../services/minimaxMedia';
-import { generateNoteImage } from '../services/noteImage';
+import { produceDrawing } from '../services/drawTurn';
+import type { DrawTurn } from '../services/drawPlanner';
+import { drawRouteSummary, parseDrawForm, parsePreviousDrawing, routeDrawRequest, sanitizeRouteSummary } from '../services/drawJudge';
+import { loadStudentLearningContext } from '../services/studentLearningContext';
 
 const router = Router();
 
@@ -596,22 +599,78 @@ router.post('/ai/search', verifyJWT, async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/ai/image — 对话里说了「画一张……」（drawIntent），直接出图，不经对话模型。
- * 出图顺序按课程 AI 设置里的「笔记配图」（默认 DMX）。给没有自己会话线程的对话界面用，
- * 目前是文档 AI 侧栏；笔记 AI 助手走 /note-conversations/:id/image，两个智能体对话在推流里出图（drawTurn）。
- * Body: { course_id, prompt, feature? } → { url, markdown, provider_id, model }
+ * 文档 AI 侧栏带来的上下文：文档标题、正在读的那段正文、这段对话最近几轮。都是学生自己界面上的东西，
+ * 只拿来弄清楚要画什么（drawPlanner），截短后用，不存。
+ */
+export function clientDrawContext(raw: unknown): { background: string; history: DrawTurn[] } {
+  if (!raw || typeof raw !== 'object') return { background: '', history: [] };
+  const ctx = raw as { title?: unknown; text?: unknown; history?: unknown };
+  const title = typeof ctx.title === 'string' ? ctx.title.trim().slice(0, 200) : '';
+  const text = typeof ctx.text === 'string' ? ctx.text.trim().slice(0, 6000) : '';
+  const history = (Array.isArray(ctx.history) ? ctx.history : [])
+    .filter((m): m is { role?: unknown; content: string } => Boolean(m) && typeof (m as { content?: unknown }).content === 'string')
+    .slice(-10)
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content.slice(0, 1500) }))
+    .filter(m => m.content.trim());
+  const background = title || text
+    ? [`The learner is reading the document "${title || 'untitled'}".`, text].filter(Boolean).join('\n')
+    : '';
+  return { background, history };
+}
+
+/**
+ * POST /api/ai/draw-route — 这一句要不要画、是改上一张还是新画、画成哪种（drawJudge.routeDrawRequest）。
+ * 笔记 AI 助手、对话式笔记、文档 AI 由前端决定走画图还是走对话，发之前先问这里；
+ * 两个智能体对话在服务端自己判断。只在句子和图沾边、或上一轮刚画了图时才会真去问 Jev。
+ * Body: { text, previous?: { request, caption, kind }, last_reply?, forced? }
+ *   → { draw, mode, form, decided_by, route }（route 在画的时候原样带回来，记进元数据）
+ */
+router.post('/ai/draw-route', verifyJWT, async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as { text?: unknown; previous?: unknown; last_reply?: unknown; forced?: unknown };
+  const text = String(body.text ?? '').trim().slice(0, 1200);
+  const route = await routeDrawRequest(text, {
+    previous: parsePreviousDrawing(body.previous),
+    lastReply: typeof body.last_reply === 'string' ? body.last_reply.slice(0, 1200) : null,
+    forced: body.forced === true,
+  });
+  res.json({ draw: route.draw, mode: route.mode, form: route.form, decided_by: route.decidedBy, route: drawRouteSummary(route) });
+});
+
+/**
+ * POST /api/ai/image — 对话里要画图时直接出图，不经对话模型（要不要画由前端先问 /ai/draw-route）。
+ * 先读上下文弄清楚要画什么（drawTurn.produceDrawing）；出图顺序按课程 AI 设置里的「生成图片」（默认 DMX）。
+ * 给没有自己会话线程的对话界面用，目前是文档 AI 侧栏；笔记 AI 助手走 /note-conversations/:id/image，
+ * 两个智能体对话在推流里出图。
+ * Body: { course_id, prompt, feature?, context?: { title, text, history, previous? }, mode?, form?, route? }
+ *   → { url, markdown, provider_id, model, caption, kind, drawing }（drawing 留给前端：下一句要改这张时带回来）
  */
 router.post('/ai/image', verifyJWT, async (req: Request, res: Response) => {
-  const { course_id, prompt: rawPrompt, feature } = req.body as { course_id?: string; prompt?: string; feature?: string };
+  const { course_id, prompt: rawPrompt, feature, context, mode, form, route } = req.body as {
+    course_id?: string; prompt?: string; feature?: string; context?: unknown; mode?: unknown; form?: unknown; route?: unknown;
+  };
   const prompt = String(rawPrompt ?? '').trim().slice(0, 600);
   if (!course_id || !prompt) throw new ApiError(400, 'course_id 和 prompt 是必填的');
-  await ensureCourseMember(String(course_id), req.user!);
+  const standing = await ensureCourseMember(String(course_id), req.user!);
   await assertDailyAiQuota(req.user!.id);
 
-  const result = await generateNoteImage(String(course_id), prompt);
+  const fromClient = clientDrawContext(context);
+  const learner = isCourseStaff(standing)
+    ? ''
+    : await loadStudentLearningContext({ userId: req.user!.id, courseId: String(course_id), question: prompt }).catch(() => '');
+  const previous = mode === 'edit' && context && typeof context === 'object'
+    ? parsePreviousDrawing((context as { previous?: unknown }).previous)
+    : null;
+  const result = await produceDrawing({
+    courseId: String(course_id),
+    request: prompt,
+    context: { ...fromClient, learner },
+    previous,
+    form: parseDrawForm(form),
+    route: sanitizeRouteSummary(route),
+  });
   if (!result.ok) throw new ApiError(502, result.error);
 
-  const markdown = `![${prompt.slice(0, 60).replace(/[[\]]/g, '')}](${result.url})`;
+  const markdown = result.markdown;
   await supabase.from('ai_interventions').insert({
     space_id: await resolvePrimarySpaceId(String(course_id)),
     user_id: req.user!.id,
@@ -623,7 +682,10 @@ router.post('/ai/image', verifyJWT, async (req: Request, res: Response) => {
     visibility_scope: 'private',
   });
 
-  res.json({ url: result.url, markdown, provider_id: result.provider, model: result.model });
+  res.json({
+    url: result.url, markdown, provider_id: result.provider, model: result.model, caption: result.caption, kind: result.kind,
+    drawing: result.kind === 'picture' ? { kind: 'picture', prompt: result.prompt } : { kind: 'diagram', diagram: result.diagram },
+  });
 });
 
 /**

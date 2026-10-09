@@ -100,7 +100,7 @@ function labels(lang: Lang2) {
         ? { title: '笔记 AI 助手', desc: '笔记页左侧的 AI 助手，学生写笔记时用。' }
         : { title: 'Note AI partner', desc: 'The AI partner on the left of the note page, used while writing notes.' },
       workspace_agent: zh
-        ? { title: '知识空间助手', desc: '画布顶栏「助手」打开的侧栏。' }
+        ? { title: '知识空间智能体', desc: '画布顶栏「智能体」打开的侧栏。' }
         : { title: 'Workspace assistant', desc: 'The side panel opened from "Agent" in the canvas top bar.' },
       personal_agent: zh
         ? { title: '学生首页的「AI 对话」', desc: '只管学生；老师在自己有教职的课里不受这份名单限制。' }

@@ -3,7 +3,7 @@ import { uiScale } from './uiScale';
 import RemixIcon from './RemixIcon';
 import { Language } from '../types';
 import { RELATION_COLORS } from './relationColors';
-import { MINE_CARD } from './morandiPalette';
+import { MINE_CARD, SIGNAL_RED, shade } from './morandiPalette';
 import { useDismissible } from '../hooks/useDismissible';
 
 interface SidebarProps {
@@ -25,6 +25,7 @@ interface SidebarProps {
   /** 「我的笔记」开着：按钮亮起 */
   mineActive?: boolean;
   onToggleMine?: () => void;
+  collaborativeDocumentsEnabled?: boolean;
 }
 
 interface ToolDef {
@@ -76,6 +77,12 @@ const TOOL_DEFS: Record<string, ToolDef> = {
     descZh: '向知识社区上传资料与佐证材料',
     descEn: 'Upload resources and supporting material to the community.',
   },
+  collaborative_document: {
+    id: 'collaborative_document', iconName: 'file-edit-line',
+    labelZh: '协作文档', labelEn: 'Shared Document',
+    descZh: '共同撰写观点与证据，支持多人编辑及 Word 导出',
+    descEn: 'Write together in real time and export to Word.',
+  },
   inquiry: {
     id: 'inquiry', iconName: 'compass-3-line',
     labelZh: '探究', labelEn: 'Inquiry',
@@ -90,7 +97,7 @@ const TOOL_DEFS: Record<string, ToolDef> = {
   },
   scaffold: {
     id: 'scaffold', iconName: 'chat-quote-line',
-    labelZh: 'Scaffold', labelEn: 'Scaffolds',
+    labelZh: '支架', labelEn: 'Scaffolds',
     descZh: '查阅知识社区内可用的认知支架',
     descEn: 'Browse the epistemic scaffolds available in this community.',
   },
@@ -144,11 +151,11 @@ const TOOL_DEFS: Record<string, ToolDef> = {
   },
 };
 
-const CREATE_TOOLS = ['note', 'drawing', 'attachment'];
+const CREATE_TOOLS = ['note', 'drawing', 'attachment', 'collaborative_document'];
 // 计算思维工具在「探究」面板里，侧栏不再单列
 const BUILD_TOOLS = ['inquiry', 'riseabove', 'scaffold'];
 const COMMUNITY_TOOLS = ['mine', 'view', 'map', 'timeline', 'ideagraph', 'groups', 'members'];
-const OPEN_TOOLS = new Set(['note', 'drawing', 'attachment', 'inquiry', 'riseabove', 'scaffold', 'exit', 'view', 'map', 'timeline', 'ideagraph', 'groups', 'members']);
+const OPEN_TOOLS = new Set(['note', 'drawing', 'attachment', 'collaborative_document', 'inquiry', 'riseabove', 'scaffold', 'exit', 'view', 'map', 'timeline', 'ideagraph', 'groups', 'members']);
 
 const RELATION_ITEMS = [
   { key: 'extend',    zh: '延伸',  en: 'Extend' },
@@ -165,23 +172,56 @@ const LINE_ITEMS: { zh: string; en: string; w: number; dash: string; opacity: nu
   { zh: 'AI 采纳',  en: 'AI Accepted',   w: 3,   dash: '6 3',  opacity: 1 },
 ];
 
-const BADGE_ITEMS = [
-  { zh: '我写的', en: 'Mine',                   borderColor: MINE_CARD.border, bgColor: MINE_CARD.bg },
-  { zh: '已有 Build-on', en: 'Built on',       borderColor: '#34d399', bgColor: '#ecfdf5' },
-  { zh: '有潜力',        en: 'Promising',      borderColor: '#38bdf8', bgColor: '#f0f9ff' },
-  { zh: '权威',          en: 'Authoritative',   borderColor: '#fbbf24', bgColor: '#fffbeb' },
+/**
+ * 卡片上真有的几种标记（2026-10-09 改）。原来列的「已有 Build-on」「有潜力」「权威」卡片上并不画，
+ * 学生照着图例找不到，反倒多一层疑惑。
+ */
+const BADGE_ITEMS: Array<{ key: 'mine' | 'new' | 'hot' | 'fold'; zh: string; en: string }> = [
+  { key: 'mine', zh: '我写的', en: 'Mine' },
+  { key: 'new',  zh: '我还没打开过', en: 'Not opened yet' },
+  { key: 'hot',  zh: '被 Build-on 最多', en: 'Most built on' },
+  { key: 'fold', zh: '收起的 Build-on', en: 'Folded build-ons' },
 ];
+
+const BadgeSwatch: React.FC<{ kind: (typeof BADGE_ITEMS)[number]['key'] }> = ({ kind }) => {
+  if (kind === 'mine') {
+    return <span className="block h-3 w-3 rounded-sm border-2" style={{ borderColor: MINE_CARD.border, backgroundColor: MINE_CARD.bg }} />;
+  }
+  if (kind === 'new') {
+    return <span className="block rounded-full px-1 text-[8px] font-extrabold leading-3 text-white" style={{ backgroundColor: SIGNAL_RED }}>New</span>;
+  }
+  if (kind === 'hot') {
+    return (
+      <span className="flex h-3 items-center rounded-full px-0.5" style={{ color: SIGNAL_RED, backgroundColor: shade(SIGNAL_RED, 0.88) }}>
+        <RemixIcon name="fire-fill" size={10} />
+      </span>
+    );
+  }
+  return <span className="block rounded-full border border-[#000080]/35 bg-white px-1 text-[9px] font-semibold leading-3 text-[#000080]">+3</span>;
+};
+
+/** 「线型和标记」默认收着：一屏放不下时，图例最后一节只露出个标题，像是坏了 */
+const LEGEND_MORE_KEY = 'hakcc-legend-more';
 
 const Sidebar: React.FC<SidebarProps> = ({
   activeTool, onToolSelect, onToolOpen, onOpenAttachmentModal,
   isStaff, lang, width, onWidthChange,
   onOpenMap, onOpenTimeline, onOpenGroups, onOpenMembers, onOpenIdeaGraph,
-  mineActive, onToggleMine,
+  mineActive, onToggleMine, collaborativeDocumentsEnabled = false,
 }) => {
   const lbl = (zh: string, en: string) => lang === 'zh' ? zh : en;
   const expanded = width >= EXPAND_THRESHOLD;
 
   const [tooltip, setTooltip] = useState<{ label: string; desc?: string; top: number; left: number } | null>(null);
+  const [legendMore, setLegendMore] = useState(() => {
+    try { return localStorage.getItem(LEGEND_MORE_KEY) === '1'; } catch { return false; }
+  });
+  const toggleLegendMore = useCallback(() => {
+    setLegendMore(prev => {
+      try { localStorage.setItem(LEGEND_MORE_KEY, prev ? '0' : '1'); } catch { /* 隐私模式下记不住，这次照样能开 */ }
+      return !prev;
+    });
+  }, []);
   const showTooltip = useCallback((e: React.MouseEvent | React.FocusEvent, label: string, desc?: string) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setTooltip({ label, desc, top: rect.top + rect.height / 2, left: rect.right + 12 });
@@ -274,7 +314,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex h-full flex-col items-center" style={{ padding: expanded ? '0 8px' : '0 3px' }}>
         <div className="flex flex-1 flex-col items-center gap-0.5 min-h-0 overflow-y-auto py-1 w-full sidebar-scroll">
           <SectionLabel text={lbl('创建', 'create')} />
-          {CREATE_TOOLS.map(renderToolButton)}
+          {CREATE_TOOLS.filter(id => id !== 'collaborative_document' || collaborativeDocumentsEnabled).map(renderToolButton)}
           <Separator />
           <SectionLabel text={lbl('建构', 'build')} />
           {BUILD_TOOLS.map(renderToolButton)}
@@ -301,15 +341,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-[4px]" style={{ width: 24 }}>
-                {BADGE_ITEMS.map((b, i) => (
-                  <div key={i} className="flex justify-center">
-                    <div
-                      className="w-[9px] h-[9px] rounded-sm border-[1.5px] cursor-default transition-transform hover:scale-125"
-                      style={{ borderColor: b.borderColor, backgroundColor: b.bgColor }}
-                      onMouseEnter={(e) => showTooltip(e, lbl(b.zh, b.en))}
-                      onMouseLeave={hideTooltip}
-                    />
+              <div className="flex flex-col items-center gap-1.5">
+                {BADGE_ITEMS.map(b => (
+                  <div
+                    key={b.key}
+                    className="flex cursor-default justify-center"
+                    onMouseEnter={(e) => showTooltip(e, lbl(b.zh, b.en))}
+                    onMouseLeave={hideTooltip}
+                  >
+                    <BadgeSwatch kind={b.key} />
                   </div>
                 ))}
               </div>
@@ -319,16 +359,28 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* ── Legend: expanded (full labels) ── */}
           {expanded && (
             <div className="w-full px-1 space-y-1.5">
-              {RELATION_ITEMS.map(r => (
-                <div key={r.key} className="flex items-center gap-2">
-                  <div className="flex items-center gap-0.5 flex-shrink-0">
-                    <div className="w-4 h-[2px]" style={{ backgroundColor: RELATION_COLORS[r.key] }} />
-                    <div className="w-0 h-0 border-t-[3px] border-b-[3px] border-l-[4px] border-t-transparent border-b-transparent" style={{ borderLeftColor: RELATION_COLORS[r.key] }} />
+              {/* 两列：教师多一个「成员」，一列排下来图例最后一行会被挤出侧栏 */}
+              <div className="grid grid-cols-2 gap-x-1.5 gap-y-1.5">
+                {RELATION_ITEMS.map(r => (
+                  <div key={r.key} className="flex min-w-0 items-center gap-1.5">
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <div className="w-3 h-[2px]" style={{ backgroundColor: RELATION_COLORS[r.key] }} />
+                      <div className="w-0 h-0 border-t-[3px] border-b-[3px] border-l-[4px] border-t-transparent border-b-transparent" style={{ borderLeftColor: RELATION_COLORS[r.key] }} />
+                    </div>
+                    <span className="truncate text-[0.6875rem] text-gray-600 leading-tight">{lbl(r.zh, r.en)}</span>
                   </div>
-                  <span className="text-[0.6875rem] text-gray-600 leading-tight">{lbl(r.zh, r.en)}</span>
-                </div>
-              ))}
-              <div className="h-px bg-gray-300 dark:bg-gray-700 my-1" />
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={toggleLegendMore}
+                aria-expanded={legendMore}
+                className="flex min-h-[28px] w-full items-center gap-1 rounded-lg text-[0.6875rem] text-slate-500 transition-colors hover:text-[#000080] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 dark:text-slate-400"
+              >
+                <RemixIcon name={legendMore ? 'arrow-up-s-line' : 'arrow-down-s-line'} size={13} />
+                {lbl('线型和标记', 'Lines & badges')}
+              </button>
+              {legendMore && (<>
               <SectionLabel text={lbl('线型', 'lines')} />
               {LINE_ITEMS.map((l, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -344,12 +396,13 @@ const Sidebar: React.FC<SidebarProps> = ({
               ))}
               <div className="h-px bg-gray-300 dark:bg-gray-700 my-1" />
               <SectionLabel text={lbl('标记', 'badges')} />
-              {BADGE_ITEMS.map((b, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm border-2 flex-shrink-0" style={{ borderColor: b.borderColor, backgroundColor: b.bgColor }} />
+              {BADGE_ITEMS.map(b => (
+                <div key={b.key} className="flex items-center gap-2">
+                  <span className="flex w-5 flex-shrink-0 justify-center"><BadgeSwatch kind={b.key} /></span>
                   <span className="text-[0.6875rem] text-gray-600 leading-tight">{lbl(b.zh, b.en)}</span>
                 </div>
               ))}
+              </>)}
             </div>
           )}
         </div>

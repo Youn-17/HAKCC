@@ -12,7 +12,7 @@ import { X, Send, Loader2, CornerUpLeft, Sparkles, MessageCircle } from 'lucide-
 import { Language, Note } from '../types';
 import { noteConversations, type NoteConversationMessage } from '../services/apiClient';
 import MarkdownMessage from './chatMarkdown';
-import { detectDrawIntent } from './drawIntent';
+import { chooseDrawing, lastReplyFrom, previousDrawingFrom } from './drawRouting';
 import DrawingProgress from './DrawingProgress';
 
 interface Props {
@@ -35,7 +35,7 @@ const AiDialogueNote: React.FC<Props> = ({ note, lang, onClose, onInsertToSource
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   /** 这一轮是在画图（「画一张……」）：等待时放绘图动画 */
-  const [drawing, setDrawing] = useState<{ prompt: string; startedAt: number } | null>(null);
+  const [drawing, setDrawing] = useState<{ prompt: string; startedAt: number; mode?: 'new' | 'edit' } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -84,8 +84,8 @@ const AiDialogueNote: React.FC<Props> = ({ note, lang, onClose, onInsertToSource
     setInput('');
     setSending(true);
     setError(null);
-    const wantsPicture = Boolean(detectDrawIntent(text));
-    if (wantsPicture) setDrawing({ prompt: text, startedAt: Date.now() });
+    const previous = previousDrawingFrom(messages);
+    const lastReply = lastReplyFrom(messages);
     // 先把自己那句放上去：等一轮网络往返才看到自己说的话，会让人以为没发出去
     const optimistic: NoteConversationMessage = {
       id: `tmp-${Date.now()}`, threadId, senderId: null, senderKind: 'user',
@@ -93,9 +93,15 @@ const AiDialogueNote: React.FC<Props> = ({ note, lang, onClose, onInsertToSource
     } as NoteConversationMessage;
     setMessages(prev => [...prev, optimistic]);
     try {
+      // 要不要画、改上一张还是新画：服务端的 Jev 判断（drawRouting.ts），和图不沾边的句子不问
+      const choice = await chooseDrawing(text, { previous, lastReply });
+      const wantsPicture = choice.draw;
+      if (wantsPicture) setDrawing({ prompt: text, startedAt: Date.now(), mode: choice.mode });
       if (wantsPicture) {
-        // 「画一张……」直接出图，不经对话模型；用哪个出图服务按课程 AI 设置里的「笔记配图」（默认 DMX）
-        await noteConversations.generateImage(threadId, { prompt: text });
+        // 要画就直接出图，不经对话模型；用哪个出图服务按课程 AI 设置里的「笔记配图」（默认 DMX）
+        await noteConversations.generateImage(threadId, {
+          prompt: text, mode: choice.mode, form: choice.form, ...(choice.route ? { route: choice.route } : {}),
+        });
       } else {
         await noteConversations.sendAIMessage(threadId, {
           content: text, provider_id: ai.providerId, model: ai.model,
@@ -111,7 +117,7 @@ const AiDialogueNote: React.FC<Props> = ({ note, lang, onClose, onInsertToSource
       setSending(false);
       setDrawing(null);
     }
-  }, [input, threadId, sending, ai, zh]);
+  }, [input, threadId, sending, ai, zh, messages]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -178,7 +184,7 @@ const AiDialogueNote: React.FC<Props> = ({ note, lang, onClose, onInsertToSource
             <div className="flex gap-2.5">
               <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#000080] text-[9px] font-semibold text-white dark:bg-[#93AAFD] dark:text-stone-900">AI</div>
               {drawing ? (
-                <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} />
+                <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} mode={drawing.mode} />
               ) : (
                 <div className="rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 dark:border-stone-800 dark:bg-stone-900">
                   <Loader2 size={14} className="animate-spin text-stone-400" />

@@ -115,3 +115,16 @@ export function plainTextToNoteHtml(text?: string | null): string {
     .map(paragraph => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
     .join('');
 }
+
+/**
+ * 笔记的时间，到分钟：卡片署名行和右侧详情栏同一个格式（详情栏原来带秒）。
+ * 年份始终显示 —— 课程跨学期复用同一个空间，只看月日会把去年的笔记误认成本周的。
+ */
+export function formatNoteStamp(note: { createdAt?: string; date?: string }): string {
+  const iso = note.createdAt;
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return note.date ? note.date.split(' ')[0] : '';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`;
+}

@@ -13,7 +13,7 @@ import { aiFetch } from './aiGateway';
  * single configured model.
  */
 
-import { TASK_TIERS, preferredNativeModel } from './modelCatalog';
+import { DMX_IMAGE_MIN_SIZE, TASK_TIERS, preferredNativeModel } from './modelCatalog';
 import { freeCapacity } from './aiGateway';
 
 export type TaskKind = 'agent' | 'chat' | 'fast' | 'vision' | 'image_gen' | 'embedding' | 'search';
@@ -223,7 +223,8 @@ export async function generateImage(params: {
     const started = Date.now();
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 90_000);
+      // 60 秒还没画完就换下一个：Seedream 约 20 秒，等到 90 秒再放弃的话，学生要干等两分钟才轮到 MiniMax
+      const timer = setTimeout(() => controller.abort(), 60_000);
       const resp = await aiFetch(endpoint, {
         method: 'POST',
         headers: {
@@ -234,7 +235,7 @@ export async function generateImage(params: {
           model,
           prompt: params.prompt.slice(0, 2000),
           n: 1,
-          size,
+          size: DMX_IMAGE_MIN_SIZE[model] ?? size,
         }),
         signal: controller.signal,
       });

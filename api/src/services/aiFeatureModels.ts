@@ -19,6 +19,7 @@ export type AiFeatureId =
   | 'note_feedback'
   | 'prompt_refine'
   | 'note_image'
+  | 'image_plan'
   | 'workspace_agent'
   | 'discussion_digest'
   | 'view_topics'
@@ -151,15 +152,26 @@ export const AI_FEATURES: readonly AiFeatureDef[] = [
       en: 'A "draw …" request in any AI chat, the "draw" button in the AI partner, and any assistant calling its image tool.',
     },
   },
+  {
+    // 2026-10-09：画之前先读对话、对话记忆和笔记，弄清楚要画什么（drawPlanner）
+    id: 'image_plan', group: 'note', who: 'both', kind: 'chat', dmxTier: 'fast',
+    realtime: true, selectable: true, failover: true, preferFastModel: true,
+    order: REALTIME_PROVIDER_ORDER,
+    label: { zh: '画图：理解要求', en: 'Drawing: understand the request' },
+    desc: {
+      zh: '画图之前先读这段对话、对话记忆、正在看的笔记或文档，把要求写成具体的画面描述；关系图、思维导图、时间线写成结构，由平台画出来，字不会错。用快的对话模型。',
+      en: 'Before drawing, reads the conversation, its memory and the note or document in view, and turns the request into a concrete picture description. Relationship maps, mind maps and timelines become a structure the platform draws itself, so the text is exact. Uses a fast chat model.',
+    },
+  },
   // ── 知识空间与讨论 ──
   {
     id: 'workspace_agent', group: 'space', who: 'both', kind: 'chat', dmxTier: 'fast',
     realtime: true, selectable: true, failover: true,
     order: REALTIME_PROVIDER_ORDER,
-    label: { zh: '知识空间 AI 助手', en: 'Workspace AI assistant' },
+    label: { zh: '知识空间智能体', en: 'Knowledge space agent' },
     desc: {
-      zh: '知识空间顶部「助手」打开的侧栏，读整个空间或选中的笔记来回答。侧栏里手选了模型就用手选的，选「默认」时用这一行。',
-      en: 'The side panel opened from "Assistant" in a knowledge space. A model picked in the panel wins; "Default" uses this row.',
+      zh: '知识空间顶部「智能体」打开的侧栏，读整个空间或选中的笔记来回答。侧栏里手选了模型就用手选的，选「默认」时用这一行。',
+      en: 'The side panel opened from "Agent" in a knowledge space. A model picked in the panel wins; "Default" uses this row.',
     },
   },
   {
@@ -168,7 +180,7 @@ export const AI_FEATURES: readonly AiFeatureDef[] = [
     order: NATIVE_FIRST_PROVIDER_ORDER,
     label: { zh: '讨论速览', en: 'Discussion digest' },
     desc: {
-      zh: '助手侧栏里的「讨论速览」：按当前 View、本组或选中的笔记列出有哪些观点和问题，只列不下结论。',
+      zh: '智能体侧栏里的「讨论速览」：按当前 View、本组或选中的笔记列出有哪些观点和问题，只列不下结论。',
       en: 'Lists the ideas and questions in a view, a group or a selection, without drawing conclusions.',
     },
   },

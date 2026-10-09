@@ -246,8 +246,8 @@ describe('各入口的模型菜单：知识空间助手、学生首页 AI 对话
     await mount();
 
     expect(Array.from(host!.querySelectorAll('h4')).map(h => h.textContent))
-      .toEqual(expect.arrayContaining(['笔记 AI 助手', '知识空间助手', '学生首页的「AI 对话」']));
-    await click(radioIn(sectionOf('知识空间助手'), '只显示勾选的'));
+      .toEqual(expect.arrayContaining(['笔记 AI 助手', '知识空间智能体', '学生首页的「AI 对话」']));
+    await click(radioIn(sectionOf('知识空间智能体'), '只显示勾选的'));
     expect(api.update).toHaveBeenLastCalledWith('course-1', {
       picker_models: { workspace_agent: CHAT.map(r => ({ provider_id: r.providerId, model: r.model })) },
     });
@@ -258,7 +258,7 @@ describe('各入口的模型菜单：知识空间助手、学生首页 AI 对话
     await mount();
     const titles = Array.from(host!.querySelectorAll('h4')).map(h => h.textContent);
     expect(titles).toContain('笔记 AI 助手');
-    expect(titles).not.toContain('知识空间助手');
+    expect(titles).not.toContain('知识空间智能体');
   });
 });
 

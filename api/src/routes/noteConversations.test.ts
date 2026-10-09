@@ -115,6 +115,7 @@ const h = vi.hoisted(() => {
   return {
     state,
     SECRET,
+    MESSAGES,
     from,
     storage,
     ensureSpaceAccess: vi.fn(async (_spaceId: string, user: { id: string }) => ({ standing: STANDING[user.id] ?? 'member' })),
@@ -134,7 +135,9 @@ const h = vi.hoisted(() => {
       toolContext: {},
       overrelianceDetected: false,
     })),
-    generateNoteImage: vi.fn(async () => ({ ok: true, url: 'https://img.test/a.png', model: 'img-model', provider: 'img' })),
+    generateNoteImage: vi.fn(async (..._args: unknown[]) => ({ ok: true, url: 'https://img.test/a.png', model: 'img-model', provider: 'img' })),
+    // 画之前的规划：默认「规划不可用」，退回用原话画
+    planDrawing: vi.fn(async (..._args: unknown[]) => ({ plan: null, error: 'no planner in this test' }) as unknown),
   };
 });
 
@@ -178,6 +181,10 @@ vi.mock('../services/tavilySearch', () => ({
   formatTavilyResultsForPrompt: () => '',
 }));
 vi.mock('../services/noteImage', () => ({ generateNoteImage: h.generateNoteImage }));
+vi.mock('../services/drawPlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/drawPlanner')>()),
+  planDrawing: h.planDrawing,
+}));
 
 import noteConversationsRouter from './noteConversations';
 import { ApiError, errorHandler } from '../middleware/errorHandler';
@@ -211,6 +218,7 @@ beforeEach(() => {
   h.runAgentLoopStream.mockClear();
   h.buildAgentContext.mockClear();
   h.generateNoteImage.mockClear();
+  h.planDrawing.mockClear();
 });
 
 async function call(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown) {
@@ -355,5 +363,54 @@ describe('绑定小组的空间只对本组开放：笔记对话的每条路由�
     // 线程按它所在的空间判定，不是只看课程
     const threadRead = src.slice(src.indexOf('async function requireThreadRead'), src.indexOf('async function requireThreadWrite'));
     expect(threadRead).toMatch(/requireNoteAccess\(\{[^}]*thread\.space_id/);
+  });
+});
+
+describe('笔记 AI 助手里画图：先读这条笔记和这段对话（2026-10-09 用户：画出来词不达意）', () => {
+  it('规划拿到这条笔记的正文和这段对话；画的是规划写的描述，回给前端的有说明', async () => {
+    h.planDrawing.mockResolvedValueOnce({
+      plan: { kind: 'picture', prompt: 'A small group keeping its draft private', caption: '根据这条笔记，画了一个小组先在组内讨论草稿的场景。' },
+    });
+    const res = await call('POST', '/note-conversations/thread-b/image', { prompt: '给这条笔记画张示意图' });
+    expect(res.status).toBe(201);
+    const [courseId, request, context] = h.planDrawing.mock.calls[0] as [string, string, { background: string; history: unknown[] }];
+    expect([courseId, request]).toEqual(['course-1', '给这条笔记画张示意图']);
+    expect(context.background).toContain('第二组的笔记');
+    expect(context.background).toContain(h.SECRET);
+    expect(context.history).toContainEqual({ role: 'user', content: '帮我看看这条笔记' });
+    expect(h.generateNoteImage.mock.calls[0][1]).toBe('A small group keeping its draft private');
+    expect(res.body.caption).toBe('根据这条笔记，画了一个小组先在组内讨论草稿的场景。');
+    const saved = h.state.inserts.filter(i => i.table === 'note_conversation_messages').map(i => i.payload as Record<string, any>);
+    expect(saved.at(-1)!.content).toContain('根据这条笔记，画了一个小组先在组内讨论草稿的场景。');
+    expect(saved.at(-1)!.ai_metadata).toMatchObject({ direct_image: true, drawing: { kind: 'picture', planned: true } });
+  });
+
+  it('前端判断是改上一张（mode=edit）：从这段对话里找出那张图交给规划；判断经过只留认识的字段记进元数据', async () => {
+    const original = h.MESSAGES.splice(0, h.MESSAGES.length,
+      // 取法是新的在前
+      { id: 'm-4', thread_id: 'thread-b', sender_id: null, sender_kind: 'assistant', content: '![猫](https://img.test/cat.png)\n\n画了一只猫。', created_at: '2026-09-28T00:04:00Z', ai_metadata: { direct_image: true, drawing: { kind: 'picture', caption: '画了一只猫。', prompt: 'A cat reading' } } } as never,
+      { id: 'm-3', thread_id: 'thread-b', sender_id: 'student-a', sender_kind: 'user', content: '画一只猫', created_at: '2026-09-28T00:03:00Z' } as never,
+    );
+    try {
+      const res = await call('POST', '/note-conversations/thread-b/image', {
+        prompt: '颜色淡一点', mode: 'edit', form: 'picture', route: { decided_by: 'jev', p_draw: 0.99, junk: '<b>x</b>' },
+      });
+      expect(res.status).toBe(201);
+      const context = h.planDrawing.mock.calls[0][2] as Record<string, unknown>;
+      expect(context.previous).toEqual({ request: '画一只猫', caption: '画了一只猫。', kind: 'picture', prompt: 'A cat reading' });
+      expect(context.form).toBe('picture');
+      // 规划不可用：在原来的描述后面加上要改的地方
+      expect(h.generateNoteImage.mock.calls[0][1]).toBe('A cat reading. Change requested by the learner: 颜色淡一点');
+      const saved = h.state.inserts.filter(i => i.table === 'note_conversation_messages').map(i => i.payload as Record<string, any>);
+      expect(saved.at(-1)!.ai_metadata.drawing).toMatchObject({ mode: 'edit', route: { decided_by: 'jev', p_draw: 0.99, from_client: true } });
+      expect(saved.at(-1)!.ai_metadata.drawing.route).not.toHaveProperty('junk');
+
+      // 没说是改图：不去找上一张
+      h.planDrawing.mockClear();
+      await call('POST', '/note-conversations/thread-b/image', { prompt: '再画一只狗' });
+      expect(h.planDrawing.mock.calls[0][2]).not.toHaveProperty('previous');
+    } finally {
+      h.MESSAGES.splice(0, h.MESSAGES.length, ...original);
+    }
   });
 });

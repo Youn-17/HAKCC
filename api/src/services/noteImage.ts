@@ -17,7 +17,7 @@ export type NoteImageResult =
 /**
  * 先打哪一家：课程 AI 设置里给「生成图片」指定的；没指定就先 DMX（平台负责人 2026-09-29 定的：
  * DMX 的 key 专门用来画图），服务器上设了 AI_IMAGE_PREFER=minimax 才默认先 MiniMax。另一家留作失败时的兜底。
- * 实测 DMX qwen-image-plus 6.2–6.8s，MiniMax image-01 约 35s。规则本身在 aiFeatureModels.featureChoice。
+ * 2026-10-09 实测 DMX 豆包 Seedream 4.5 约 20s（qwen-image-plus 已下架），MiniMax image-01 约 24–35s。规则本身在 aiFeatureModels.featureChoice。
  */
 
 export async function generateNoteImage(

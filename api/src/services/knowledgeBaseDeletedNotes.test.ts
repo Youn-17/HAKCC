@@ -591,7 +591,7 @@ describe('防回归：检索函数和删除接口都认 deleted_at', () => {
     expect(sql('067_kb_exclude_deleted_notes.sql')).toMatch(/delete from public\.kb_documents d\s+using public\.notes n\s+where n\.id = d\.note_id\s+and n\.deleted_at is not null/);
   });
 
-  it('API 里软删除笔记只有 DELETE /notes/:id 一处，它在写 deleted_at 之后清知识库', () => {
+  it('笔记软删除和协作文档初始化失败后的补偿都清理知识库', () => {
     const apiSrc = resolve(__dirname, '..');
     // 这几处也写 deleted_at，但删的不是笔记，不进知识库，不受这条约束：
     //   routes/noteConversations.ts —— 学生删自己的 AI 对话（071，DELETE /note-conversations/:id，行和消息留给研究导出）
@@ -599,12 +599,15 @@ describe('防回归：检索函数和删除接口都认 deleted_at', () => {
     const writers = (readdirSync(apiSrc, { recursive: true }) as string[])
       .filter(file => file.endsWith('.ts') && !file.endsWith('.test.ts') && !NOT_NOTES.includes(file))
       .filter(file => /deleted_at:\s*new Date/.test(readFileSync(resolve(apiSrc, file), 'utf-8')));
-    expect(writers).toEqual(['routes/notes.ts']);
+    expect(writers.sort()).toEqual(['routes/collaborativeDocuments.ts', 'routes/notes.ts']);
 
     const src = readFileSync(resolve(apiSrc, 'routes/notes.ts'), 'utf-8');
     const handler = src.slice(src.indexOf("router.delete('/notes/:id'"));
     const route = handler.slice(0, handler.indexOf('\n});'));
     expect(route).toContain('dropNoteFromKb(noteId)');
     expect(route.indexOf('deleted_at: new Date')).toBeLessThan(route.indexOf('dropNoteFromKb(noteId)'));
+    const compensation = readFileSync(resolve(apiSrc, 'routes/collaborativeDocuments.ts'), 'utf-8');
+    expect(compensation.indexOf('deleted_at: new Date')).toBeLessThan(compensation.indexOf('dropNoteFromKb(note.id)'));
+    expect(compensation).toContain('else await dropNoteFromKb(note.id)');
   });
 });

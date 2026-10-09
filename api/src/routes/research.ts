@@ -19,6 +19,7 @@ import {
   DATASET_KEYS,
   DATASET_COLUMNS,
   DATASET_LABELS,
+  NOT_PER_PERSON,
   type DatasetKey,
   type ExportFilters,
   resolveExportScope,
@@ -28,6 +29,7 @@ import {
   buildReadme,
 } from '../services/researchExport';
 import { deriveAbbreviation, resolveParticipantCodes } from '../services/participantCode';
+import { isUuid } from '../services/eventPayload';
 import { createZip } from '../services/zipWriter';
 import rateLimit from 'express-rate-limit';
 import { rateLimitKey } from '../middleware/rateLimitKey';
@@ -1699,7 +1701,14 @@ function parseFilters(body: Record<string, unknown>): ExportFilters {
     includeDeleted: body.include_deleted !== false,
     includeNames: body.include_names === true,
     tzOffsetHours: typeof body.tz_offset_hours === 'number' ? body.tz_offset_hours : 8,
+    participantUserId: typeof body.participant_id === 'string' && isUuid(body.participant_id) ? body.participant_id : undefined,
   };
+}
+
+/** 文件名的前缀：按人导出时用这个人的编号，平常用课程缩写 */
+function filePrefix(scope: { abbr: string | null; filters: ExportFilters; identities: Map<string, { code: string }> }): string {
+  const personCode = scope.filters.participantUserId ? scope.identities.get(scope.filters.participantUserId)?.code : undefined;
+  return personCode || scope.abbr || 'course';
 }
 
 function parseDatasets(value: unknown): DatasetKey[] {
@@ -1749,11 +1758,12 @@ router.get(
     const courseId = String(req.params.courseId);
     await ensureCourseInstructor(courseId, req.user!);
 
-    const [courseRes, spacesRes, groupsRes, membersRes] = await Promise.all([
+    const [courseRes, spacesRes, groupsRes, membersRes, codes] = await Promise.all([
       supabase.from('courses').select('title, english_name, code_abbr').eq('id', courseId).single(),
       supabase.from('spaces').select('id, title, group_id').eq('course_id', courseId).order('created_at'),
       supabase.from('groups').select('id, name, ai_feedback_condition').eq('course_id', courseId).order('created_at'),
       supabase.from('group_members').select('group_id, user_id'),
+      resolveParticipantCodes(courseId),
     ]);
 
     const spaces = spacesRes.data ?? [];
@@ -1761,10 +1771,25 @@ router.get(
     const groupIds = new Set((groupsRes.data ?? []).map((g) => g.id as string));
 
     const memberCount = new Map<string, number>();
+    const groupOfUser = new Map<string, string>();
     for (const row of membersRes.data ?? []) {
       const gid = row.group_id as string;
-      if (groupIds.has(gid)) memberCount.set(gid, (memberCount.get(gid) ?? 0) + 1);
+      if (!groupIds.has(gid)) continue;
+      memberCount.set(gid, (memberCount.get(gid) ?? 0) + 1);
+      if (!groupOfUser.has(row.user_id as string)) groupOfUser.set(row.user_id as string, gid);
     }
+    const groupName = new Map((groupsRes.data ?? []).map((g) => [g.id as string, g.name as string]));
+    // 按人导出的名单（2026-10-09）：有编号的成员，学生在前，各自按编号排
+    const people = Array.from(codes.identities.values())
+      .filter((p) => p.code)
+      .map((p) => ({
+        userId: p.userId,
+        code: p.code,
+        name: p.name,
+        role: p.isTeacher ? 'teacher' as const : 'student' as const,
+        groupName: groupOfUser.has(p.userId) ? groupName.get(groupOfUser.get(p.userId)!) ?? null : null,
+      }))
+      .sort((a, b) => (a.role === b.role ? a.code.localeCompare(b.code) : a.role === 'student' ? -1 : 1));
 
     // Views are string tags on notes.views — enumerate the ones holding data.
     const viewCounts = new Map<string, number>();
@@ -1804,6 +1829,8 @@ router.get(
         .map(([id, noteCount]) => ({ id, noteCount }))
         .sort((a, b) => b.noteCount - a.noteCount),
       dateRange: { earliest, latest },
+      people,
+      notPerPerson: NOT_PER_PERSON,
       datasets: DATASET_KEYS.map((key) => ({
         key,
         ...DATASET_LABELS[key],
@@ -1886,7 +1913,7 @@ router.post(
       const key = selected[0];
       const columns = visibleColumns(key, { includeNames: filters.includeNames, columns: columnFilter });
       const csv = datasetToCsv(key, built.datasets[key].rows, columns, headerLang);
-      const name = `${scope.abbr ?? 'course'}_${key}_${stamp}.csv`;
+      const name = `${filePrefix(scope)}_${key}_${stamp}.csv`;
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
       res.send(csv);
@@ -1901,7 +1928,7 @@ router.post(
 
     const zip = createZip(files);
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${scope.abbr ?? 'course'}_export_${stamp}.zip"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${filePrefix(scope)}_export_${stamp}.zip"`);
     res.setHeader('Content-Length', String(zip.length));
     res.send(zip);
   },

@@ -120,7 +120,7 @@ import KbSourceCards, { parseKbSources } from './KbSourceCards';
 import { applyToolEvent, stepsFromMetadata } from './agentProcessSteps';
 import type { ToolCallInfo } from './AgentToolCallDisplay';
 import { getAnswerLength } from './answerLengthPref';
-import { detectDrawIntent } from './drawIntent';
+import { chooseDrawing, lastReplyFrom, previousDrawingFrom, type DrawChoice } from './drawRouting';
 import {
   formatThreadTime,
   nextThreadAfterDelete,
@@ -499,6 +499,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   // 按 lg 断点只渲染一份。
   const aiWasOpenRef = useRef(false);
   const sendingRef = useRef(false);
+  /** 发送前问服务端「这句要不要画」的那几百毫秒：别让回车再发一次 */
+  const routingRef = useRef(false);
   /** 一轮问答开始、结束各加一。拉历史的请求发出后这个数变了，拉到的就可能早于那一轮 */
   const aiTurnRef = useRef(0);
   /** 一轮问答途中有拉到的历史没放进面板，这一轮结束后要重拉 */
@@ -559,7 +561,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   // 默认收起：撰写区要宽。触发自动反馈或学生主动点「AI 伙伴」时才展开。
   const [aiOpen, setAiOpen] = useState(true);
   /** 正在画的那张图（学生说「画一张……」或点了画图按钮）：对话里放绘图动画 */
-  const [drawing, setDrawing] = useState<{ prompt: string; startedAt: number } | null>(null);
+  const [drawing, setDrawing] = useState<{ prompt: string; startedAt: number; mode?: 'new' | 'edit' } | null>(null);
   /**
    * 「原笔记」栏：和 AI 助手占左侧同一个位置。在别人的笔记上 Build-on 时默认展开，
    * 写的时候不用切回画布就能对着原文回应；看完可以收起。AI 助手打开时让位给它。
@@ -2580,12 +2582,24 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const sendAiMessage = async () => {
     const prompt = aiInput.trim();
     // 挂了附件也要写一句问题才发（chatAttachments.ts）
-    if (!prompt || sending) return;
-    // 「画一张……」：直接出图（课程设置里「生成图片」那一行，默认 DMX），不经对话模型。带了附件的照常对话
-    if (aiAttachments.length === 0 && detectDrawIntent(prompt)) {
-      setPromptBeforeRefine(null);
-      await generateImageDirect(prompt);
-      return;
+    if (!prompt || sending || routingRef.current) return;
+    // 要画图（新画一张或改上一张）就直接出图（课程设置里「生成图片」那一行，默认 DMX），不经对话模型。
+    // 要不要画由服务端的 Jev 判断（drawRouting.ts），和图不沾边的句子不问。带了附件的照常对话
+    if (aiAttachments.length === 0) {
+      const live = captureAiSession();
+      routingRef.current = true;
+      let choice: DrawChoice;
+      try {
+        choice = await chooseDrawing(prompt, { previous: previousDrawingFrom(messages), lastReply: lastReplyFrom(messages) });
+      } finally {
+        routingRef.current = false;
+      }
+      if (!live()) return;
+      if (choice.draw) {
+        setPromptBeforeRefine(null);
+        await generateImageDirect(prompt, choice);
+        return;
+      }
     }
     setAiInput('');
     setPromptBeforeRefine(null);
@@ -2598,9 +2612,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     if (index < 0) return;
     const previousUser = [...messages.slice(0, index)].reverse().find(message => message.senderKind === 'user');
     if (!previousUser?.content?.trim()) return;
-    // 上一轮是画图：重新画一张，而不是把「画一张……」拿去问对话模型
-    if (detectDrawIntent(previousUser.content)) {
-      await generateImageDirect(previousUser.content);
+    // 这条回复是一张图：按同一句话重新画一张，而不是把它拿去问对话模型
+    if (messages[index].aiMetadata?.direct_image) {
+      await generateImageDirect(previousUser.content, { draw: true, mode: 'new', form: null });
       return;
     }
     await runAiTurn(previousUser.content, { restoreInputOnError: false });
@@ -2747,7 +2761,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
    * 其余全是 ReAct 循环里模型自己的推理——学生已经说清楚要画什么了，
    * 那些推理是白花的时间。仍然写进对话记录，研究数据不因走快路而缺一条。
    */
-  const generateImageDirect = async (promptOverride?: string) => {
+  const generateImageDirect = async (promptOverride?: string, decided?: DrawChoice) => {
     const prompt = (promptOverride ?? aiInput).trim();
     if (!prompt) {
       setAiInput(lang === 'zh'
@@ -2760,7 +2774,10 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     const live = captureAiSession();
     beginAiTurn();
     setAiError(null);
-    setDrawing({ prompt, startedAt: Date.now() });
+    // 按「画图」按钮进来的：一定画，先问一下是改上一张还是新画、画成哪种
+    const choice = decided ?? await chooseDrawing(prompt, { previous: previousDrawingFrom(messages), lastReply: lastReplyFrom(messages), forced: true });
+    if (!live()) return;
+    setDrawing({ prompt, startedAt: Date.now(), mode: choice.mode });
     const tempUserId = `local-user-${Date.now()}`;
     setMessages(prev => [...prev, {
       id: tempUserId,
@@ -2776,7 +2793,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     try {
       const thread = await ensureAiThread();
       if (live()) rememberQuestion(thread.id, prompt);
-      const { userMessage, assistantMessage } = await noteConversations.generateImage(thread.id, { prompt });
+      const { userMessage, assistantMessage } = await noteConversations.generateImage(thread.id, {
+        prompt, mode: choice.mode, form: choice.form, ...(choice.route ? { route: choice.route } : {}),
+      });
       if (!live()) return;
       // 新线程的历史可能已经把这两条带回来了，按 id 去掉再接上
       setMessages(prev => [
@@ -3708,7 +3727,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
           })}
           {sending && (drawing ? (
             <div className="flex justify-start">
-              <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} />
+              <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} mode={drawing.mode} />
             </div>
           ) : (
             // 提问发出去、第一条状态还没回来的那几百毫秒：先放一个「正在思考」，状态一到由上面那条临时消息接手

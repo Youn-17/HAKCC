@@ -24,7 +24,6 @@ const AssistantWelcome: React.FC<Props> = ({ scope, lang, onChoose, disabled }) 
   return (
     <div className="assistant-welcome">
       <span className="assistant-welcome-icon" aria-hidden="true"><RemixIcon name={note ? 'chat-quote-line' : 'node-tree'} size={26} /></span>
-      <p className="assistant-eyebrow">{note ? 'NOTE' : 'COMMUNITY'} · AI</p>
       <h3>{note ? (zh ? '让观点更进一步' : 'Take your idea further') : (zh ? '一起推进社区的知识' : 'Advance knowledge together')}</h3>
       <p className="assistant-welcome-description">{note ? (zh ? '围绕当前 Note，检视证据、发现缺口、完善解释。' : 'Examine evidence, notice gaps, and improve your explanation in this Note.') : (zh ? '连接公共观点，发现未解问题，探索新的综合方向。' : 'Connect public ideas, find open questions, and explore new directions.')}</p>
       <div className="assistant-suggestions">

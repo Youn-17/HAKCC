@@ -91,6 +91,7 @@ export function withMdVersion(
 /**
  * 旧客户端经 PUT 发来的整块 metadata：按键合并。mdVersions 只由服务端记，客户端带来的不要，
  * 否则一块打开阅读器时的旧 metadata 就能把别人后来记下的版本冲掉。
+ * collaborative_document 同样由服务端拥有，客户端不能用整块 metadata 修改正文的存储归属。
  */
 export function mergeClientMetadata(
   current: Record<string, unknown>,
@@ -99,6 +100,9 @@ export function mergeClientMetadata(
   const next = { ...current, ...patch };
   if ('mdVersions' in current) next.mdVersions = current.mdVersions;
   else delete next.mdVersions;
+  // The collaborative-body owner is server-authored and cannot be forged or removed by old clients.
+  if ('collaborative_document' in current) next.collaborative_document = current.collaborative_document;
+  else delete next.collaborative_document;
   return next;
 }
 

@@ -4,9 +4,15 @@
 
 [Visit the platform](https://ideaweave.tech/) · [简体中文](README.zh-CN.md) · [System guide](write/SYSTEM_OVERVIEW.en.md) · [Getting started](GETTING_STARTED.md) · [MIT License](LICENSE)
 
-Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Public package: **v0.5.0**.
+Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Public package: **v0.6.0**.
 
-## New in v0.5.0
+## New in v0.6.0
+
+Knowledge spaces add real-time shared documents with a Word-style ribbon, durable synchronization, version snapshots and basic Word export. The source also updates contextual drawing, canvas search, Build-on folding and Node 22 configuration.
+
+[Shared documents, setup and limits](write/UPDATES_v0.6.0.en.md) · [中文说明](write/UPDATES_v0.6.0.md)
+
+## Previous v0.5.0 update
 
 Knowledge-space and Note AI restore paginated conversation history, persist rolling memory of earlier turns, and retrieve relevant records owned by the current student in the current course. Model selection is retained with model-dependent history budgets. Personalization uses saved context; model weights are not trained.
 

@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
  * AI 回答写多长：简短 / 适中 / 详细。
  *
  * 档位只是比例（约 250 / 550 / 1000 字），实际字数由后端按问题难度再调，见 api/src/services/answerLength.ts。
- * 选择记在本机，笔记页 AI 和知识空间 AI 共用一份：在一处改了，另一处也跟着变。
+ * 选择记在本机，笔记页 AI、知识空间智能体和「AI 对话」共用一份：在一处改了，别处也跟着变。
  */
 
 export type AnswerLength = 'short' | 'medium' | 'long';

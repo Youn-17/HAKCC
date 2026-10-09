@@ -44,8 +44,8 @@ import {
 } from '../services/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from './ThemeToggle';
-import { LangSwitcher2, type Lang3 } from './LangSwitcher';
-import { readPublicLanguage } from '../utils/languagePreference';
+import { LangSwitcher2 } from './LangSwitcher';
+import { useLanguagePreference } from '../hooks/useLanguagePreference';
 import { useTraditionalChinese } from '../hooks/useTraditionalChinese';
 import { COURSE_TYPES, ScheduleSlotsEditor, estimateHours, inputClass, labelClass } from './courseSettings/scheduleShared';
 import TeachingLogPanel from './dashboard/TeachingLogPanel';
@@ -1705,7 +1705,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
   }, [location.state, currentRole]);
   // 概览三张图的真实数据。以前用的是组件里写死的默认值，谁看都一样。
   const { pulse, loading: pulseLoading } = useActivityPulse();
-  const [lang3, setLang3] = useState<Lang3>(() => readPublicLanguage());
+  const [lang3, setLang3] = useLanguagePreference();
   useTraditionalChinese(lang3 === 'zh-TW');
   const [courseList, setCourseList] = useState<Course[]>([]);
   const [coursesLoading, setCoursesLoading] = useState(true);
@@ -3254,7 +3254,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
           activeTab={activeTab}
           onTabChange={(tab) => setActiveTab(tab as typeof activeTab)}
           onLogout={logout}
-          onLangChange={v => { setLang3(v); setLang(v === 'en' ? 'en' : 'zh'); }}
+          onLangChange={setLang3}
           userName={user?.name}
           userAvatar={user?.avatar}
           pendingSessions={pendingSessionCount}

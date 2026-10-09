@@ -62,10 +62,18 @@ export const DMX_VISION_MODELS: ModelInfo[] = [
  * 虽然在 DMX 的模型目录里列着，实际调用全是 404，导致生图功能整个哑掉，
  * 学生只会看到「所有生图模型都在冷却中」。只留实测能出图的。
  */
+/**
+ * 2026-10-09 实测：DMX 已经没有 qwen-image-plus 的通道（503 No available channel），通义的新图像模型在
+ * /images/generations 上一律 404。豆包 Seedream 4.5 约 20 秒一张，最贴着描述画，图里的中文写得对（要求至少 2048×2048）；
+ * gpt-image-2 当天 90 秒超时，排第二。都不行时 noteImage 会换 MiniMax。
+ */
 export const DMX_IMAGE_MODELS: ModelInfo[] = [
-  { id: 'qwen-image-plus', label: '通义万相 Plus', note: '实测 8.3s，最快', fast: true },
-  { id: 'gpt-image-2',     label: 'GPT Image 2',  note: '实测 22.6s，质量高但慢' },
+  { id: 'doubao-seedream-4-5-251128', label: '豆包 Seedream 4.5', note: '实测 20s，最贴着描述画，中文字写得对', fast: true },
+  { id: 'gpt-image-2',     label: 'GPT Image 2',  note: '实测 22.6s，偶尔超时' },
 ];
+
+/** 有尺寸下限的生图模型：Seedream 4.5 至少 3,686,400 像素，给小了直接 400 */
+export const DMX_IMAGE_MIN_SIZE: Readonly<Record<string, string>> = { 'doubao-seedream-4-5-251128': '2048x2048' };
 
 /** MiniMax 自有 key 的生图型号（minimaxMedia.ts）。2026-09-06 实测 image-01 35s、image-01-live 27s。 */
 export const MINIMAX_IMAGE_MODELS: ModelInfo[] = [

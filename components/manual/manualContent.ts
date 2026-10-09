@@ -197,8 +197,8 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         kind: 'figure',
         src: '/manual/ui-canvas.jpg',
         cap: {
-          zh: '工作区。最上面一行是这一周的探究问题，后面滚动着这个视图正在讨论的几个主题，再后面是笔记数量；左边是工具栏，画布上的方框是老师画的分区。',
-          en: 'The workspace. The top strip shows this week\'s inquiry question, then the topics being discussed in this view rolling past, then the note counts; the toolbar is on the left, and the boxes on the canvas are areas your teacher drew.',
+          zh: '工作区。最上面一行以「讨论概况」开头：这一周的探究问题，后面滚动着这个视图正在讨论的几个主题，再后面是这个视图的笔记数和 Build-on 数。左边是工具栏，顶栏课程名后面是搜索笔记的框，画布上的方框是老师画的分区。',
+          en: 'The workspace. The top strip starts with "Overview": this week\'s inquiry question, then the topics being discussed in this view rolling past, then the number of notes and build-ons in this view. The toolbar is on the left, the note search box sits after the course name in the top bar, and the boxes on the canvas are areas your teacher drew.',
         },
       },
       {
@@ -230,6 +230,9 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           [{ zh: '平移画布', en: 'Pan' }, { zh: '在空白处按住鼠标拖动', en: 'Drag on empty space' }],
           [{ zh: '放大缩小', en: 'Zoom' }, { zh: '滚动鼠标滚轮。进课程时默认 60%，右下角显示当前比例', en: 'Scroll. The course opens at 60%, and the current zoom shows at the bottom right' }],
           [{ zh: '回到笔记所在的地方', en: 'Go back to the notes' }, { zh: '点右下角的「重置视图」，画面会回到当前视图里笔记所在的地方', en: 'Click "Reset view" at the bottom right to return to where the notes in the current view are' }],
+          [{ zh: '找一条笔记', en: 'Find a note' }, { zh: '在顶栏课程名后面的搜索框里输入标题、作者名或正文里的词，按「/」也能把光标放进去。没搜到的卡片变淡；点一条结果，画布移过去并打开它的详情。别的视图里的笔记列在后面，点它会切到那个视图', en: 'Type a title, an author\'s name or words from the text into the search box after the course name in the top bar, or press "/" to jump there. Cards that do not match fade; click a result and the canvas moves to it and opens its details. Notes in other views are listed after the rest; clicking one switches to that view' }],
+          [{ zh: '看谁接着写了', en: 'See who continued a note' }, { zh: '鼠标在有 Build-on 的卡片上停一下，旁边列出建立在它上面的笔记标题，收起的也列。点一条，画布移过去', en: 'Rest the mouse on a card that has build-ons and the titles of the notes built on it appear beside it, folded ones included. Click one and the canvas moves to it' }],
+          [{ zh: '收起或展开一枝', en: 'Fold or expand a branch' }, { zh: '点卡片左下角的小标签。收起后，建立在这条上的笔记（和再往下的）连同连线一起藏起来，标签上写「+数字」，是藏起来的条数；再点一下展开。右下角的「全部展开」一次打开所有收起的。收起、展开只影响你自己的画布，下次进来还是你上次的样子', en: 'Click the small tag at the bottom left of a card. Folding hides the notes built on it, and those further down, along with their lines; the tag then reads "+n", the number hidden. Click again to expand. "Expand all" at the bottom right opens every folded branch. Folding only changes your own view of the canvas, and it stays as you left it next time' }],
           [{ zh: '看一条笔记的详情', en: 'See a note\'s details' }, { zh: '单击卡片，右边打开详情面板', en: 'Click the card; the detail panel opens on the right' }],
           [{ zh: '打开整条笔记', en: 'Open the whole note' }, { zh: '双击卡片。笔记是独立页面，地址可以直接发给同学', en: 'Double-click the card. Each note has its own page, so you can share the link' }],
           [{ zh: '挪动卡片', en: 'Move a card' }, { zh: '按住卡片拖动。同一空间的成员都能挪动卡片，布局是大家共用的', en: 'Drag it. Anyone in the space can rearrange cards, since the layout is shared' }],
@@ -239,6 +242,11 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           [{ zh: '把两条已有的笔记连起来', en: 'Link two existing notes' }, { zh: '按住 Shift 选中这两条，点选择栏里的「关联」，选一种关系，再点「建立关联」。默认后写的那条建立在先写的那条上，点「对调」可以反过来', en: 'Shift-select the two notes, click "Link" in the selection bar, pick a relation and click "Link notes". The later note builds on the earlier one by default; click "Swap" to reverse it' }],
         ],
       },
+      {
+        kind: 'p',
+        zh: '一个视图里有 15 条以上笔记时，进来会先把旧的小分支收起来：整枝都比这个视图里最新的笔记早一周以上，最多 5 条，里面没有你写的、你还没看过的和标着火的。你点开过的不会再自动收起。被收起的笔记照样搜得到，从搜索、「我的笔记」、讨论主题点过去时会自动展开。你写了一条 Build-on，它接着的那条也会展开，新写的这条马上就在画布上。',
+        en: 'When a view has 15 notes or more, old small branches start out folded: the whole branch is more than a week older than the newest note in the view, has at most 5 notes, and contains nothing you wrote, nothing you have not opened and no flame. A branch you have opened is never folded again automatically. Folded notes still show up in search, and jumping to one from search, My notes or a discussion topic expands the way to it. When you write a build-on, the note it builds on expands too, so the new note appears right away.',
+      },
       { kind: 'h3', zh: '卡片上的信息', en: 'What a card shows' },
       {
         kind: 'list',
@@ -247,7 +255,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           '标题：卡片越高，显示的行数越多。',
           '底部：作者头像、姓名和发布时间。',
           '浅蓝底、名字旁有个「我」：你自己写的笔记。画布大了找不到时，点左侧工具栏的「我的笔记」：别人的卡片淡下去，顶上出现一条细栏，用左右箭头一条一条跳到自己的笔记，最新的在前；点 × 或按 Esc 退出。手机上在列表顶上点「我的」。',
-          '「已有 Build-on」：已经有人接着这条往下写了。',
+          '左下角的小标签：有几条笔记建立在这条上，点它收起或展开。写着「+数字」时这一枝已收起，数字是藏起来的条数；旁边有个红点，说明藏起来的里面有你还没看过的。',
           '红色的 `! 数字`：有几位同学对它提出了质疑。',
           '左上角闪动的小红点：老师给这条写了你还没看的评语。',
           '左上角红色的「New」：同学发的笔记，你还没打开过。双击打开、看上几秒，回到画布它就不再标 New；只是单击选中、在右侧详情面板里扫一眼，New 还会留着。每个人各算各的，同学看没看过不影响你。9 月 15 日以前发的笔记不标。',
@@ -259,7 +267,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           'Title: the taller the card, the more lines show.',
           'Bottom: the author\'s avatar and name, and when it was posted.',
           'A light-blue card with "Me" next to the name: a note you wrote. When the canvas is too big to find them, click "My notes" in the left toolbar: other cards fade, and a bar at the top lets you jump through your notes one by one with the arrows, newest first; click × or press Esc to leave. On a phone, tap "Mine" at the top of the list.',
-          '"Built on": someone has already continued from this note.',
+          'A small tag at the bottom left: how many notes are built on this one; click it to fold or expand. When it reads "+n" the branch is folded and n notes are hidden; a red dot beside it means some of them are new to you.',
           'A red `! n`: how many classmates have challenged it.',
           'A pulsing red dot at the top left: a teacher comment you have not read.',
           'A red "New" at the top left: a classmate\'s note you have not opened yet. Double-click to open it and read it for a few seconds; back on the canvas it no longer shows New. Just clicking it, or glancing at it in the detail panel, leaves the New in place. Everyone has their own, so what classmates have opened does not change yours. Notes posted before 15 September are not marked.',
@@ -270,8 +278,8 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '详情面板', en: 'The detail panel' },
       {
         kind: 'p',
-        zh: '单击卡片后，右边的详情面板显示正文、它连着的共同问题、改进轨迹（修订次数、收到和发出的 Build-on）、和它有关系的笔记，以及它收到的 AI 反馈。正文放在一个单独的框里，全文都在，长的在框里上下滚动着看，不用打开笔记。底部的按钮：「编辑」打开这条笔记，只在你自己的笔记上出现；「建立于此」「补证据」「综合」都是在它上面写一条 Build-on，第 5 节细说。',
-        en: 'Click a card and the detail panel on the right shows its text, the shared question it links to, its improvement trail (revisions, build-ons received and sent), related notes, and any AI feedback it received. The full text sits in a box of its own; scroll inside the box to read a long note without opening it. At the bottom, Edit opens the note and appears only on your own notes; Build-on, Evidence and Synthesize all start a build-on on it, as section 5 explains.',
+        zh: '单击卡片后，右边的详情面板显示正文、改进轨迹（修订次数、收到和发出的 Build-on，是零的不列）、和它有关系的笔记，以及它收到的 AI 反馈。写这条时的问题和现在的共同问题不一样时，会单独列出来；一样的就不重复。和它有关系的笔记点一下，画布移过去。正文放在一个单独的框里，全文都在，长的在框里上下滚动着看，不用打开笔记。底部的按钮：「编辑」打开这条笔记，只在你自己的笔记上出现；「建立于此」「补证据」「综合」都是在它上面写一条 Build-on，第 5 节细说。',
+        en: 'Click a card and the detail panel on the right shows its text, its improvement trail (revisions, build-ons received and sent; zeros are left out), related notes, and any AI feedback it received. If the note was written under a different shared question from the current one, that question is shown; if it is the same, it is not repeated. Click a related note and the canvas moves to it. The full text sits in a box of its own; scroll inside the box to read a long note without opening it. At the bottom, Edit opens the note and appears only on your own notes; Build-on, Evidence and Synthesize all start a build-on on it, as section 5 explains.',
       },
       { kind: 'h3', zh: '左边工具栏', en: 'The toolbar' },
       {
@@ -282,7 +290,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       {
         kind: 'figure',
         src: '/manual/ui-toolbar.jpg',
-        cap: { zh: '工具栏分创建、建构、社区三组，下面是图例和「退出」。', en: 'The toolbar has three groups, Create, Build and Community, with the legend and Exit below.' },
+        cap: { zh: '工具栏分创建、建构、社区三组，下面是图例和「退出」。图例列出六种关系的颜色；「线型和标记」默认收着，点开看连线的线型和卡片上各个标记的意思。', en: 'The toolbar has three groups, Create, Build and Community, with the legend and Exit below. The legend lists the colours of the six relations; "Lines & badges" starts folded; open it to see what the line styles and the marks on cards mean.' },
       },
       {
         kind: 'table',
@@ -293,7 +301,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           [{ zh: '', en: '' }, { zh: '附件', en: 'Attachment' }, { zh: '上传图片、文档、视频，单个文件最大 500 MB。PDF、Word 和 Markdown 可以在网页里直接读（第 9 节）', en: 'Upload images, documents and video, up to 500 MB each. PDF, Word and Markdown open in the browser (section 9)' }],
           [{ zh: '建构', en: 'Build' }, { zh: '探究', en: 'Inquiry' }, { zh: '打开「探究工具」：老师开了图灵测试时在这里进入，另外还有计算思维工具', en: 'Opens Inquiry tools: the Turing test when your teacher has opened one, and the computational thinking tool' }],
           [{ zh: '', en: '' }, { zh: '综合升华', en: 'Rise Above' }, { zh: '选几条笔记开一间讨论室，写一条更高一层的说法（第 8 节）', en: 'Open a discussion room on several notes and write a higher-level account (section 8)' }],
-          [{ zh: '', en: '' }, { zh: 'Scaffold', en: 'Scaffolds' }, { zh: '查看这门课的支架（第 4 节）', en: 'Browse the course scaffolds (section 4)' }],
+          [{ zh: '', en: '' }, { zh: '支架', en: 'Scaffolds' }, { zh: '查看这门课的支架（第 4 节）', en: 'Browse the course scaffolds (section 4)' }],
           [{ zh: '社区', en: 'Community' }, { zh: '我的笔记', en: 'My notes' }, { zh: '别人的卡片淡下去，用顶上细栏的左右箭头一条一条跳到自己写的笔记；再点一下、点 × 或按 Esc 退出', en: 'Fades other cards; the arrows in the bar at the top jump through the notes you wrote one by one. Click it again, click × or press Esc to leave' }],
           [{ zh: '', en: '' }, { zh: '视图', en: 'Views' }, { zh: '新建或切换画布', en: 'Create or switch canvases' }],
           [{ zh: '', en: '' }, { zh: 'Build-on 网络', en: 'Build-on Network' }, { zh: '全班的笔记怎么连在一起，你在其中哪里（第 10 节）', en: 'How the class\'s notes connect and where you are (section 10)' }],
@@ -305,8 +313,8 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '视图：分开的几块画布', en: 'Views: separate canvases' },
       {
         kind: 'p',
-        zh: '一门课可以有几块画布，叫视图，主画布叫 Welcome。点工具栏「视图」，在框里输入名字按回车，就新建一块空画布并跳进去；原来的画布上会多一张这个视图的卡片，点它就能跳过去。顶栏右侧写着 `VIEW` 的菜单也能切换视图。笔记在哪块画布上写，就留在哪块画布上。',
-        en: 'A course can have several canvases, called views; the main one is Welcome. Click Views in the toolbar, type a name and press Enter. A new empty canvas is created and you jump into it, and a card for it appears on the canvas you came from; click that card to jump across. The `VIEW` menu at the top right switches views too. Notes stay on the canvas they were written on.',
+        zh: '一门课可以有几块画布，叫视图，第一块叫 Welcome。点工具栏「视图」，在框里输入名字按回车，就新建一块空画布并跳进去；原来的画布上会多一张这个视图的卡片，点它就能跳过去。顶栏右侧写着「视图」的菜单也能切换。笔记在哪块画布上写，就留在哪块画布上。',
+        en: 'A course can have several canvases, called views; the first is called Welcome. Click Views in the toolbar, type a name and press Enter. A new empty canvas is created and you jump into it, and a card for it appears on the canvas you came from; click that card to jump across. The View menu at the top right switches views too. Notes stay on the canvas they were written on.',
       },
     ],
   },
@@ -502,8 +510,8 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         kind: 'callout',
         tone: 'tip',
         label: { zh: '挑哪一条来接', en: 'What to build on' },
-        zh: ['卡片上有红色 `! 数字` 的，说明有人质疑过，那里往往正在争论。没有「已有 Build-on」标记的笔记还没人回应，接它最能推动讨论。观点图谱里的「尚无人建构」把这些笔记直接列了出来（第 10 节）。'],
-        en: ['A red `! n` means someone challenged the note, and that is usually where the argument is. A note without "Built on" has not been answered yet, so continuing it moves the discussion most. The idea graph lists these under "Not built on yet" (section 10).'],
+        zh: ['卡片上有红色 `! 数字` 的，说明有人质疑过，那里往往正在争论。左下角没有小标签的笔记还没人接着写，接它最能推动讨论。观点图谱里的「尚无人建构」把这些笔记直接列了出来（第 10 节）。想接哪条却找不到，用顶栏课程名后面的搜索框按标题或作者找。'],
+        en: ['A red `! n` means someone challenged the note, and that is usually where the argument is. A note without a tag at its bottom left has not been built on yet, so continuing it moves the discussion most. The idea graph lists these under "Not built on yet" (section 10). If you cannot find the note you want, search for its title or author in the box after the course name in the top bar.'],
       },
       {
         kind: 'callout',
@@ -563,7 +571,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         zh: [
           '「优化提问」：把你的问题改写得更清楚，不会替你回答。不满意可以点撤销图标还原。',
           '模型菜单：「默认 · 课程首选模型」用老师配置的第一个模型，也可以指定一个模型。',
-          '「回答长度」：简短、适中、详细，大约 250、550、1000 字，默认适中。这只是比例，AI 会按问题的难易再增减：简单的问题写得更短，难的写得更长；回答一定写完整，不会说到一半停下。选一次就记住，知识空间助手也用同一个选择。',
+          '「回答长度」：简短、适中、详细，大约 250、550、1000 字，默认适中。这只是比例，AI 会按问题的难易再增减：简单的问题写得更短，难的写得更长；回答一定写完整，不会说到一半停下。选一次就记住，知识空间智能体和「AI 对话」（在它的设置里）也用同一个选择。',
           '「画图」（带画笔的图标）、「让 AI 看整块画布」「上传图片或文件」三个按钮在右边。每个文件不超过 8 MB，一次最多 4 个，文件上会标出 AI 读得到内容还是只看得到文件名。',
           '面板顶上一行有「新建对话」和「历史对话」。「新建对话」开一段新的，原来的那段还在。「历史对话」列出这条笔记下你以前和 AI 的对话，每段用你问的第一句话标出来，点一条就能接着看、接着问。',
           '不想留的对话，在「历史对话」里点它右边的垃圾桶图标，确认后这段对话就不再显示。只能删自己的。',
@@ -572,7 +580,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         en: [
           '"Refine question" rewrites your question more clearly without answering it. Use the undo icon to get your original back.',
           'The model menu: "Default · course model" uses the first model your teacher set up, or you can pick a specific model.',
-          '"Answer length": Brief, Medium or Detailed, roughly 250, 550 and 1000 characters, Medium by default. These are proportions: the AI writes less for a simple question and more for a hard one, and always finishes the answer rather than stopping midway. Your choice is remembered and the workspace assistant uses it too.',
+          '"Answer length": Brief, Medium or Detailed, roughly 250, 550 and 1000 characters, Medium by default. These are proportions: the AI writes less for a simple question and more for a hard one, and always finishes the answer rather than stopping midway. Your choice is remembered, and the knowledge space agent and AI chat (in its settings) use it too.',
           '"Draw" (the picture icon), "Show the AI the whole canvas" and "Attach an image or file" sit on the right. Files can be up to 8 MB, four at a time, and each is marked with whether the AI can read its content or only its name.',
           'The top row of the panel has "New chat" and "History". "New chat" starts a fresh conversation and the old one stays. "History" lists your earlier conversations with the AI on this note, each named by the first thing you asked. Click one to read it or carry on.',
           'To drop a conversation, click the bin icon on its right in "History" and confirm; it no longer shows. You can only delete your own.',
@@ -620,11 +628,11 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         zh: ['先读懂，再用自己的话写进笔记，并写下你同意或不同意的地方。里面的事实和出处要自己核对，AI 会说错。'],
         en: ['Understand it first, then write it into your note in your own words, along with where you agree or disagree. Check the facts and sources yourself; the AI gets things wrong.'],
       },
-      { kind: 'h3', zh: '知识空间助手', en: 'The workspace assistant' },
+      { kind: 'h3', zh: '知识空间智能体', en: 'The knowledge space agent' },
       {
         kind: 'p',
-        zh: '画布顶栏的「助手」打开知识空间 AI 助手。它占屏幕的一半，宽度可以拖，下次打开还是你拖的宽度。它看的是整个空间，包括笔记之间谁 Build-on 了谁，适合问「这块画布上讨论到哪了」「哪些想法还没人接着写」这类问题。它也读得到平台记下的 AI 反馈和 AI 内容插入：你自己收到几条反馈、每条怎么处理的，你插入 AI 内容时选了哪个支架；全班的只有画布上本来就看得到的部分，也就是采纳后发布成笔记的反馈有几条、AI 内容插入了几次、选的是哪些支架。老师问的时候看到全班的，并按人分开。平台怎么用的问题，问页面右边的「使用帮助」，见第 13 节。',
-        en: '"Agent" in the canvas top bar opens the workspace AI assistant. It takes up half the screen; drag its edge to change the width and it remembers your choice. It looks at the whole space, including who has built on whom, so it suits questions like "where has the discussion on this canvas got to" and "which ideas has nobody built on yet". It can also read the platform\'s records of AI feedback and AI content inserted into notes: how many feedback cards you received and what you did with each, and which scaffold you chose when inserting AI content. For the whole class it sees only what is already visible on the canvas: how many adopted feedback cards were posted as notes, how many times AI content was inserted, and which scaffolds were chosen. When a teacher asks, it sees the whole class, broken down by person. For questions about using the platform, use Help on the right edge of the page (section 13).',
+        zh: '画布顶栏的「智能体」打开知识空间智能体。它占屏幕的一半，宽度可以拖，下次打开还是你拖的宽度。它看的是整个空间，包括笔记之间谁 Build-on 了谁，适合问「这块画布上讨论到哪了」「哪些想法还没人接着写」这类问题。它也读得到平台记下的 AI 反馈和 AI 内容插入：你自己收到几条反馈、每条怎么处理的，你插入 AI 内容时选了哪个支架；全班的只有画布上本来就看得到的部分，也就是采纳后发布成笔记的反馈有几条、AI 内容插入了几次、选的是哪些支架。老师问的时候看到全班的，并按人分开。平台怎么用的问题，问页面右边的「使用帮助」，见第 13 节。',
+        en: '"Agent" in the canvas top bar opens the knowledge space agent. It takes up half the screen; drag its edge to change the width and it remembers your choice. It looks at the whole space, including who has built on whom, so it suits questions like "where has the discussion on this canvas got to" and "which ideas has nobody built on yet". It can also read the platform\'s records of AI feedback and AI content inserted into notes: how many feedback cards you received and what you did with each, and which scaffold you chose when inserting AI content. For the whole class it sees only what is already visible on the canvas: how many adopted feedback cards were posted as notes, how many times AI content was inserted, and which scaffolds were chosen. When a teacher asks, it sees the whole class, broken down by person. For questions about using the platform, use Help on the right edge of the page (section 13).',
       },
       {
         kind: 'figure',
@@ -664,21 +672,31 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '让 AI 画图', en: 'Asking for a picture' },
       {
         kind: 'p',
-        zh: '在 AI 对话里说「画一张……」「帮我画个……」，AI 会直接画图。笔记页的 AI 助手、知识空间助手、「AI 对话」、文档旁的 AI 侧栏和对话式笔记都可以这样用。图由课程设置的绘图模型来画（一般是 DMX，六到十秒），等的时候对话里会显示画到了哪一步；其他问题照常由对话模型回答。',
-        en: 'Say "draw a …" in an AI chat and the AI draws it. This works in the note page\'s AI assistant, the workspace assistant, AI chat, the AI panel beside documents and dialogue notes. The course\'s image model does the drawing (usually DMX, six to ten seconds), and the chat shows how far it has got while you wait; everything else is answered by the chat model as before.',
+        zh: '在 AI 对话里说「画一张……」「帮我画个……」，AI 先弄清楚你要什么，再画。不说「画」字也行，比如「能把这几个观点可视化一下吗」「用一张图理清它们的关系」。笔记页的 AI 助手、知识空间智能体、「AI 对话」、文档旁的 AI 侧栏和对话式笔记都可以这样用。画之前它会读这段对话前面说过的和对话记忆，再读你正在看的东西：知识空间里的笔记和它们之间的 Build-on、正在写的这条笔记和它接着的那条、正在读的文档，还有你自己在这门课里写过的笔记和问过的问题。所以可以直接说「把我们讨论的几种看法画成一张关系图」「给我这条笔记的观点画张示意图」。问怎么画、问图是什么意思，照常由对话模型回答。',
+        en: 'Say "draw a …" in an AI chat and the AI first works out what you want, then draws it. You do not need the word "draw": "can you visualize these views?" or "show how they relate in one picture" work too. This works in the note page\'s AI assistant, the knowledge space agent, AI chat, the AI panel beside documents and dialogue notes. Before drawing it reads what was said earlier in the conversation and the conversation\'s memory, then what you are looking at: the notes in the knowledge space and the build-ons between them, the note you are writing and the note it builds on, the document you are reading, and the notes and questions you have written in this course. So you can simply say "draw how the views in our discussion relate" or "draw a picture of the idea in this note". Questions about how to draw or what a picture means are answered by the chat model as before.',
       },
       {
         kind: 'p',
-        zh: 'AI 只按你写的这句话画，不会先去读空间里的笔记，所以要把图里该有的东西写清楚。要画流程图、思维导图、概念图或统计图表时，这句话会交给对话模型处理，因为绘图模型写不准图里的文字。拿到图后检查上面的文字和箭头对不对。',
-        en: 'The AI draws only from the sentence you wrote and does not read the notes in the space first, so say what the picture should contain. Requests for flowcharts, mind maps, concept maps or charts go to the chat model instead, because image models cannot write the labels reliably. Check the labels and arrows on any picture you get.',
+        zh: '关系图、思维导图、流程图、概念图、时间线这类讲结构的图，由平台按读出来的结构画，框里的字和箭头都来自对话和笔记，字不会写错。场景、插画、比喻、海报交给课程设置的绘图模型（现在一般是 DMX 的豆包 Seedream，二十秒左右），它画不出来时换 MiniMax。柱状图、饼图、表格这类要真实数据的图不画，交给对话模型用文字说，免得图上出现编出来的数字。等的时候对话里先显示「读懂你的意思」，再显示正在画什么。图下面有一句话，写着画的是什么、依据是什么；理解得不对，换个说法再要一张。',
+        en: 'Diagrams that show structure, such as relationship maps, mind maps, flowcharts, concept maps and timelines, are drawn by the platform from the structure it worked out, so every label and arrow comes from the conversation and notes and the text is exact. Scenes, illustrations, metaphors and posters go to the course\'s image model (currently DMX\'s Seedream in most courses, about twenty seconds), with MiniMax as the fallback. Charts that need real data, such as bar charts, pie charts and tables, are not drawn; the chat model answers in words instead, so no made-up numbers end up in a picture. While you wait the chat first shows "Working out what you mean", then what is being drawn. A sentence under the picture says what was drawn and what it was based on; if it misunderstood you, rephrase and ask again.',
       },
       {
         kind: 'clip',
         src: '/manual/c07-image',
         cap: {
-          zh: '请知识空间助手画一张对比图。助手认出这是画图的要求，直接交给绘图模型；等图的几秒里对话中显示画到了哪一步，画好后图出现在对话里。',
-          en: 'Asking the workspace assistant for a comparison picture. It recognises a drawing request and passes it straight to the image model; while you wait, the chat shows how far the drawing has got, and then the picture appears.',
+          zh: '请知识空间智能体画一张对比图。智能体认出这是画图的要求，先弄清楚要画什么，再动笔；等的时候对话中显示画到了哪一步，画好后图出现在对话里。',
+          en: 'Asking the knowledge space agent for a comparison picture. It recognises a drawing request, works out what to draw, then draws it; while you wait, the chat shows how far the drawing has got, and then the picture appears.',
         },
+      },
+      {
+        kind: 'p',
+        zh: '画完以后直接说怎么改，比如「颜色再淡一点」「把第三个框改成检索练习」「再加上小李的观点」「换成时间线」，AI 会在刚才那张图的基础上改，没说要改的地方不动。等的时候显示「读懂你要怎么改」。结构图的颜色和字体是平台定的，改不了；嫌字小，AI 会少放几个框、把字写短，让图能显示得大一些。',
+        en: 'After a drawing, just say how to change it, for example "make the colours lighter", "change the third box to retrieval practice", "add Li\'s view" or "make it a timeline". The AI changes the drawing it just made and leaves everything else as it was; while you wait it shows "Working out what to change". Diagram colours and fonts are set by the platform and cannot be changed; if the text is too small, the AI uses fewer boxes and shorter labels so the diagram can be shown larger.',
+      },
+      {
+        kind: 'p',
+        zh: '要不要画、是新画还是改刚才那张、画成哪种，由一个专做判断的模型（Jev）先判断，一般不到半秒；规划好以后它再核对一遍画的是不是你要的那种、那个主题，点名要的东西有没有漏，不对就重新规划一次。它暂时用不了的时候，只有明说「画一张……」这类话才会画。',
+        en: 'Whether to draw, whether to draw something new or change the last drawing, and which form to use are first decided by a model built for quick judgments (Jev), usually in under half a second. After planning it checks that the plan is the kind and subject you asked for and that nothing you named is missing; if not, the drawing is planned again. When Jev is unavailable, only requests worded like "draw a …" are drawn.',
       },
     ],
   },
@@ -941,8 +959,8 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '文档 AI', en: 'The document AI' },
       {
         kind: 'p',
-        zh: '右边的 AI 助手只读这一份文档，适合问「这一段在说什么」「作者的证据是什么」。回答下面有「存为批注」和「引用到笔记」，能把有用的回答放到大家都看得到的地方。「历史对话」里是你和这份文档的对话记录。想把这份文档和空间里的其他笔记放在一起谈，点面板底部的「带这份文档去空间 AI 助手」，知识空间 AI 助手会打开，文档已经挂在输入框上。',
-        en: 'The AI panel reads only this document, so ask it things like what a passage says or what evidence the author gives. Under each answer are "Save as comment" and "Quote to a note", which put a useful answer where everyone can see it. "History" keeps your conversations about this document. To discuss it alongside the other notes in the space, click "Take this document to the space assistant" at the bottom of the panel: the workspace assistant opens with the document already attached.',
+        zh: '右边的 AI 助手只读这一份文档，适合问「这一段在说什么」「作者的证据是什么」。回答下面有「存为批注」和「引用到笔记」，能把有用的回答放到大家都看得到的地方。「历史对话」里是你和这份文档的对话记录。想把这份文档和空间里的其他笔记放在一起谈，点面板底部的「带这份文档去知识空间智能体」，知识空间智能体会打开，文档已经挂在输入框上。',
+        en: 'The AI panel reads only this document, so ask it things like what a passage says or what evidence the author gives. Under each answer are "Save as comment" and "Quote to a note", which put a useful answer where everyone can see it. "History" keeps your conversations about this document. To discuss it alongside the other notes in the space, click "Take this document to the knowledge space agent" at the bottom of the panel: the agent opens with the document already attached.',
       },
       { kind: 'h3', zh: '编辑文档', en: 'Editing' },
       {
@@ -1209,8 +1227,8 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '操作上遇到问题：使用帮助', en: 'Stuck with the interface: Help' },
       {
         kind: 'p',
-        zh: '每个页面的右边缘都有一个藏青色的小圆球，平时大半藏在边上，鼠标移上去会滑出「使用帮助」。点它，右下角打开一个对话窗，专门回答平台怎么用的问题。AI 按这本使用手册回答，回答下面写着参考了手册的哪几节；手册里没写到的，它会照实说，建议你转给老师。小球挡住了东西，可以按住上下拖到别处，位置会被记住。',
-        en: 'Every page has a small navy ball on its right edge, mostly tucked away; hover over it and "Help" slides out. Click it and a chat window opens at the bottom right for questions about using the platform. The AI answers from this manual and shows which sections it used; if the manual does not cover something, it says so and suggests asking your teacher. If the ball is in the way, drag it up or down; it remembers where you put it.',
+        zh: '每个页面的右边缘都有一个藏青色的小圆球，平时大半藏在边上，鼠标移上去会滑出「使用帮助」。在知识空间里（画布、笔记页、文档、讨论室）它小一号，免得挡住画布右边的卡片；手机和平板上大小不变，好点。点它，右下角打开一个对话窗，专门回答平台怎么用的问题。AI 按这本使用手册回答，回答下面写着参考了手册的哪几节；手册里没写到的，它会照实说，建议你转给老师。小球挡住了东西，可以按住上下拖到别处，位置会被记住。',
+        en: 'Every page has a small navy ball on its right edge, mostly tucked away; hover over it and "Help" slides out. In a knowledge space (canvas, note page, document, discussion room) it is a size smaller so it does not cover cards on the right of the canvas; on phones and tablets it keeps its size so it is easy to tap. Click it and a chat window opens at the bottom right for questions about using the platform. The AI answers from this manual and shows which sections it used; if the manual does not cover something, it says so and suggests asking your teacher. If the ball is in the way, drag it up or down; it remembers where you put it.',
       },
       {
         kind: 'steps',
@@ -1234,7 +1252,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         kind: 'callout',
         tone: 'tip',
         label: { zh: '问哪里', en: 'Where to ask' },
-        zh: ['平台怎么用的问题，问右边的「使用帮助」。课程内容的问题，用笔记页的 AI 助手，或知识空间助手的「对话」页签。'],
+        zh: ['平台怎么用的问题，问右边的「使用帮助」。课程内容的问题，用笔记页的 AI 助手，或知识空间智能体。'],
         en: ['Ask how to use the platform with Help on the right edge. For questions about course content, use the AI assistant on the note page or the Chat tab of the workspace assistant.'],
       },
       { kind: 'h3', zh: '给平台开发团队写反馈', en: 'Writing to the platform team' },
@@ -1345,12 +1363,12 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '各功能用哪个 AI', en: 'Which AI each feature uses' },
       {
         kind: 'p',
-        zh: '「AI 集成设置」下面是「各功能用哪个 AI」：平台上每个用到 AI 的功能列成一张表，写明谁会用到、现在用的是哪个模型、出错时换哪一家。每一项都可以在「指定模型」里选一个，或者留「自动」。自动的规则是：学生在等的功能（笔记 AI 助手、AI 反馈、讨论室、使用帮助等）先用 DeepSeek Flash，DMX 放最后；生成图片先用 DMX。模型旁边的「快，并发高」「最慢」这类提示来自 2026 年 9 月的实测。',
-        en: 'Below AI integration is "Which AI each feature uses": every AI feature on the platform, who uses it, the model it uses now and what it falls back to. Each can be set to a specific model or left on Auto. Auto puts DeepSeek Flash first for features students wait on (note AI partner, AI feedback, the discussion room, Help and so on) and DMX last, and DMX first for images. Notes such as "fast, high concurrency" or "slowest" come from measurements in September 2026.',
+        zh: '「AI 集成设置」下面是「各功能用哪个 AI」：平台上每个用到 AI 的功能列成一张表，写明谁会用到、现在用的是哪个模型、出错时换哪一家。每一项都可以在「指定模型」里选一个，或者留「自动」。自动的规则是：学生在等的功能（笔记 AI 助手、AI 反馈、讨论室、使用帮助等）先用 DeepSeek Flash，DMX 放最后；生成图片先用 DMX（2026 年 10 月起默认是豆包 Seedream 4.5，原来的通义万相 Plus 已经下架）。「画图：理解要求」是画图之前读对话和笔记的那一步，默认用快的对话模型。模型旁边的「快，并发高」「最慢」这类提示来自实测。',
+        en: 'Below AI integration is "Which AI each feature uses": every AI feature on the platform, who uses it, the model it uses now and what it falls back to. Each can be set to a specific model or left on Auto. Auto puts DeepSeek Flash first for features students wait on (note AI partner, AI feedback, the discussion room, Help and so on) and DMX last, and DMX first for images (since October 2026 the default is Seedream 4.5; Qwen Image Plus has been withdrawn). "Drawing: understand the request" is the step that reads the conversation and notes before drawing, and uses a fast chat model by default. Notes such as "fast, high concurrency" or "slowest" come from measurements.',
       },
       {
         kind: 'p',
-        zh: '表下面是「各入口的模型菜单里显示哪些模型」：笔记 AI 助手、知识空间助手、学生首页的「AI 对话」各一块。选「只显示勾选的」，再勾要显示的模型（可以多选，至少留一个），那个入口的模型菜单里就只有这几个。菜单里的「默认」是上表对应那一行的模型，它没被勾上时改用勾上的里排在最前的；之前选过、后来不在名单里的，会自动换成默认。学生首页「AI 对话」的名单只管学生，老师在自己有教职的课里不受限。',
+        zh: '表下面是「各入口的模型菜单里显示哪些模型」：笔记 AI 助手、知识空间智能体、学生首页的「AI 对话」各一块。选「只显示勾选的」，再勾要显示的模型（可以多选，至少留一个），那个入口的模型菜单里就只有这几个。菜单里的「默认」是上表对应那一行的模型，它没被勾上时改用勾上的里排在最前的；之前选过、后来不在名单里的，会自动换成默认。学生首页「AI 对话」的名单只管学生，老师在自己有教职的课里不受限。',
         en: 'Below the table, "Which models each model menu shows" has one block each for the note AI partner, the workspace assistant and students\' AI chat. Choose "Show only the ticked ones" and tick the models to show (several are fine, keep at least one), and that entry\'s menu lists only those. "Default" in the menu is the model of the matching row above; if it is not ticked, Default uses the first ticked one, and an earlier pick that is no longer on the list switches to Default. The list for students\' AI chat applies to students only; teachers are not limited in courses they teach.',
       },
       { kind: 'h3', zh: '触发设置', en: 'Trigger settings' },
@@ -1387,7 +1405,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       { kind: 'h3', zh: '支架', en: 'Scaffolds' },
       {
         kind: 'p',
-        zh: '在画布工具栏点「Scaffold」打开「支架管理」，可以新建支架，把某条在本课隐藏或恢复显示，标为必用或推荐。隐藏的支架，学生和老师写笔记时都不会在支架栏里看到；在支架管理里打开「显示已隐藏」可以找回来恢复。支架分「全局」和「本课程」两种，全局支架是各门课共用的。',
+        zh: '在画布工具栏点「支架」打开「支架管理」，可以新建支架，把某条在本课隐藏或恢复显示，标为必用或推荐。隐藏的支架，学生和老师写笔记时都不会在支架栏里看到；在支架管理里打开「显示已隐藏」可以找回来恢复。支架分「全局」和「本课程」两种，全局支架是各门课共用的。',
         en: 'Click Scaffolds in the canvas toolbar to open scaffold management. You can add scaffolds, hide or restore them for this course, and mark them required or recommended. A hidden scaffold no longer appears in the scaffold column when anyone writes a note, teachers included; turn on "Show hidden" in scaffold management to find and restore it. Scaffolds are either global, shared by all courses, or specific to this course.',
       },
       {
@@ -1447,6 +1465,11 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         kind: 'p',
         zh: '一共 11 张表：笔记总表、互动总表、参与者名册、对话消息、AI 内嵌反馈、AI 干预日志、AI 反馈检查记录、行为事件流、笔记修订史、学生求助问答、课次记录。可以按课程、知识空间、小组（标着实验或对照）、View 和时间范围筛选；「包含」里可以勾 AI 生成笔记、已删除笔记、对照组影子记录和真实姓名；「显示列」里的技术 ID 默认不显示。单张表点「导出这张表」得到 CSV；「一次导出多张表」（至少两张，可选「核心三表」或「全选」）得到附说明文件的 ZIP。表头可以选中文或英文。',
         en: 'There are eleven tables: notes, interactions, participants, conversation messages, in-note AI feedback, AI intervention log, AI feedback checks, event stream, note revisions, student help, and class sessions. Filter by course, space, group (marked experimental or control), view and date range. Under Include you can add AI-generated notes, deleted notes, control-group shadow records and real names; technical IDs are hidden by default under Columns. "Export this table" gives a CSV; "Export several tables" (two or more, or the core three, or all) gives a ZIP with a readme. Headers can be in Chinese or English.',
+      },
+      {
+        kind: 'p',
+        zh: '只要一个人的数据，在「参与者」里选这个人，可以不选，不选就是全部。选了以后每张表只留和这个人有关的行：Ta 的笔记；Ta 发起和接收的互动，同学在 Ta 的笔记上 Build-on 也算；Ta 发的消息、Ta 和 AI 对话里 AI 的回复、同学私聊 Ta 的消息，小组讨论里别人的消息不含；Ta 收到的 AI 反馈；Ta 的操作记录和求助；Ta 的笔记被别人改过的修订也在。课次记录是全班的，不含。点「导出 STPKB01 的全部数据」一次打包成 ZIP，文件名用这个人的编号，说明文件里写着这次是按人导出的。空间、时间等其他筛选照样有效。',
+        en: 'For one person\'s data, pick them under Participant; this is optional, and leaving it empty exports everyone. Each table then keeps only the rows involving that person: their notes; interactions they started or received, including classmates building on their notes; messages they sent, the AI\'s replies in their AI chats and classmates\' private messages to them, but not other people\'s messages in group discussions; AI feedback they received; their events and help requests; and revisions of their notes made by others. Class sessions are course-wide and left out. "Export all of STPKB01" packs everything into one ZIP named with their code, and the readme says it is a per-person export. The other filters, such as space and date range, still apply.',
       },
       {
         kind: 'p',
@@ -1522,7 +1545,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           {
             q: { zh: 'AI 一直转圈，半天没反应', en: 'The AI spins and nothing happens' },
             a: {
-              zh: ['笔记页的 AI 会显示「正在思考」，等了三秒以上还会显示已经等了几秒，知识空间助手也一样。推理模型有时要十几秒才开始写。', '超过一分钟还没动静，刷新页面再试，或者在模型菜单里换一个模型。反复这样的话，点右边的「使用帮助」说一声。'],
+              zh: ['笔记页的 AI 会显示「正在思考」，等了三秒以上还会显示已经等了几秒，知识空间智能体也一样。推理模型有时要十几秒才开始写。', '超过一分钟还没动静，刷新页面再试，或者在模型菜单里换一个模型。反复这样的话，点右边的「使用帮助」说一声。'],
               en: ['The note page\'s AI shows "Thinking" and, after three seconds, how many seconds you have waited; the workspace assistant does the same. A reasoning model can take ten or twenty seconds before it starts writing.', 'If nothing happens after a minute, reload and try again, or pick another model. If it keeps happening, say so in the Help tab.'],
             },
           },

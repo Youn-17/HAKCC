@@ -4,7 +4,7 @@ import { ANSWER_LENGTH_LABEL, ANSWER_LENGTH_OPTIONS, useAnswerLength, type Answe
 
 /**
  * 输入框下面那一排里的「回答长度」：简短 / 适中 / 详细。
- * 笔记页 AI 和知识空间 AI 共用一份选择（answerLengthPref）。
+ * 笔记页 AI、知识空间智能体和「AI 对话」共用一份选择（answerLengthPref）。
  */
 const AnswerLengthSelect: React.FC<{ lang: 'zh' | 'en'; disabled?: boolean }> = ({ lang, disabled }) => {
   const [value, setValue] = useAnswerLength();

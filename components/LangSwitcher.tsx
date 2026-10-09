@@ -13,13 +13,13 @@ const TranslateIcon = () => (
 );
 
 const LANG3_OPTIONS: { value: Lang3; label: string }[] = [
-  { value: 'zh-CN', label: 'Simplified Chinese' },
-  { value: 'zh-TW', label: 'Traditional Chinese' },
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'zh-TW', label: '繁體中文' },
   { value: 'en',    label: 'English' },
 ];
 
 const LANG2_OPTIONS: { value: Lang2; label: string }[] = [
-  { value: 'zh', label: 'Simplified Chinese' },
+  { value: 'zh', label: '简体中文' },
   { value: 'en', label: 'English' },
 ];
 

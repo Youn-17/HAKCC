@@ -49,7 +49,9 @@ import { aiFetch } from '../services/aiGateway';
 import { CHAT_ENDPOINTS, MODELS_ENDPOINTS } from '../services/providerEndpoints';
 import { attachImagesToLastUserMessage, pickVisionModel } from '../services/visionMessages';
 import { IMAGE_TURN_RULES, isFreeAskMode, buildFreeAskSystemPrompt } from '../services/noteAgentCatalog';
-import { generateNoteImage } from '../services/noteImage';
+import { drawingMetadata, loadLastExchange, loadRecentTurns, loadStoredMemory, produceDrawing } from '../services/drawTurn';
+import { parseDrawForm, sanitizeRouteSummary } from '../services/drawJudge';
+import { notePreviewText } from '../services/noteText';
 import { hasProviderKey, loadCourseAiRows, resolvePartnerSelection } from '../services/aiFeatureModels';
 
 const router = Router();
@@ -540,6 +542,33 @@ router.post('/note-conversations/:threadId/messages', verifyJWT, async (req: Req
 });
 
 /**
+ * 笔记 AI 助手里画图要读的背景：这条笔记的正文，和它接着写的那几条（Build-on 的原笔记）。
+ * 「给我的观点画张示意图」里「我的观点」就是这条笔记。
+ */
+async function noteDrawingBackground(noteId: string | null): Promise<string> {
+  if (!noteId) return '';
+  const note = await getNoteContext(noteId).catch(() => null);
+  if (!note) return '';
+  const { data: links } = await supabase
+    .from('relations')
+    .select('target_note_id, relation_type')
+    .eq('source_note_id', noteId)
+    .limit(5);
+  const targetIds = (links ?? []).map(l => l.target_note_id as string).filter(Boolean);
+  const { data: parents } = targetIds.length
+    ? await supabase.from('notes').select('id, title, content').in('id', targetIds).is('deleted_at', null)
+    : { data: [] as Array<{ id: string; title: string; content: string | null }> };
+  return [
+    `The note the learner is working on: "${note.title}"`,
+    notePreviewText(note.content).slice(0, 2500),
+    ...(parents ?? []).map(p => {
+      const kind = (links ?? []).find(l => l.target_note_id === p.id)?.relation_type ?? 'extend';
+      return `It builds on (${kind}) the note "${p.title}": ${notePreviewText(p.content).slice(0, 600)}`;
+    }),
+  ].filter(Boolean).join('\n');
+}
+
+/**
  * POST /note-conversations/:threadId/image — 只生图，不跑智能体。
  *
  * 走智能体那条整轮要 41s，其中生图本身只占 6.5s，其余全是 ReAct 循环里
@@ -550,9 +579,14 @@ router.post('/note-conversations/:threadId/messages', verifyJWT, async (req: Req
  * 快路就少一条。
  */
 router.post('/note-conversations/:threadId/image', verifyJWT, async (req: Request, res: Response) => {
-  const { thread } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
-  const prompt = String((req.body as any)?.prompt ?? '').trim();
+  const { thread, standing } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
+  const body = (req.body ?? {}) as { prompt?: unknown; mode?: unknown; form?: unknown; route?: unknown };
+  const prompt = String(body.prompt ?? '').trim();
   if (!prompt) throw new ApiError(400, 'prompt is required');
+  // 前端先问过 /ai/draw-route：改上一张（mode=edit）就从这段对话里找出那张图照着改，种类由 Jev 定了就照着画
+  const editing = body.mode === 'edit';
+  const form = parseDrawForm(body.form);
+  const route = sanitizeRouteSummary(body.route);
 
   const { data: userMessage, error: userError } = await supabase
     .from('note_conversation_messages')
@@ -568,7 +602,24 @@ router.post('/note-conversations/:threadId/image', verifyJWT, async (req: Reques
     .single();
   if (userError) throw new ApiError(500, userError.message);
 
-  const result = await generateNoteImage(thread.course_id, prompt);
+  // 画之前先读上下文（drawPlanner）：这段对话、它的记忆、这条笔记和它接着写的笔记、学生自己的记录
+  const [history, memory, background, learner, last] = await Promise.all([
+    loadRecentTurns('note', thread.id, prompt),
+    loadStoredMemory('note', thread.id),
+    noteDrawingBackground(thread.note_id ?? null),
+    isCourseStaff(standing)
+      ? Promise.resolve('')
+      : loadStudentLearningContext({ userId: req.user!.id, courseId: thread.course_id, question: prompt }).catch(() => ''),
+    editing ? loadLastExchange('note', thread.id, prompt) : Promise.resolve(null),
+  ]);
+  const result = await produceDrawing({
+    courseId: thread.course_id,
+    request: prompt,
+    context: { history, memory, background, learner },
+    previous: last?.previous ?? null,
+    form,
+    route,
+  });
   if (!result.ok) {
     // 生图失败也要留痕：学生看到的是失败，研究数据里也该是失败，
     // 而不是一条凭空消失的提问。
@@ -582,7 +633,7 @@ router.post('/note-conversations/:threadId/image', verifyJWT, async (req: Reques
     throw new ApiError(502, result.error);
   }
 
-  const markdown = `![${prompt.slice(0, 60).replace(/[\[\]]/g, '')}](${result.url})`;
+  const markdown = result.markdown;
   const { data: assistantMessage, error: assistantError } = await supabase
     .from('note_conversation_messages')
     .insert({
@@ -590,7 +641,7 @@ router.post('/note-conversations/:threadId/image', verifyJWT, async (req: Reques
       sender_kind: 'assistant',
       content: markdown,
       attachments: [],
-      ai_metadata: { direct_image: true, model: result.model, image_url: result.url },
+      ai_metadata: drawingMetadata(result),
     })
     .select('*')
     .single();
@@ -613,6 +664,8 @@ router.post('/note-conversations/:threadId/image', verifyJWT, async (req: Reques
     assistantMessage: messageToApi(assistantMessage),
     imageUrl: result.url,
     model: result.model,
+    caption: result.caption,
+    kind: result.kind,
   });
 });
 

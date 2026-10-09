@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.6.0 — 2026-10-09
+
+- Add shared knowledge-space documents with Tiptap, Yjs and Hocuspocus, course/group authorization and durable SQLite persistence.
+- Provide a Word-style ribbon, offline merge, version snapshots and basic Word export.
+- Include an isolated fictional Docker demo and a generic Linux production template.
+- Update contextual drawing and revision, structured diagrams, canvas search, Build-on folding and language/course tools.
+- Pin Node 22.22.3 and preserve existing public dependency patches.
+
+See [setup and limits](write/UPDATES_v0.6.0.en.md) and [validation](evidence/RELEASE_VALIDATION.md). Shared bodies are not yet consumed by AI, knowledge-base retrieval or research export. Private deployment information and participant data are excluded.
+
 ## v0.5.0 — 2026-10-08
 
 - Restore paginated history for knowledge-space and Note AI instead of short fixed queries.

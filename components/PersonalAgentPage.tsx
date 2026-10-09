@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import RemixIcon from './RemixIcon';
 import AgentToolCallDisplay, { ToolCallInfo } from './AgentToolCallDisplay';
 import { useAuth } from '../contexts/AuthContext';
-import { readAppLanguage } from '../utils/languagePreference';
+import { useLanguagePreference } from '../hooks/useLanguagePreference';
 import { personalAgent as personalAgentApi, AgentConversation, getAuthToken, apiFileUrl } from '../services/apiClient';
 import LessonPrepPanel from './agent/LessonPrepPanel';
 import AnalyticsPanel from './agent/AnalyticsPanel';
@@ -18,7 +18,9 @@ import {
   type AgentCourse,
 } from './agent/agentCourses';
 import { isSafeHttpUrl } from './chatMarkdown';
-import DrawingProgress from './DrawingProgress';
+import DrawingProgress, { nextDrawingState, type DrawingState } from './DrawingProgress';
+import AnswerLengthSelect from './AnswerLengthSelect';
+import { getAnswerLength } from './answerLengthPref';
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -77,7 +79,8 @@ interface AgentConfig {
 // ── Translations ─────────────────────────────────────────────────
 
 function useTranslations(isTeacherRole?: boolean) {
-  const lang = readAppLanguage('en');
+  const [language] = useLanguagePreference();
+  const lang = language === 'en' ? 'en' : 'zh';
   const isZh = lang === 'zh';
   return useMemo(() => ({
     isZh,
@@ -394,7 +397,7 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
   const [sending, setSending] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   /** 这一轮是画图（后端识别出「画一张……」）：放绘图动画，图到了再换成图 */
-  const [drawing, setDrawing] = useState<{ prompt: string; startedAt: number } | null>(null);
+  const [drawing, setDrawing] = useState<DrawingState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -635,6 +638,7 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
           module: agentModule,
           conversation_id: conversationId ?? undefined,
           history,
+          answer_length: getAnswerLength(),
         }),
       });
 
@@ -668,7 +672,7 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
         // 画图：放绘图动画，等 token 带着图片回来
         if (event.drawing && typeof (event.drawing as { prompt?: unknown }).prompt === 'string') {
           setIsThinking(false);
-          setDrawing({ prompt: (event.drawing as { prompt: string }).prompt, startedAt: Date.now() });
+          setDrawing(prev => nextDrawingState(prev, event.drawing as { prompt: string; stage?: unknown; caption?: unknown; mode?: unknown }));
           return;
         }
 
@@ -906,6 +910,10 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
             </select>
           </label>
 
+          <div className="flex flex-col gap-1">
+            <span className="text-[0.6875rem] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">{t.isZh ? '回答长度' : 'Answer length'}</span>
+            <AnswerLengthSelect lang={t.isZh ? 'zh' : 'en'} disabled={sending} />
+          </div>
         </div>
       </div>
 
@@ -1266,7 +1274,7 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
               {drawing && (
                 <div className="flex items-start gap-3">
                   <img src="/assets/ai-tutor-avatar.png" alt="" className="mt-0.5 h-7 w-7 flex-shrink-0 rounded-lg object-cover" />
-                  <DrawingProgress prompt={drawing.prompt} lang={t.isZh ? 'zh' : 'en'} startedAt={drawing.startedAt} />
+                  <DrawingProgress {...drawing} lang={t.isZh ? 'zh' : 'en'} />
                 </div>
               )}
 

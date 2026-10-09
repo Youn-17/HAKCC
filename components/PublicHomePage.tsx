@@ -7,7 +7,7 @@ import GooeyNav from './GooeyNav';
 import TextType from './TextType';
 import SpotlightCard from './SpotlightCard';
 import RemixIcon from './RemixIcon';
-import { readPublicLanguage, saveLanguagePreference } from '../utils/languagePreference';
+import { useLanguagePreference } from '../hooks/useLanguagePreference';
 import {
   ArrowRight, Menu, X, ArrowUp,
   ChevronRight
@@ -1921,7 +1921,7 @@ export function PublicAbout() {
 // --------------------- MAIN LAYOUT WRAPPER ---------------------
 
 export default function PublicHomePage() {
-  const [lang, setLangState] = useState<Lang>(() => readPublicLanguage('en'));
+  const [lang, setLang] = useLanguagePreference();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const scrollProgress = useScrollProgress();
@@ -1951,11 +1951,6 @@ export default function PublicHomePage() {
 
   const handleNavClick = () => {
     setMobileMenuOpen(false);
-  };
-
-  const setLang = (nextLang: Lang) => {
-    saveLanguagePreference(nextLang);
-    setLangState(nextLang);
   };
 
   return (

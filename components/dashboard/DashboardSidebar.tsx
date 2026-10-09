@@ -6,7 +6,7 @@ import ThemeToggle from '../ThemeToggle';
 import { LangCycleButton, type Lang3 } from '../LangSwitcher';
 import { type DashboardTabId } from './teacherDashboardConfig';
 import ChangelogPanel, { ChangelogTrigger, changelogAudienceFor, useUnseenRelease } from './ChangelogPanel';
-import { readPublicLanguage, saveLanguagePreference } from '../../utils/languagePreference';
+import { useLanguagePreference } from '../../hooks/useLanguagePreference';
 import ChangePasswordModal from '../auth/ChangePasswordModal';
 import NotificationBell from './NotificationBell';
 
@@ -99,15 +99,13 @@ const DashboardSidebar: React.FC<SidebarProps> = ({
   const zh = lang === 'zh';
   const items = getNavItems(role, lang);
 
-  const [displayLang, setDisplayLang] = useState<Lang3>(() => readPublicLanguage());
+  const [displayLang] = useLanguagePreference();
   const [isPwModalOpen, setIsPwModalOpen] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const changelogAudience = changelogAudienceFor(role);
   const [unseenRelease, markReleaseSeen] = useUnseenRelease(changelogAudience);
 
   const handleLangCycle = (next: Lang3) => {
-    saveLanguagePreference(next);
-    setDisplayLang(next);
     onLangChange(next);
   };
 

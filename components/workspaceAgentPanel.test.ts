@@ -630,7 +630,7 @@ describe('附件要配一句问题；出错时问题和附件放回输入框', (
     // 答完了：附件不再挂着，提示回到平常的样子
     expect(conversationText()).toContain('这是AI 的回答');
     expect(chips()).toEqual([]);
-    expect(textarea().placeholder).toBe('向 AI 助手提问关于工作台笔记的问题…');
+    expect(textarea().placeholder).toBe('向智能体提问这个空间里的笔记…');
   });
 
   it('请求被拒（服务端没接下）：对话里那条提问撤掉，问题和附件放回输入框；再发一次照样带着附件', async () => {

@@ -119,6 +119,8 @@ interface SpaceData {
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
   loading: boolean;
   error: string | null;
+  /** notes/edges 现在装的是哪个空间的数据。换空间后、新数据回来之前，它还是上一个空间。 */
+  loadedSpaceId: string | null;
   refetch: () => void;
   /** 拖动保存期间保护本地坐标，别被后台重拉覆盖。 */
   markGeometryPending: (noteId: string, geom: NoteGeometry) => void;
@@ -189,6 +191,7 @@ export function useSpaceData(spaceId: string | null): SpaceData {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadedSpaceId, setLoadedSpaceId] = useState<string | null>(null);
 
   const loadedOnceRef = useRef(false);
 
@@ -256,6 +259,7 @@ export function useSpaceData(spaceId: string | null): SpaceData {
       mergeNotes(notesRes.notes.map(n => apiNoteToNote(n)));
       const nextEdges = relsRes.relations.map(apiRelationToEdge);
       setEdges(prev => (JSON.stringify(prev) === JSON.stringify(nextEdges) ? prev : nextEdges));
+      setLoadedSpaceId(spaceId);
       loadedOnceRef.current = true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load space data');
@@ -315,7 +319,7 @@ export function useSpaceData(spaceId: string | null): SpaceData {
   }, [spaceId, fetch]);
 
   return {
-    notes, setNotes, edges, setEdges, loading, error, refetch: fetch,
+    notes, setNotes, edges, setEdges, loading, error, loadedSpaceId, refetch: fetch,
     markGeometryPending, clearGeometryPending,
   };
 }

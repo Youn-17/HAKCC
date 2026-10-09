@@ -212,11 +212,19 @@ vi.mock('../services/aiProviderConfig', () => ({
 }));
 vi.mock('../services/agentLoop', () => ({ runAgentLoopStream: h.runAgentLoopStream }));
 const draw = vi.hoisted(() => ({
-  generateNoteImage: vi.fn(async (_courseId: string | null, _prompt: string) => ({
+  generateNoteImage: vi.fn(async (_courseId: string | null, _prompt: string, _options?: unknown) => ({
     ok: true as const, url: 'https://files.example.test/cat.png', model: 'qwen-image-plus', provider: 'dmx', timings: {},
   })),
+  // 画之前的规划：默认「规划不可用」，退回用原话画
+  planDrawing: vi.fn(async (..._args: unknown[]) => ({ plan: null, error: 'no planner in this test' }) as unknown),
+  loadStudentLearningContext: vi.fn(async () => '学生自己的记录'),
 }));
 vi.mock('../services/noteImage', () => ({ generateNoteImage: draw.generateNoteImage }));
+vi.mock('../services/drawPlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/drawPlanner')>()),
+  planDrawing: draw.planDrawing,
+}));
+vi.mock('../services/studentLearningContext', () => ({ loadStudentLearningContext: draw.loadStudentLearningContext }));
 vi.mock('../services/modelRouter', () => ({
   isDmxProvider: () => false,
   pickModel: () => 'fast-model',
@@ -568,16 +576,41 @@ describe('画图指令：不经对话模型，直接出图（默认 DMX）', () 
     expect(status).toBe(200);
 
     const list = events(text);
-    expect(list[0]).toEqual({ drawing: { prompt: '画一只在月球上看书的猫' } });
+    // 先「读懂你的意思」（规划），再「正在画」
+    expect(list[0]).toEqual({ drawing: { prompt: '画一只在月球上看书的猫', stage: 'planning', mode: 'new' } });
+    expect(list[1]).toEqual({ drawing: { prompt: '画一只在月球上看书的猫', stage: 'drawing', kind: 'picture', caption: '', mode: 'new' } });
     expect(list.find(e => typeof e.token === 'string')?.token).toBe('![画一只在月球上看书的猫](https://files.example.test/cat.png)');
     expect(list.at(-1)).toMatchObject({ done: true, toolsUsed: ['generate_image'] });
-    expect(draw.generateNoteImage).toHaveBeenCalledWith('course-1', '画一只在月球上看书的猫');
+    expect(draw.generateNoteImage.mock.calls.at(-1)!.slice(0, 2)).toEqual(['course-1', '画一只在月球上看书的猫']);
     expect(h.runAgentLoopStream).not.toHaveBeenCalled();
 
     const saved = h.state.inserts.filter(i => i.table === 'agent_messages').map(i => i.payload as Record<string, any>);
     expect(saved.map(m => m.role)).toEqual(['user', 'assistant']);
     expect(saved[1].content).toContain('cat.png');
     expect(saved[1].ai_metadata).toMatchObject({ direct_image: true, provider_id: 'dmx' });
+  });
+
+  it('先读这段对话和学生自己的记录再画；图下面写着画的是什么（2026-10-09 用户：画出来词不达意）', async () => {
+    as('student-a', 'student');
+    draw.planDrawing.mockResolvedValueOnce({
+      plan: { kind: 'picture', prompt: 'A student writing an outline before opening an AI chat', caption: '根据你前面说的「先写提纲再问 AI」，画了这个场景。' },
+    });
+    const { text } = await ask({
+      content: '把我刚才说的画出来',
+      history: [{ role: 'user', content: '我的办法是先写提纲再问 AI' }, { role: 'assistant', content: '这个办法让你先想' }],
+    });
+    const [courseId, request, context] = draw.planDrawing.mock.calls.at(-1) as [string, string, Record<string, unknown>];
+    expect([courseId, request]).toEqual(['course-1', '把我刚才说的画出来']);
+    expect(context.history).toEqual([
+      { role: 'user', content: '我的办法是先写提纲再问 AI' },
+      { role: 'assistant', content: '这个办法让你先想' },
+    ]);
+    expect(context.learner).toBe('学生自己的记录');
+    expect(draw.generateNoteImage.mock.calls.at(-1)![1]).toBe('A student writing an outline before opening an AI chat');
+    const token = events(text).find(e => typeof e.token === 'string')?.token as string;
+    expect(token).toContain('根据你前面说的「先写提纲再问 AI」，画了这个场景。');
+    const saved = h.state.inserts.filter(i => i.table === 'agent_messages').map(i => i.payload as Record<string, any>);
+    expect(saved.at(-1)!.ai_metadata).toMatchObject({ drawing: { kind: 'picture', planned: true, prompt: 'A student writing an outline before opening an AI chat' } });
   });
 
   it('画失败：推一条说清楚的错误，也存一条失败的助手消息', async () => {
@@ -595,6 +628,25 @@ describe('画图指令：不经对话模型，直接出图（默认 DMX）', () 
     await ask({ content: '这块画布上讨论到哪了？' });
     expect(draw.generateNoteImage).not.toHaveBeenCalled();
     expect(h.runAgentLoopStream).toHaveBeenCalled();
+  });
+});
+
+/** 2026-10-09：「AI 对话」也按学生选的档位和问题深浅写（Jev 判断深浅；测试里 Jev 没开，按关键词粗判） */
+describe('回答长度', () => {
+  it('没选：按适中写进提示词，max_tokens 留足余量，存下这一轮的档位和目标', async () => {
+    as('student-a', 'student');
+    await ask({ content: '这块画布上讨论到哪了？' });
+    const opts = h.runAgentLoopStream.mock.lastCall![0] as { systemPrompt: string; maxTokens?: number };
+    expect(opts.systemPrompt).toContain('the student chose "medium"');
+    expect(opts.maxTokens).toBeGreaterThanOrEqual(8192);
+    const saved = h.state.inserts.filter(i => i.table === 'agent_messages').map(i => i.payload as Record<string, any>);
+    expect(saved.at(-1)!.ai_metadata.answer_length).toMatchObject({ preset: 'medium', depth_source: 'heuristic' });
+  });
+
+  it('选了简短：提示词跟着改', async () => {
+    as('student-a', 'student');
+    await ask({ content: '这块画布上讨论到哪了？', answer_length: 'short' });
+    expect((h.runAgentLoopStream.mock.lastCall![0] as { systemPrompt: string }).systemPrompt).toContain('the student chose "brief"');
   });
 });
 

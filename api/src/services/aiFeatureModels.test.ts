@@ -155,7 +155,8 @@ describe('failover：选择只决定谁排第一，其余照原链', () => {
 
 describe('生图', () => {
   it('配了 DMX 就默认 DMX（MiniMax 也配了也一样）', () => {
-    expect(featureChoice('note_image', FULL)).toEqual({ providerId: 'dmx', model: 'qwen-image-plus', source: 'default' });
+    // 2026-10-09：DMX 下架了 qwen-image-plus，默认换成豆包 Seedream 4.5
+    expect(featureChoice('note_image', FULL)).toEqual({ providerId: 'dmx', model: 'doubao-seedream-4-5-251128', source: 'default' });
   });
 
   it('只有 MiniMax：没有默认选择，按链落到 MiniMax', () => {
@@ -177,7 +178,7 @@ describe('生图', () => {
   it('生图的可选项只有生图模型，对话模型不混进来', () => {
     expect(modelOptionsFor('note_image', FULL)).toEqual([
       ref('minimax', 'image-01'), ref('minimax', 'image-01-live'),
-      ref('dmx', 'qwen-image-plus'), ref('dmx', 'gpt-image-2'),
+      ref('dmx', 'doubao-seedream-4-5-251128'), ref('dmx', 'gpt-image-2'),
     ]);
   });
 });

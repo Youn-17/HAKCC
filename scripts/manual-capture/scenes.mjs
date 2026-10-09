@@ -457,11 +457,11 @@ SCENES.push(
 );
 
 // ── 06 知识空间助手、求助；07 综合升华；08 观点图谱；09 回看；10 练习场 ─────────
-const WS_INPUT = '向 AI 助手提问关于工作台笔记的问题…';
+const WS_INPUT = '向智能体提问这个空间里的笔记…';
 async function openAssistant(page) {
   await openCanvas(page);
-  await page.getByRole('button', { name: '助手' }).first().click();
-  await page.getByText('知识空间 AI 助手').first().waitFor();
+  await page.getByRole('button', { name: '智能体' }).first().click();
+  await page.getByText('知识空间智能体').first().waitFor();
   await page.waitForTimeout(900);
 }
 async function dashPanel(page, name) {

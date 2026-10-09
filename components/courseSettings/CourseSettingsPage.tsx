@@ -1,3 +1,4 @@
+import { courseSettingsError } from './errorText';
 /**
  * 课程设置独立页面。
  *
@@ -33,12 +34,12 @@ const TABS: { id: SettingsTab; icon: string; zh: string; en: string; descZh: str
 
 const isTab = (v: string | null): v is SettingsTab => TABS.some(t => t.id === v);
 
-/** 列表接口失败的原因。403 是「不在这门课里」，后端那句英文对教师没有用。 */
+/** Display a localized page error without exposing server details. */
 function loadErrorText(reason: unknown, zh: boolean): string {
   if (reason instanceof ApiClientError && reason.status === 403) {
-    return zh ? '你不是这门课的成员，看不到这一页。' : 'You are not a member of this course.';
+    return zh ? '暂无访问此课程的权限。' : 'You do not have access to this course.';
   }
-  return reason instanceof Error ? reason.message : String(reason);
+  return courseSettingsError(reason, zh, zh ? '页面数据加载失败，请重试。' : 'Unable to load page data. Please try again.');
 }
 
 const isForbidden = (r: PromiseSettledResult<unknown>) =>
@@ -159,9 +160,7 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
       setCourse(prev => (prev ? { ...prev, title: updated.title } : prev));
       setEditingTitle(false);
     } catch (err) {
-      setTitleError(err instanceof ApiClientError || err instanceof Error
-        ? err.message
-        : (zh ? '保存失败，请稍后重试。' : 'Save failed. Please try again.'));
+      setTitleError(courseSettingsError(err, zh, zh ? '保存失败，请重试。' : 'Save failed. Please try again.'));
     } finally {
       setSavingTitle(false);
     }
@@ -179,7 +178,7 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
   const typeLabel = courseTypeLabel(course?.course_type, zh);
 
   // 只有课程创建者和课程管理员进得来（2026-10-06 用户）。课内的普通成员（包括凭学生验证码入课的教师账号）
-  // 和不在课里的人，都只看到这一页，不再是「能看不能改」。课内身份没拿到（接口都出错）时照旧显示，各页签自己报错
+  // 和不在课里的人，都只看到这一页，不再是「能看不能改」。课内身份没拿到（接口都处理失败）时照旧显示，各页签自己报错
   const denied = !loading && (forbidden || (standing !== null && !canManageCourse(standing, user?.role ?? 'student')));
   if (denied) {
     return (
@@ -189,12 +188,12 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
             <Lock size={20} />
           </div>
           <h1 className="mt-4 text-lg font-bold tracking-tight text-stone-950 dark:text-stone-100">
-            {zh ? '没有权限管理这门课' : 'You cannot manage this course'}
+            {zh ? '暂无课程管理权限' : 'Course management access unavailable'}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-stone-500 dark:text-stone-400">
             {zh
-              ? '课程管理只对课程创建者和课程管理员开放。需要管理权限，请联系这门课的创建者。'
-              : 'Course management is open only to the course creator and course managers. Ask the creator of this course for access.'}
+              ? '课程管理仅对课程创建者和课程管理员开放。如需权限，请联系课程创建者。'
+              : 'Course management is available to the course creator and course managers. Contact the course creator to request access.'}
           </p>
           <button
             type="button"
@@ -284,7 +283,7 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
                     <Pencil size={15} />
                   </button>
                 ) : (
-                  <Lock size={13} className="shrink-0 text-stone-300 dark:text-stone-600" aria-label={zh ? '只有创建这门课程的教师可以修改名称' : 'Only the teacher who created this course can rename it'} />
+                  <Lock size={13} className="shrink-0 text-stone-300 dark:text-stone-600" aria-label={zh ? '仅课程创建者可修改名称' : 'Only the course creator can rename it'} />
                 ))}
               </div>
             )}
@@ -368,7 +367,7 @@ const CourseSettingsPage: React.FC<Props> = ({ lang }) => {
                 <>
                   {loadErrors[activeTab] !== undefined && (
                     <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-relaxed text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
-                      {zh ? '这一页的数据没有加载成功：' : 'This page\'s data failed to load: '}{loadErrorText(loadErrors[activeTab], zh)}
+                      {loadErrorText(loadErrors[activeTab], zh)}
                     </p>
                   )}
                   {activeTab === 'goals' && (

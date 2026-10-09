@@ -27,7 +27,7 @@ import { useDismissible } from '../hooks/useDismissible';
 import { uploadAttachment, MAX_ATTACHMENT_BYTES } from '../services/attachmentUpload';
 import MarkdownMessage from './chatMarkdown';
 import { modelOptionLabel } from './aiModelLabels';
-import DrawingProgress from './DrawingProgress';
+import DrawingProgress, { nextDrawingState, type DrawingState } from './DrawingProgress';
 import AnswerLengthSelect from './AnswerLengthSelect';
 import AssistantWelcome from './AssistantWelcome';
 import { useChatPreferences, ChatPreferenceControls } from '../hooks/useChatPreferences';
@@ -185,7 +185,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   /** 这一轮是画图（后端识别出「画一张……」）：放绘图动画，图到了再换成图 */
-  const [drawing, setDrawing] = useState<{ prompt: string; startedAt: number } | null>(null);
+  const [drawing, setDrawing] = useState<DrawingState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
@@ -252,7 +252,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
   const t = useMemo(() => {
     const zh = lang === 'zh';
     return {
-      title: zh ? '知识空间 AI 助手' : 'Knowledge Space AI',
+      title: zh ? '知识空间智能体' : 'Knowledge space agent',
       newChat: zh ? '新对话' : 'New chat',
       history: zh ? '历史对话' : 'History',
       historyEmpty: zh ? '还没有历史对话' : 'No earlier chats yet',
@@ -266,7 +266,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
       drawHint: zh ? '按输入框里的描述画一张图；还没写描述就先写好再点' : 'Draw a picture from what you typed; type a description first',
       drawPrefix: zh ? '画一张：' : 'Draw a picture of ',
       thinking: zh ? '思考中…' : 'Thinking…',
-      placeholder: zh ? '向 AI 助手提问关于工作台笔记的问题…' : 'Ask the AI agent about workspace notes…',
+      placeholder: zh ? '向智能体提问这个空间里的笔记…' : 'Ask the agent about the notes in this space…',
       provider: zh ? '服务商' : 'Provider',
       model: zh ? '模型' : 'Model',
       wholeSpace: zh ? '整个空间' : 'Whole space',
@@ -524,7 +524,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
           return;
         }
         if (event.drawing && typeof (event.drawing as { prompt?: unknown }).prompt === 'string') {
-          setDrawing({ prompt: (event.drawing as { prompt: string }).prompt, startedAt: Date.now() });
+          setDrawing(prev => nextDrawingState(prev, event.drawing as { prompt: string; stage?: unknown; caption?: unknown; mode?: unknown }));
           return;
         }
         if (event.toolStatus === 'running' && typeof event.toolName === 'string') {
@@ -886,7 +886,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
         ))}
 
         {streaming && drawing && (
-          <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} />
+          <DrawingProgress {...drawing} lang={lang} />
         )}
 
         {/* 还没开始写：一步步显示在做什么（2026-10-05 用户：等的时候别让学生觉得无聊）。

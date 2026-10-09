@@ -674,7 +674,7 @@ const FileViewerPage: React.FC<Props> = ({
                 onClick={async () => { setAskingAi(true); try { await onAskAi(); onClose(); } finally { setAskingAi(false); } }}
                 className="shrink-0 border-t border-zinc-200 px-3 py-2 text-left text-[0.6875rem] text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-gray-800 dark:hover:bg-gray-800"
               >
-                {zh ? '带这份文档去空间 AI 助手，和其他笔记一起讨论 →' : 'Take this document to the space assistant →'}
+                {zh ? '带这份文档去知识空间智能体，和其他笔记一起讨论 →' : 'Take this document to the knowledge space agent →'}
               </button>
             )}
           </aside>

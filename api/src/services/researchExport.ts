@@ -59,6 +59,8 @@ export interface ExportFilters {
   includeNames?: boolean;
   /** Hours east of UTC for the *_local time columns. Defaults to +8. */
   tzOffsetHours?: number;
+  /** 只导出这一个人的数据（用户 id，见 restrictToPerson）；其他筛选照样生效 */
+  participantUserId?: string;
 }
 
 const ROW_LIMIT = 20000;
@@ -1553,6 +1555,67 @@ function buildParticipantsTable(
   return { key: 'participants', rows, truncated: false };
 }
 
+// ── 按人导出 ───────────────────────────────────────────────────────────────
+
+/** 按人导出时不含的表：课次记录是全班的 */
+export const NOT_PER_PERSON: readonly DatasetKey[] = ['sessions'];
+
+export interface PersonLookups {
+  /** 笔记的作者（用户 id） */
+  noteAuthorOf: (noteId: string) => string | undefined;
+  /** 对话线程：谁开的、和谁 */
+  threadOf: (threadId: string) => Pick<ThreadRow, 'target_type' | 'created_by' | 'target_user_id'> | undefined;
+}
+
+/**
+ * 按人导出（2026-10-09 用户：数据导出要能选「导出一个人的所有数据」）。
+ * 先按平常的范围把各表建好，再只留和这个人有关的行——和同学之间的 Build-on、私聊不会因为对方不在名单里而丢掉。
+ * 「有关」的口径（README 里也写了）：
+ * - 互动总表：Ta 发起的、Ta 接收的（同学在 Ta 的笔记上 Build-on 也算）；
+ * - 对话消息：Ta 发的；Ta 和 AI 的对话里 AI 的回复；Ta 参与的同伴私聊里对方发的。小组讨论里别人的消息不含；
+ * - 笔记修订史：Ta 改的，和 Ta 的笔记被别人（比如老师）改的；
+ * - 其余各表：编号是 Ta 的那些行；课次记录是全班的，不含。
+ * 序号按留下的行重新排。
+ */
+export function restrictToPerson(
+  datasets: Record<DatasetKey, Dataset>,
+  person: { userId: string; code: string },
+  lookups: PersonLookups,
+): Record<DatasetKey, Dataset> {
+  const { userId, code } = person;
+  const mine = (row: Record<string, unknown>) => !!code && row.participant_id === code;
+  const keep: Record<DatasetKey, (row: Record<string, unknown>) => boolean> = {
+    notes: mine,
+    interactions: (row) => !!code && (row.from_participant_id === code || row.to_participant_id === code),
+    participants: mine,
+    messages: (row) => {
+      if (mine(row)) return true;
+      const thread = lookups.threadOf(String(row.thread_id ?? ''));
+      if (!thread) return false;
+      if (thread.target_type === 'group') return false;
+      if (thread.target_type === 'member') return thread.created_by === userId || thread.target_user_id === userId;
+      return thread.created_by === userId;
+    },
+    ai_feedbacks: mine,
+    ai_interventions: mine,
+    feedback_checks: mine,
+    events: mine,
+    note_revisions: (row) => mine(row) || lookups.noteAuthorOf(String(row.note_id ?? '')) === userId,
+    support_questions: mine,
+    sessions: () => false,
+  };
+
+  const out = {} as Record<DatasetKey, Dataset>;
+  for (const key of DATASET_KEYS) {
+    const dataset = datasets[key];
+    const rows = dataset.rows
+      .filter(keep[key])
+      .map((row, index) => ('seq' in row ? { ...row, seq: index + 1 } : row));
+    out[key] = { ...dataset, rows };
+  }
+  return out;
+}
+
 // ── Orchestration ──────────────────────────────────────────────────────────
 
 export interface BuiltExport {
@@ -1630,7 +1693,7 @@ export async function buildAllDatasets(scope: ExportScope): Promise<BuiltExport>
   ]);
   const participants = buildParticipantsTable(scope, notes, interactions, { feedbacks, interventions });
 
-  const datasets: Record<DatasetKey, Dataset> = {
+  const built: Record<DatasetKey, Dataset> = {
     notes, interactions, participants, messages,
     ai_feedbacks: feedbacks, ai_interventions: interventions,
     feedback_checks: feedbackChecks,
@@ -1638,6 +1701,17 @@ export async function buildAllDatasets(scope: ExportScope): Promise<BuiltExport>
     support_questions: supportQuestions,
     sessions,
   };
+
+  const personId = scope.filters.participantUserId;
+  const person = personId ? scope.identities.get(personId) : undefined;
+  let datasets = built;
+  if (personId) {
+    const threadById = new Map(threads.map((t) => [t.id, t]));
+    datasets = restrictToPerson(built, { userId: personId, code: person?.code ?? '' }, {
+      noteAuthorOf: (id) => graph.noteById.get(id)?.author_id,
+      threadOf: (id) => threadById.get(id),
+    });
+  }
 
   const counts = {} as Record<DatasetKey, number>;
   const truncated: DatasetKey[] = [];
@@ -1648,12 +1722,17 @@ export async function buildAllDatasets(scope: ExportScope): Promise<BuiltExport>
 
   // Surface data-quality issues before the researcher discovers them mid-analysis.
   const warnings: string[] = [];
-  const ungrouped = participants.rows.filter((r) => r.role === '学生' && !r.group_name).length;
-  if (ungrouped > 0) warnings.push(`有 ${ungrouped} 名学生尚未分配小组,其小组列为空`);
-  const noCode = notes.rows.filter((r) => !r.participant_id).length;
-  if (noCode > 0) warnings.push(`有 ${noCode} 条笔记的作者不在课程成员名单中,编号为空`);
-  const peerCount = interactions.rows.filter((r) => r.is_peer === '是').length;
-  if (interactions.rows.length > 0 && peerCount === 0) warnings.push('本次筛选中没有学生之间的互动');
+  if (personId) {
+    if (!person) warnings.push('找不到这位参与者:可能已不在课程成员名单中');
+    else if (!person.isTeacher && !scope.groupOfUser.get(personId)) warnings.push(`${person.code} 尚未分配小组,小组列为空`);
+  } else {
+    const ungrouped = participants.rows.filter((r) => r.role === '学生' && !r.group_name).length;
+    if (ungrouped > 0) warnings.push(`有 ${ungrouped} 名学生尚未分配小组,其小组列为空`);
+    const noCode = notes.rows.filter((r) => !r.participant_id).length;
+    if (noCode > 0) warnings.push(`有 ${noCode} 条笔记的作者不在课程成员名单中,编号为空`);
+    const peerCount = interactions.rows.filter((r) => r.is_peer === '是').length;
+    if (interactions.rows.length > 0 && peerCount === 0) warnings.push('本次筛选中没有学生之间的互动');
+  }
 
   return { datasets, counts, truncated, warnings };
 }
@@ -1692,6 +1771,11 @@ export function buildReadme(scope: ExportScope, built: BuiltExport, generatedAt:
   const groupNames = (f.groupIds ?? []).map((g) => scope.groupById.get(g)?.name ?? g).join('、') || '全部小组';
   const spaceNames = (f.spaceIds ?? []).map((s) => scope.spaceById.get(s)?.title ?? s).join('、') || '全部空间';
 
+  const person = f.participantUserId ? scope.identities.get(f.participantUserId) : undefined;
+  const personLabel = person
+    ? `${person.code}${f.includeNames && person.name ? `(${person.name})` : ''}`
+    : f.participantUserId ? '(不在课程名单中)' : '';
+
   const lines = [
     '# HAKCC 研究数据导出',
     '',
@@ -1700,6 +1784,7 @@ export function buildReadme(scope: ExportScope, built: BuiltExport, generatedAt:
     '',
     '## 本次筛选',
     '',
+    ...(f.participantUserId ? [`- 参与者:${personLabel}(只含和这个人有关的行,见下文「按人导出」)`] : []),
     `- 知识空间:${spaceNames}`,
     `- 小组:${groupNames}`,
     `- View:${f.viewId || '全部'}`,
@@ -1741,6 +1826,23 @@ export function buildReadme(scope: ExportScope, built: BuiltExport, generatedAt:
     '在他人笔记上建构(延伸/综合/质疑/证据/澄清/提问)**计为学生之间的互动**,',
     '与聊天消息一并收录在「互动总表」中。涉及 AI 的行以 `是否涉及AI = 是` 标记,可自行过滤。',
   );
+
+  if (f.participantUserId) {
+    lines.push(
+      '',
+      '## 按人导出',
+      '',
+      '各表先按上面的范围建好,再只留和这个人有关的行,所以和同学之间的 Build-on、私聊都还在:',
+      '',
+      '- 笔记总表、参与者名册、AI 内嵌反馈、AI 干预日志、AI 反馈检查记录、行为事件流、学生求助问答:编号是 Ta 的行。',
+      '- 互动总表:Ta 发起的和 Ta 接收的都在,包括同学在 Ta 的笔记上 Build-on。',
+      '- 对话消息:Ta 发的消息;Ta 和 AI 的对话里 AI 的回复;Ta 参与的同伴私聊里对方的消息。小组讨论里别人的消息不含。',
+      '- 笔记修订史:Ta 改的,以及 Ta 的笔记被别人(比如老师)改的。',
+      '- 参与者名册里的各项统计按上面的范围算,不只在这几张表里数。',
+      '- 课次记录是全班的,按人导出时不含。',
+      '- 序号按留下的行重新编过。',
+    );
+  }
 
   if (selected.includes('feedback_checks')) {
     lines.push(

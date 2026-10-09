@@ -5,6 +5,7 @@ import {
   pickCourse,
   inboxWaiting,
   isHelpStaff,
+  isSmallBall,
   quickQuestions,
   ratioFromTop,
   readBallRatio,
@@ -145,5 +146,17 @@ describe('教师、管理员', () => {
     expect(quickQuestions('canvas', 'zh', false, 'teacher')).toContain('怎么给学生分组？');
     expect(quickQuestions('canvas', 'zh', true, 'teacher')).toHaveLength(3);
     expect(quickQuestions('dashboard', 'zh', false, 'teacher')).not.toContain('怎么加入一门新课？');
+  });
+});
+
+describe('isSmallBall', () => {
+  it('知识空间里用鼠标时是小号；首页、手指点的设备、窄屏照旧（2026-10-09）', () => {
+    expect(isSmallBall('canvas', false, false)).toBe(true);
+    expect(isSmallBall('note-editor', false, false)).toBe(true);
+    expect(isSmallBall('document', false, false)).toBe(true);
+    expect(isSmallBall('discussion-room', false, false)).toBe(true);
+    expect(isSmallBall('dashboard', false, false)).toBe(false);
+    expect(isSmallBall('canvas', true, false)).toBe(false);
+    expect(isSmallBall('canvas', false, true)).toBe(false);
   });
 });

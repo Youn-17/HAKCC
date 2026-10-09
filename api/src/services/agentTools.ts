@@ -17,7 +17,7 @@ import { searchKnowledgeBaseDetailed } from './knowledgeBase';
 import { pageLabel, type KbCitationRegistry } from './kbSources';
 import { writeMemory, type MemoryType } from './teacherMemoryService';
 import { generateImage } from './modelRouter';
-import { generateNoteImage } from './noteImage';
+import { produceDrawing } from './drawTurn';
 import {
   describeSpaceGraph, fetchSpaceBuildOnGraph, isNoteId, longestBuildOnChain, SPACE_RELATIONS_LIMIT, type BuildOnLink,
 } from './buildOnContext';
@@ -579,8 +579,8 @@ const executeWebSearch: ToolExecutor = async (args, context) => {
 // Text-to-image via the DMX aggregator with model-tier failover.
 
 /**
- * 生图工具。实现在 noteImage.ts —— 「直接画一张」那条快路走同一份，
- * 两处各写一份的话厂商顺序和转存逻辑迟早会漂。
+ * 画图工具。和「直接画一张」那条快路同一份实现（drawTurn.produceDrawing）：先规划再画，
+ * 结构图由平台画、画面交给生图模型。智能体写的描述就是规划的输入，它手里已经有对话和笔记。
  */
 const executeGenerateImage: ToolExecutor = async (args, context) => {
   const prompt = String(args.prompt ?? '').trim();
@@ -588,7 +588,10 @@ const executeGenerateImage: ToolExecutor = async (args, context) => {
     return { success: false, data: null, error: 'prompt is required' };
   }
 
-  const result = await generateNoteImage(context.courseId ?? null, prompt, {
+  const result = await produceDrawing({
+    courseId: context.courseId ?? null,
+    request: prompt,
+    context: {},
     size: typeof args.size === 'string' ? args.size : undefined,
     model: typeof args.model === 'string' ? args.model : undefined,
     aspectRatio: typeof args.aspect_ratio === 'string' ? args.aspect_ratio : undefined,
@@ -598,10 +601,11 @@ const executeGenerateImage: ToolExecutor = async (args, context) => {
   return {
     success: true,
     data: {
-      image_markdown: `![${prompt.slice(0, 60).replace(/[\[\]]/g, '')}](${result.url})`,
+      image_markdown: result.markdown,
       url: result.url,
       model: result.model,
-      instruction: '把 image_markdown 的内容原样嵌入你的回复正文，用户就能直接看到这张图片。',
+      caption: result.caption,
+      instruction: '把 image_markdown 的内容原样嵌入你的回复正文，用户就能直接看到这张图片和下面那句说明。',
     },
   };
 };
@@ -1658,13 +1662,13 @@ export function createDefaultRegistry(): ToolRegistry {
       function: {
         name: 'generate_image',
         description:
-          '根据文字描述生成一张图片（AI 绘图）。适合：为想法/概念配示意图、绘制场景、可视化描述。生成后把返回的 image_markdown 原样放进回复正文即可展示图片。',
+          '画一张图：画面（场景、插画、比喻、海报），或结构图（观点之间的关系、思维导图、步骤、时间线，平台会按结构画，字不会错）。生成后把返回的 image_markdown 原样放进回复正文即可展示。',
         parameters: {
           type: 'object',
           properties: {
             prompt: {
               type: 'string',
-              description: '画面描述，具体而生动（中文或英文均可），包含主体、风格、构图。',
+              description: '要画什么，写成一段不靠上下文也看得懂的话：具体内容来自对话和笔记（哪些观点、它们怎么连、哪几步），不要写「这个」「上面那个」；画面写清主体、风格、构图。中文或英文均可。',
             },
             size: {
               type: 'string',

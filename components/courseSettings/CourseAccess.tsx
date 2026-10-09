@@ -1,3 +1,4 @@
+import { courseSettingsError } from './errorText';
 /**
  * 协作与权限：谁能和创建者一起管理这门课。
  *
@@ -37,7 +38,7 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
       setMembers(res.members);
       setStanding(res.viewerStanding);
     } catch (err: any) {
-      setError(err?.message ?? (zh ? '读取失败' : 'Failed to load'));
+      setError(courseSettingsError(err, zh, zh ? '加载失败，请重试。' : 'Unable to load data. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -71,7 +72,7 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
       await courseSettings.setMemberRole(courseId, userId, role);
       setMembers(prev => prev.map(m => (m.userId === userId ? { ...m, courseRole: role } : m)));
     } catch (err: any) {
-      setError(err?.message ?? (zh ? '操作失败' : 'Action failed'));
+      setError(courseSettingsError(err, zh, zh ? '操作失败，请重试。' : 'Action failed. Please try again.'));
     } finally {
       setBusyId(null);
     }
@@ -86,7 +87,7 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
       setResults([]);
       await load();
     } catch (err: any) {
-      setError(err?.message ?? (zh ? '邀请失败' : 'Invite failed'));
+      setError(courseSettingsError(err, zh, zh ? '添加教师失败，请重试。' : 'Unable to add the teacher. Please try again.'));
     } finally {
       setBusyId(null);
     }
@@ -111,7 +112,7 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
             {zh ? '协作与权限' : 'Collaboration & Access'}
           </h3>
           <p className="text-xs text-stone-500 dark:text-stone-400">
-            {zh ? '谁能和你一起管理这门课程' : 'Who can manage this course with you'}
+            {zh ? '教师成员与课程管理权限' : 'Teacher membership and course management permissions'}
           </p>
         </div>
       </div>
@@ -120,8 +121,8 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
         <summary><RemixIcon name="shield-check-line" size={16} />{zh ? '课程管理员权限说明' : 'Course manager permissions'}<RemixIcon name="arrow-down-s-line" size={16} /></summary>
         <p className="mt-2 text-xs leading-relaxed text-stone-600 dark:text-stone-400">
           {zh
-            ? '课程管理员可以修改课程设置、填写教学安排、确认课次并撰写教学日志，也会收到课次补记提醒；可以移除学生，但不能移除教师，也不能再指定其他管理员。'
-            : 'Course managers can edit course settings, plan the schedule, confirm sessions and write the teaching log, and they receive session reminders. They may remove students, but not teachers, and cannot appoint other managers.'}
+            ? '课程管理员可维护课程设置与教学记录、接收课次补记提醒，并移除学生；无权移除教师或任命其他管理员。'
+            : 'Course managers can maintain course settings and teaching records, receive session reminders, and remove students. They cannot remove teachers or appoint other managers.'}
         </p>
       </details>
 
@@ -131,10 +132,10 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
 
       <div>
         <p className="mb-2.5 text-sm font-medium text-stone-700 dark:text-stone-300">
-          {zh ? `课程内的教师（${teachers.length}）` : `Teachers in this course (${teachers.length})`}
+          {zh ? `教师成员（${teachers.length}）` : `Teacher members (${teachers.length})`}
           {managers.length > 0 && (
             <span className="ml-2 text-xs font-normal text-stone-500 dark:text-stone-400">
-              {zh ? `其中 ${managers.length} 位是课程管理员` : `${managers.length} manager${managers.length > 1 ? 's' : ''}`}
+              {zh ? `课程管理员 ${managers.length} 人` : `${managers.length} manager${managers.length > 1 ? 's' : ''}`}
             </span>
           )}
         </p>
@@ -161,7 +162,7 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
               </div>
 
               {member.courseRole === 'owner' ? (
-                <span className="text-xs text-stone-400 dark:text-stone-500">{zh ? '身份不可更改' : 'Fixed'}</span>
+                <span className="text-xs text-stone-400 dark:text-stone-500">{zh ? '创建者身份不可更改' : 'Creator role cannot be changed'}</span>
               ) : isOwner ? (
                 <button
                   type="button"
@@ -175,8 +176,8 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
                 >
                   {busyId === member.userId && <Loader2 size={12} className="animate-spin" />}
                   {member.courseRole === 'manager'
-                    ? (zh ? '撤销管理员' : 'Revoke')
-                    : (zh ? '设为管理员' : 'Make manager')}
+                    ? (zh ? '撤销管理权限' : 'Revoke management access')
+                    : (zh ? '设为课程管理员' : 'Make course manager')}
                 </button>
               ) : null}
             </div>
@@ -186,7 +187,7 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
 
       {isOwner && (
         <div>
-          <label className={labelClass}>{zh ? '邀请其他教师加入这门课' : 'Invite another teacher'}</label>
+          <label className={labelClass}>{zh ? '添加教师' : 'Add teacher'}</label>
           <div className="relative">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 dark:text-stone-500" />
             <input
@@ -212,7 +213,7 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
 
           {!searching && query.trim().length >= 2 && results.length === 0 && (
             <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
-              {zh ? '没有找到匹配的教师。对方需要先在平台注册为教师。' : 'No matching teacher. They must be registered as a teacher first.'}
+              {zh ? '未找到匹配教师。请核对姓名或邮箱，并确认对方已注册教师账号。' : 'No matching teacher found. Check the name or email and confirm they have a registered teacher account.'}
             </p>
           )}
 
@@ -232,14 +233,14 @@ const CourseAccess: React.FC<Props> = ({ courseId, lang }) => {
                     className="inline-flex items-center gap-1.5 rounded-lg bg-[#000080] px-3 py-1.5 text-xs font-medium text-white transition-all duration-200 hover:bg-[#000080]/90 active:scale-[0.98] disabled:opacity-50"
                   >
                     {busyId === teacher.id ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />}
-                    {zh ? '加入课程' : 'Add'}
+                    {zh ? '添加至课程' : 'Add to course'}
                   </button>
                 </div>
               ))}
             </div>
           )}
           <p className="mt-1.5 text-xs text-stone-500 dark:text-stone-400">
-            {zh ? '加入后默认是普通教师成员，需要你再单独设为课程管理员。' : 'Added teachers start as plain members; grant them manager access separately.'}
+            {zh ? '新增教师默认为普通成员；管理权限需另行授予。' : 'New teachers join as regular members. Management permissions must be granted separately.'}
           </p>
         </div>
       )}

@@ -9,6 +9,7 @@ import { useHelpPageContext } from './helpContext';
 import {
   COMPACT_MAX_WIDTH,
   ballBounds,
+  isSmallBall,
   forgetCourse,
   hasOpenDialog,
   inboxWaiting,
@@ -247,6 +248,7 @@ export default function HelpWidget({ lang }: { lang: HelpLang }) {
   const top = dragTop ?? topFromRatio(ratio, bounds);
 
   const surface = page.surface && (!page.courseId || page.courseId === route.courseId) ? page.surface : route.surface;
+  const small = isSmallBall(surface, coarse, compact);
 
   const openPanel = useCallback(() => {
     setPanelMounted(true);
@@ -390,12 +392,12 @@ export default function HelpWidget({ lang }: { lang: HelpLang }) {
           onPointerLeave={e => { if (e.pointerType === 'mouse' && !drag.current) setPeek(false); }}
           onFocus={e => { if (isFocusVisible(e.currentTarget)) setPeek(true); }}
           onBlur={() => setPeek(false)}
-          className={`pointer-events-auto relative grid size-11 shrink-0 touch-none select-none place-items-center rounded-full bg-[#000080] text-white ring-1 ring-inset ring-white/15 shadow-[0_10px_24px_-10px_rgba(0,0,128,0.7)] transition-[translate,scale,background-color,box-shadow] duration-200 ease-out before:absolute before:inset-y-0 before:-left-3 before:content-[''] hover:bg-[#0b0b8c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000080] motion-reduce:transition-none dark:bg-[#4169E1] dark:hover:bg-[#3457D5] dark:ring-white/25 dark:shadow-[0_10px_24px_-10px_rgba(2,6,23,0.95)] dark:focus-visible:outline-[#93AAFD] ${dragging ? 'scale-105 cursor-grabbing' : 'cursor-pointer active:scale-95'} ${out ? '-translate-x-3' : 'translate-x-[42%]'}`}
+          className={`pointer-events-auto relative grid ${small ? 'size-[1.875rem]' : 'size-11'} shrink-0 touch-none select-none place-items-center rounded-full bg-[#000080] text-white ring-1 ring-inset ring-white/15 shadow-[0_10px_24px_-10px_rgba(0,0,128,0.7)] transition-[translate,scale,background-color,box-shadow] duration-200 ease-out before:absolute before:inset-y-0 before:-left-3 before:content-[''] hover:bg-[#0b0b8c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000080] motion-reduce:transition-none dark:bg-[#4169E1] dark:hover:bg-[#3457D5] dark:ring-white/25 dark:shadow-[0_10px_24px_-10px_rgba(2,6,23,0.95)] dark:focus-visible:outline-[#93AAFD] ${dragging ? 'scale-105 cursor-grabbing' : 'cursor-pointer active:scale-95'} ${out ? '-translate-x-3' : small ? 'translate-x-[46%]' : 'translate-x-[42%]'}`}
         >
           <RemixIcon
             name="customer-service-2-line"
-            size={21}
-            className={`transition-transform duration-200 motion-reduce:transition-none ${out ? 'translate-x-0' : '-translate-x-[0.6rem]'}`}
+            size={small ? 16 : 21}
+            className={`transition-transform duration-200 motion-reduce:transition-none ${out ? 'translate-x-0' : small ? '-translate-x-[0.45rem]' : '-translate-x-[0.6rem]'}`}
           />
           {waitingText ? (
             <span

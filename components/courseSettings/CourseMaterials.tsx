@@ -1,3 +1,4 @@
+import { courseSettingsError } from './errorText';
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -25,77 +26,75 @@ const TRANSLATIONS = {
   en: {
     title: 'Course Materials',
     upload: 'Upload Material',
-    whereTitle: 'Where uploaded materials go',
     where: [
-      'The file is stored on the platform and can be downloaded from this list.',
-      'PDF, Word (.docx) and text files are read in the background and added to this course\'s AI knowledge base. When students ask the AI in a note, it searches the knowledge base first, and the answer lists the passages it cites, with page numbers for PDFs. Images, audio, video, PowerPoint and Excel files are stored only.',
-      'Students do not see this list. To let students read a file themselves, upload it with Attachment in a knowledge space.',
+      'Uploaded files can be downloaded here.',
+      'Parsed PDF, Word (.docx) and text files are available to course AI assistants for retrieval. Citations show sources and available PDF page numbers. Images, audio, video, PowerPoint and Excel files are stored for download only.',
+      'Students cannot access this page. To share the original file, upload it as a knowledge space attachment.',
     ],
     dragDrop: 'Drag and drop a file here, or click to browse',
     maxSize: 'Maximum file size: 50MB',
     tooLarge: 'The file is larger than 50MB.',
     emptyState: 'No materials uploaded yet.',
     uploadTitle: 'Upload New Material',
-    titlePlaceholder: 'Material title (the AI cites materials by this title)',
+    titlePlaceholder: 'Material title (used in citations)',
     descriptionPlaceholder: 'Description (optional)',
     uploadBtn: 'Upload',
     uploading: 'Uploading…',
     cancel: 'Cancel',
-    deleteConfirm: 'Delete this material? It is also removed from the AI knowledge base.',
-    uploadFailed: 'Upload failed: ',
-    deleteFailed: 'Delete failed: ',
+    deleteConfirm: 'Delete this material? The file and its knowledge base content will be removed.',
+    uploadFailed: 'Upload failed. Please try again.',
+    deleteFailed: 'Delete failed. Please try again.',
     kb: {
-      ready: (n: number) => `In the AI knowledge base · ${n} passages`,
-      refining: 'The PDF is still being parsed for structure; the knowledge base updates when that finishes.',
-      unsearchable: 'Stored in the knowledge base, but the AI cannot search it yet: the platform\'s retrieval service is not set up. Please tell the platform administrator.',
-      processing: 'Reading the file; it joins the AI knowledge base when done.',
-      no_text: 'No text could be read, so the AI cannot use it (common with scanned PDFs). The file can still be downloaded.',
-      failed: 'Adding it to the knowledge base failed. Use Re-parse to try again.',
-      unsupported: 'This format is not added to the AI knowledge base. The file is stored for download only.',
+      ready: (n: number) => `Indexed · ${n} passages`,
+      refining: 'Further PDF parsing is in progress. Knowledge base content will update automatically when complete.',
+      unsearchable: 'Content is indexed, but retrieval is not configured. Please contact the platform administrator.',
+      processing: 'Processing material. It will be available for AI retrieval when complete.',
+      no_text: 'No searchable text was extracted. Check that the file contains recognizable text. The file is still available for download.',
+      failed: 'Processing failed. Please re-parse the material.',
+      unsupported: 'This format does not support knowledge base retrieval. The file is still available for download.',
     } as Record<Exclude<KbState, 'ready'>, string> & { ready: (n: number) => string; refining: string },
-    kbSwitch: 'In the knowledge base',
-    kbOff: 'Switched off: the AI cannot find this material. The file can still be downloaded.',
+    kbSwitch: 'Allow AI retrieval',
+    kbOff: 'AI retrieval is off. The file is still available for download.',
     reparse: 'Re-parse',
-    reparseHint: 'Read the file again from scratch and replace its passages in the knowledge base',
-    actionFailed: 'Could not change it: ',
+    reparseHint: 'Extract the file content again and update the knowledge base',
+    actionFailed: 'Action failed. Please try again.',
     pages: (n: number) => `${n} pages`,
   },
   zh: {
     title: '课程资料',
     upload: '上传资料',
-    whereTitle: '上传的资料去了哪里',
     where: [
-      '文件存在平台上，可以在这个列表里下载。',
-      'PDF、Word（.docx）和文本文件会在后台读出正文，进入本课程的 AI 知识库：学生在笔记里问 AI 时，AI 会先检索它，回答下面列出引用的段落，PDF 还写明第几页。图片、音视频、PPT 和 Excel 只存文件。',
-      '学生看不到这个列表。要让学生自己阅读原文，请在知识空间里用「附件」上传。',
+      '上传的文件可在本页下载。',
+      'PDF、Word（.docx）和文本文件解析后可供课程 AI 助手检索，引用内容显示来源及可用的 PDF 页码。图片、音视频、PPT 和 Excel 仅保存文件，不参与知识库检索。',
+      '学生无法访问本页；如需共享原文，请将文件上传为知识空间附件。',
     ],
     dragDrop: '拖拽文件到此处，或点击选择文件',
     maxSize: '文件最大 50MB',
     tooLarge: '文件超过 50MB。',
     emptyState: '还没有上传资料。',
     uploadTitle: '上传新资料',
-    titlePlaceholder: '资料标题（AI 引用资料时用这个标题）',
+    titlePlaceholder: '资料标题（用于引用来源）',
     descriptionPlaceholder: '描述（可选）',
     uploadBtn: '上传',
     uploading: '上传中…',
     cancel: '取消',
-    deleteConfirm: '确定删除这份资料吗？它也会从 AI 知识库里移除。',
-    uploadFailed: '上传失败：',
-    deleteFailed: '删除失败：',
+    deleteConfirm: '删除此资料？文件及其知识库内容将一并移除。',
+    uploadFailed: '上传失败，请重试。',
+    deleteFailed: '删除失败，请重试。',
     kb: {
-      ready: (n: number) => `已进入 AI 知识库 · ${n} 段`,
-      refining: 'PDF 还在做结构化解析，完成后知识库里的内容会自动更新。',
-      unsearchable: '已存入知识库，但 AI 还检索不到：平台的检索服务没有配置好，请告诉平台管理员。',
-      processing: '正在读取正文，完成后进入 AI 知识库。',
-      no_text: '没有读出正文，AI 用不上（扫描版 PDF 常见）。文件仍可下载。',
-      failed: '进入知识库时出错，可以点「重新解析」再试。',
-      unsupported: '这种格式不进 AI 知识库，只存文件供下载。',
+      ready: (n: number) => `已收录 · ${n} 个段落`,
+      refining: 'PDF 正在进一步解析，完成后自动更新知识库内容。',
+      unsearchable: '资料已收录，检索服务尚未配置。请联系平台管理员。',
+      processing: '正在处理资料，完成后可用于 AI 检索。',
+      no_text: '未提取到可检索文本。请检查文件是否包含可识别的文字；文件仍可下载。',
+      failed: '资料处理失败，请重新解析。',
+      unsupported: '此格式暂不支持知识库检索，文件仍可下载。',
     } as Record<Exclude<KbState, 'ready'>, string> & { ready: (n: number) => string; refining: string },
-    kbSwitch: '进入知识库',
-    kbOff: '已关闭：AI 检索不到这份资料，文件仍可下载。',
+    kbSwitch: '允许 AI 检索',
+    kbOff: '已关闭 AI 检索，文件仍可下载。',
     reparse: '重新解析',
-    reparseHint: '从头再读一遍文件，替换它在知识库里的段落',
-    actionFailed: '没改成：',
+    reparseHint: '重新提取文件内容并更新知识库',
+    actionFailed: '操作失败，请重试。',
     pages: (n: number) => `${n} 页`,
   },
 };
@@ -213,7 +212,7 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
       closeUpload();
       onRefresh();
     } catch (err) {
-      setError(`${t.uploadFailed}${err instanceof Error ? err.message : String(err)}`);
+      setError(courseSettingsError(err, lang === 'zh', t.uploadFailed));
     } finally {
       setUploading(false);
     }
@@ -226,7 +225,7 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
       await courseSettings.deleteMaterial(courseId, materialId);
       onRefresh();
     } catch (err) {
-      setError(`${t.deleteFailed}${err instanceof Error ? err.message : String(err)}`);
+      setError(courseSettingsError(err, lang === 'zh', t.deleteFailed));
     }
   };
 
@@ -237,7 +236,7 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
       await action();
       onRefresh();
     } catch (err) {
-      setError(`${t.actionFailed}${err instanceof Error ? err.message : String(err)}`);
+      setError(courseSettingsError(err, lang === 'zh', t.actionFailed));
     } finally {
       setPendingIds(prev => {
         const next = new Set(prev);
@@ -291,8 +290,8 @@ const CourseMaterials: React.FC<CourseMaterialsProps> = ({ courseId, materials, 
       </div>
 
       <p className="course-settings-section-hint">{lang === 'zh'
-        ? '课程资料仅供教师管理；供学生阅读的文件请上传至知识空间。'
-        : 'Course materials are managed by teachers. Upload files to a knowledge space for student reading.'}</p>
+        ? '本页由课程创建者和课程管理员管理。供学生阅读的文件请上传至知识空间。'
+        : 'This page is managed by the course creator and course managers. Upload files to a knowledge space for student reading.'}</p>
       <details className="course-settings-guidance">
         <summary><RemixIcon name="information-line" size={16} />{lang === 'zh' ? '资料用途与可见范围' : 'Material use and visibility'}<RemixIcon name="arrow-down-s-line" size={16} /></summary>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-stone-600 dark:text-stone-400">

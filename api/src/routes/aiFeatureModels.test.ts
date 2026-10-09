@@ -158,8 +158,8 @@ describe('GET /courses/:id/ai-feature-models', () => {
     expectNoSecrets(res.text);
 
     expect(feature(res.json, 'note_feedback').current).toEqual({ providerId: 'deepseek', model: 'deepseek-flash', source: 'default' });
-    // 2026-09-29 起生成图片默认先用 DMX（六到八秒），MiniMax 约 35 秒放在后面
-    expect(feature(res.json, 'note_image').current).toEqual({ providerId: 'dmx', model: 'qwen-image-plus', source: 'default' });
+    // 2026-09-29 起生成图片默认先用 DMX，MiniMax 放在后面；10-09 DMX 下架 qwen-image-plus，默认换成 Seedream 4.5
+    expect(feature(res.json, 'note_image').current).toEqual({ providerId: 'dmx', model: 'doubao-seedream-4-5-251128', source: 'default' });
     expect(feature(res.json, 'web_search').current).toEqual({ providerId: 'tavily', model: 'tavily-search', source: 'fixed' });
     expect(res.json.options.chat.some((o: { providerId: string }) => o.providerId === 'tavily')).toBe(false);
     expect(res.json.partnerModels).toMatchObject({ allowed: null, restricted: false, defaultModel: { providerId: 'deepseek', model: 'deepseek-flash' } });

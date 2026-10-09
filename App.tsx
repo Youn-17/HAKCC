@@ -1,4 +1,4 @@
-import React, { useState, lazy, Suspense } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import LoginPage from './components/auth/LoginPage';
 import ResetPasswordPage from './components/auth/ResetPasswordPage';
@@ -9,7 +9,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { useScrollActivity } from './hooks/useScrollActivity';
 import { usePlatform } from './hooks/usePlatform';
 import { UserRole, Language } from './types';
-import { readAppLanguage, saveLanguagePreference } from './utils/languagePreference';
+import { useLanguagePreference } from './hooks/useLanguagePreference';
 
 function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType<any> }>) {
   return lazy(() =>
@@ -101,18 +101,14 @@ const AdaptiveWorkspace: React.FC<{ userRole: UserRole; lang: Language; setLang:
 const AppRouter: React.FC = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [lang, setLangState] = useState<Language>(() => readAppLanguage('en'));
+  const [language, setLang] = useLanguagePreference();
+  const lang: Language = language === 'en' ? 'en' : 'zh';
 
   // Derive role from authenticated user
   const userRole: UserRole = (user?.role as UserRole) ?? 'student';
 
   const handleCourseSelect = (courseId: string, courseTitle: string) => {
     navigate(`/workspace/${courseId}`, { state: { courseTitle } });
-  };
-
-  const setLang = (nextLang: Language) => {
-    saveLanguagePreference(nextLang);
-    setLangState(nextLang);
   };
 
   if (loading) {

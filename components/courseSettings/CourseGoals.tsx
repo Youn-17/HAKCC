@@ -1,3 +1,4 @@
+import { courseSettingsError } from './errorText';
 /**
  * 学习目标。
  *
@@ -41,7 +42,7 @@ const TRANSLATIONS = {
     usage: 'Lesson Prep references the first five goals by priority. Goals are not currently shown to students.',
     readOnly: 'Only the course creator and course managers can change the goals.',
     emptyStaff: 'No learning goals yet.',
-    emptyReadOnly: 'This course has no learning goals yet.',
+    emptyReadOnly: 'No learning goals yet.',
     titlePlaceholder: 'Goal title',
     descriptionPlaceholder: 'Description (optional)',
     priority: 'Priority',
@@ -53,18 +54,18 @@ const TRANSLATIONS = {
     remove: 'Delete goal',
     titleRequired: 'Enter a title first.',
     deleteConfirm: (title: string) => `Delete the goal "${title}"?`,
-    addFailed: 'The goal was not added: ',
-    updateFailed: 'The goal was not saved: ',
-    deleteFailed: 'The goal was not deleted: ',
-    gone: 'This goal no longer exists (it may have been deleted by another teacher).',
+    addFailed: 'Unable to add the goal. Please try again.',
+    updateFailed: 'Unable to save the goal. Please try again.',
+    deleteFailed: 'Unable to delete the goal. Please try again.',
+    gone: 'This goal no longer exists. Please refresh the list.',
   },
   zh: {
     title: '学习目标',
     addGoal: '添加目标',
-    usage: '备课助手参考优先级最高的前 5 项目标；学生端暂不展示。',
+    usage: '备课助手参考按优先级排序的前 5 项目标；学生暂不可见。',
     readOnly: '只有课程创建者和课程管理员可以修改学习目标。',
-    emptyStaff: '还没有学习目标。',
-    emptyReadOnly: '这门课还没有设置学习目标。',
+    emptyStaff: '暂无学习目标。',
+    emptyReadOnly: '暂无学习目标。',
     titlePlaceholder: '目标标题',
     descriptionPlaceholder: '目标描述（选填）',
     priority: '优先级',
@@ -76,14 +77,12 @@ const TRANSLATIONS = {
     remove: '删除目标',
     titleRequired: '请先填写目标标题。',
     deleteConfirm: (title: string) => `确定删除目标「${title}」吗？`,
-    addFailed: '目标没有添加成功：',
-    updateFailed: '目标没有保存成功：',
-    deleteFailed: '目标没有删除成功：',
-    gone: '这条目标已经不在了，可能被其他教师删掉了。',
+    addFailed: '添加失败，请重试。',
+    updateFailed: '保存失败，请重试。',
+    deleteFailed: '删除失败，请重试。',
+    gone: '该目标已不存在，请刷新列表。',
   },
 };
-
-const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** 高优先级在前，同一档按添加先后，和后端的排序一致 */
 function compareGoals(a: CourseGoal, b: CourseGoal): number {
@@ -206,7 +205,7 @@ const CourseGoals: React.FC<CourseGoalsProps> = ({ courseId, goals, onGoalsChang
       onGoalsChange(prev => [...prev, goal]);
       closeAdd();
     } catch (err) {
-      setError(`${t.addFailed}${messageOf(err)}`);
+      setError(courseSettingsError(err, lang === 'zh', t.addFailed));
     } finally {
       setBusyId(null);
     }
@@ -248,7 +247,7 @@ const CourseGoals: React.FC<CourseGoalsProps> = ({ courseId, goals, onGoalsChang
       onGoalsChange(prev => prev.map(g => (g.id === goalId ? goal : g)));
       cancelEdit();
     } catch (err) {
-      if (!dropIfGone(err, goalId)) setError(`${t.updateFailed}${messageOf(err)}`);
+      if (!dropIfGone(err, goalId)) setError(courseSettingsError(err, lang === 'zh', t.updateFailed));
     } finally {
       setBusyId(null);
     }
@@ -263,7 +262,7 @@ const CourseGoals: React.FC<CourseGoalsProps> = ({ courseId, goals, onGoalsChang
       onGoalsChange(prev => prev.filter(g => g.id !== goal.id));
       if (editingId === goal.id) cancelEdit();
     } catch (err) {
-      if (!dropIfGone(err, goal.id)) setError(`${t.deleteFailed}${messageOf(err)}`);
+      if (!dropIfGone(err, goal.id)) setError(courseSettingsError(err, lang === 'zh', t.deleteFailed));
     } finally {
       setBusyId(null);
     }

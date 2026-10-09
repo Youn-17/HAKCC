@@ -40,7 +40,11 @@ Accordingly, this release does not recommend blindly applying the archive with `
 
 No production database dump or course dataset is included. A future release can provide a verified baseline schema without exposing private content.
 
-## Upgrading to v0.5.0
+## Upgrading to v0.6.0
+
+Review the [shared-document guide](write/UPDATES_v0.6.0.en.md). Collaboration requires a separate service, persistent storage, server-only internal credentials, authenticated WebSocket proxy and explicit frontend/API flags. The loopback-only Docker demo can run without a Supabase project. Existing deployments retain their earlier memory and schema upgrade requirements; the new collaborative body is not yet integrated into AI or research exports.
+
+## Previous v0.5.0 upgrade
 
 Review the [memory upgrade guide](write/UPDATES_v0.5.0.en.md) and migration [086_conversation_memory.sql](supabase/migrations/086_conversation_memory.sql). It adds a JSONB memory field to existing workspace and Note conversation tables. Back up the database, inspect the schema, and apply the reviewed migration before starting the updated API. Check course/ownership scope, summary persistence and actual provider limits in an isolated project. Summarization and personalization send selected records to the configured AI provider; they do not train model weights.
 
@@ -76,7 +80,7 @@ Configure AI services through the appropriate administration/course tools. Selec
 ```bash
 npm run build
 npm run build --prefix api
-VITE_SUPABASE_URL=https://example.supabase.co VITE_SUPABASE_ANON_KEY=public-release-test-key npm test -- --maxWorkers=2 --testTimeout=20000
+VITE_SUPABASE_URL=https://example.supabase.co VITE_SUPABASE_ANON_KEY=public-release-test-key npm test -- --maxWorkers=2 --testTimeout=60000
 ```
 
 The test command uses dummy browser configuration; API test setup also uses test values. API tests require permission to bind loopback ports. These tests do not require or validate a production course or a live provider key.

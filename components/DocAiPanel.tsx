@@ -13,10 +13,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Loader2, Sparkles, Send, History, Plus } from 'lucide-react';
-import { ai as aiApi, documents as docsApi, type ApiAIConfig, type DocChatThread } from '../services/apiClient';
+import { ai as aiApi, documents as docsApi, type ApiAIConfig, type DocChatThread, type PreviousDrawingPayload } from '../services/apiClient';
 import { MORANDI, chipStyle, ink } from './morandiPalette';
 import type { Language } from '../types';
-import { detectDrawIntent } from './drawIntent';
+import { chooseDrawing } from './drawRouting';
 import DrawingProgress from './DrawingProgress';
 
 interface Props {
@@ -42,7 +42,12 @@ interface Props {
   isSpreadsheet?: boolean;
 }
 
-interface Msg { role: 'user' | 'assistant'; content: string }
+interface Msg {
+  role: 'user' | 'assistant';
+  content: string;
+  /** 这条回复是 AI 画的图：留着当时的原话和规划，下一句要改它时带回服务端 */
+  drawing?: PreviousDrawingPayload;
+}
 
 /** AI 的回复本来就带 markdown。按纯文本渲染，学生看到的是一堆星号。 */
 const AiMarkdown: React.FC<{ text: string }> = ({ text }) => {
@@ -70,7 +75,7 @@ const DocAiPanel: React.FC<Props> = ({ noteId, courseId, docTitle, docText, refi
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   /** 这一轮是在画图（「画一张……」）：等待时放绘图动画，不显示「正在读这份文档」 */
-  const [drawing, setDrawing] = useState<{ prompt: string; startedAt: number } | null>(null);
+  const [drawing, setDrawing] = useState<{ prompt: string; startedAt: number; mode?: 'new' | 'edit' } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -128,6 +133,8 @@ const DocAiPanel: React.FC<Props> = ({ noteId, courseId, docTitle, docText, refi
     }
     setError(null);
     setSending(true);
+    const last = messages[messages.length - 1];
+    const previous = last?.role === 'assistant' && last.drawing ? last.drawing : null;
     const next: Msg[] = [...messages, { role: 'user', content: question }];
     setMessages(next);
     setInput('');
@@ -135,12 +142,35 @@ const DocAiPanel: React.FC<Props> = ({ noteId, courseId, docTitle, docText, refi
       let reply: string;
       let usedProvider: string;
       let usedModel: string;
-      if (detectDrawIntent(question)) {
-        // 「画一张……」直接出图，不经对话模型；用哪个出图服务按课程 AI 设置里的「笔记配图」（默认 DMX）
-        setDrawing({ prompt: question, startedAt: Date.now() });
-        ({ markdown: reply, provider_id: usedProvider, model: usedModel } = await aiApi.image({
+      let drew: PreviousDrawingPayload | undefined;
+      // 要不要画、改上一张还是新画：服务端的 Jev 判断（drawRouting.ts），和图不沾边的句子不问
+      const choice = await chooseDrawing(question, {
+        previous,
+        lastReply: !previous && last?.role === 'assistant' ? last.content : null,
+      });
+      if (choice.draw) {
+        // 要画就直接出图，不经对话模型。带上文档和这段对话：服务端先读它们弄清楚要画什么（2026-10-09）
+        setDrawing({ prompt: question, startedAt: Date.now(), mode: choice.mode });
+        const out = await aiApi.image({
           course_id: courseId, prompt: question, feature: 'doc_ai',
-        }));
+          context: {
+            title: docTitle,
+            text: docText.slice(0, 6000),
+            history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+            ...(choice.mode === 'edit' && previous ? { previous } : {}),
+          },
+          mode: choice.mode,
+          form: choice.form,
+          ...(choice.route ? { route: choice.route } : {}),
+        });
+        ({ markdown: reply, provider_id: usedProvider, model: usedModel } = out);
+        drew = {
+          request: question,
+          caption: out.caption ?? '',
+          kind: out.drawing?.kind ?? out.kind ?? 'picture',
+          ...(out.drawing?.prompt ? { prompt: out.drawing.prompt } : {}),
+          ...(out.drawing?.diagram ? { diagram: out.drawing.diagram } : {}),
+        };
       } else {
         const excerpt = docText.slice(0, MAX_CONTEXT);
         const truncated = docText.length > MAX_CONTEXT;
@@ -163,7 +193,7 @@ const DocAiPanel: React.FC<Props> = ({ noteId, courseId, docTitle, docText, refi
           messages: next.map(m => ({ role: m.role, content: m.content })),
         }));
       }
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: reply, ...(drew ? { drawing: drew } : {}) }]);
 
       // 留存这一轮。失败不打断对话 —— 但会在研究数据里留下缺口，所以要记日志。
       if (noteId) {
@@ -328,7 +358,7 @@ const DocAiPanel: React.FC<Props> = ({ noteId, courseId, docTitle, docText, refi
 
         {sending && drawing && (
           <div className="mb-2.5">
-            <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} />
+            <DrawingProgress prompt={drawing.prompt} lang={lang} startedAt={drawing.startedAt} mode={drawing.mode} />
           </div>
         )}
         {sending && !drawing && (
