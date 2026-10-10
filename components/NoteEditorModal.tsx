@@ -1,3 +1,4 @@
+import {useInteractionMotion} from '../hooks/useInteractionMotion';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { TRIGGER_TYPE_LABEL } from './feedbackLabels';
@@ -1370,6 +1371,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     readDraft: () => ({ title, html: editorRef.current?.innerHTML ?? '' }),
   });
 
+  const insertionMotion=useInteractionMotion(isOpen);
   if (!isOpen) return null;
 
   /** 记下眼前这一次编辑。异步请求回来时调它：返回 false 说明学生已经换了笔记或关掉了编辑器。 */
@@ -2171,6 +2173,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     const nextHtml = editorRef.current?.innerHTML ?? '';
     updateWordCount();
     scheduleFeedbackCheck(nextHtml);
+    return inserted.filter((node):node is Element=>node instanceof Element);
   };
 
   const execCmd = (command: string, value?: string) => {
@@ -3055,7 +3058,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       ? '<div data-scaffold-slot style="font-size:13px;color:#1e293b;">]</div>'
       : '';
     const html = `<div data-ai-source="genai" data-scaffold-adopted="${escapeHtml(aiInsertScaffold?.id ?? '')}" data-source-message-id="${escapeHtml(pendingAiInsert.sourceMessageId ?? '')}" data-feedback-id="${escapeHtml(pendingAiInsert.feedbackId ?? '')}" data-provider-id="${escapeHtml(providerId)}" data-model="${escapeHtml(model)}" style="margin:10px 0;border:1px solid #cbd5e1;border-left:4px solid #22577a;background:#f8fafc;color:#1e293b;padding:10px 12px;border-radius:8px;"><div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#475569;"><span style="display:inline-flex;height:18px;align-items:center;border-radius:999px;background:#dbeafe;color:#1e3a8a;padding:0 8px;">${t.aiSource}</span><span>${escapeHtml(providerLabel)} · ${escapeHtml(model || 'model')}</span></div>${scaffoldOpen}<div style="font-size:14px;line-height:1.75;">${renderMarkdownToHtml(selectedText)}</div>${scaffoldClose}<div style="margin-top:10px;border-top:1px solid #e2e8f0;padding-top:8px;font-size:12px;line-height:1.6;color:#475569;">${acceptanceReason ? `<strong style="color:#334155;">${escapeHtml(t.insertAiReason)}:</strong> ${escapeHtml(acceptanceReason)}` : ''}${studentRevisionPlan ? `<br><strong style="color:#334155;">${escapeHtml(t.insertAiPlan)}:</strong> ${escapeHtml(studentRevisionPlan)}` : ''}</div></div><p><br></p>`;
-    insertHtmlAtCursor(html);
+    const inserted=insertHtmlAtCursor(html);
+    const aiBlock=inserted?.find(node=>node.matches('[data-ai-source="genai"]'));
+    if(aiBlock)insertionMotion.highlight(aiBlock,'ai-insertion');
     if (!noteId) {
       closeAiInsertDialog();
       return;

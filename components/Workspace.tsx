@@ -54,6 +54,7 @@ import { useSpaceData, apiNoteToNote, apiRelationToEdge, type NoteGeometry } fro
 import { useAuth } from '../contexts/AuthContext';
 import { useReportHelpContext } from './help/helpContext';
 import { gsap, prepareForMotion, shouldReduceMotion, useGSAP } from '../utils/gsapMotion';
+import {useWorkspaceNoteMotion} from '../hooks/useWorkspaceNoteMotion';
 import RemixIcon from './RemixIcon';
 import FloatingAtPoint from './FloatingAtPoint';
 import { BUILD_ON_MOVES, RELATION_COLORS, RELATION_STYLE, RELATION_LABELS } from './relationColors';
@@ -2087,6 +2088,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     !spaceId || note.id.startsWith('temp-') || note.authorId === user?.id || viewerIsStaff
   ), [spaceId, user?.id, viewerIsStaff]);
 
+  const [noteSavedMotion,setNoteSavedMotion]=useState<{id:string;serial:number}|null>(null);
   const handleSaveNote = useCallback(async (title: string, content: string, tags: string[] = []) => {
     const authorName = user?.name ?? 'Current user';
 
@@ -2096,6 +2098,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
       if (!spaceId || !noteId) return;
       notesApi.update(noteId, { title, content, tags })
         .then(async () => {
+          setNoteSavedMotion({id:noteId,serial:Date.now()});
           const ownContribution = user?.id === before?.authorId;
           if (ownContribution) {
             try {
@@ -2858,6 +2861,17 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
       }
   };
 
+  const [topicHighlight, setTopicHighlight] = useState<ReadonlySet<string>>(() => new Set());
+  const topicHighlightTimer = useRef(0);
+  const [noteHighlightKey,setNoteHighlightKey]=useState(0);
+  useWorkspaceNoteMotion(workspaceMotionRef,`${spaceId}:${activeViewId}`,spaceLoading,notes,edges,topicHighlight,noteHighlightKey,noteSavedMotion);
+  /** 相关的几条亮四秒（讨论主题、搜索结果、悬停列表里点的那条） */
+  const flashNotes = useCallback((ids: readonly string[]) => {
+    setTopicHighlight(new Set(ids));
+    setNoteHighlightKey(key=>key+1);
+    window.clearTimeout(topicHighlightTimer.current);
+    topicHighlightTimer.current = window.setTimeout(() => setTopicHighlight(new Set()), 4000);
+  }, []);
   const focusNote = useCallback((noteId: string) => {
     const targetNote = notes.find(note => note.id === noteId);
     if (!targetNote) return;
@@ -2866,7 +2880,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     const newY = -targetNote.y * viewPort.zoom + window.innerHeight / 2;
     setViewPort(prev => ({ ...prev, x: newX, y: newY }));
     setSelectedNoteId(targetNote.id);
-  }, [notes, viewPort.zoom, revealNotes]);
+    flashNotes([targetNote.id]);
+  }, [notes, viewPort.zoom, revealNotes, flashNotes]);
 
   const openTimelineNote = async (id:string, targetSpace?:string) => {
     try {
@@ -2948,14 +2963,6 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
    */
   const topicFingerprint = useMemo(() => notesFingerprint(visibleNotes), [visibleNotes]);
   const viewTopicList = useViewTopics(spaceId, activeViewId, topicFingerprint);
-  const [topicHighlight, setTopicHighlight] = useState<ReadonlySet<string>>(() => new Set());
-  const topicHighlightTimer = useRef(0);
-  /** 相关的几条亮四秒（讨论主题、搜索结果、悬停列表里点的那条） */
-  const flashNotes = useCallback((ids: readonly string[]) => {
-    setTopicHighlight(new Set(ids));
-    window.clearTimeout(topicHighlightTimer.current);
-    topicHighlightTimer.current = window.setTimeout(() => setTopicHighlight(new Set()), 4000);
-  }, []);
   const selectTopic = useCallback((topic: ViewTopic) => {
     const ids = topic.noteIds.filter(id => visibleNoteById.has(id));
     if (ids.length === 0) return;
@@ -3313,6 +3320,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                    return (
                      <path
                        key={edge.id}
+                       data-motion-edge={edge.id}
                        d={pathD}
                        fill="none"
                        stroke={color}

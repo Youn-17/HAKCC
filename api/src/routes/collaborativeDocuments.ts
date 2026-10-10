@@ -25,7 +25,12 @@ async function internal(id: string, action = '', method = 'GET', body?: unknown)
       body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(15_000),
     });
   } catch { throw new ApiError(503, '协作文档服务暂时不可用'); }
-  if (!response.ok) throw new ApiError(503, '协作文档服务处理失败');
+  if (!response.ok) {
+    if (response.status === 404 && /^\/snapshots\/[1-9][0-9]*$/.test(action)) {
+      throw new ApiError(404, '版本不存在或已超过保留期限');
+    }
+    throw new ApiError(503, '协作文档服务处理失败');
+  }
   return response;
 }
 export async function documentAccess(id: string, user: NonNullable<Request['user']>) {
@@ -95,6 +100,12 @@ router.get('/collaborative-documents/:id/export', verifyJWT, async (req, res) =>
 router.get('/collaborative-documents/:id/snapshots', verifyJWT, async (req, res) => {
   await documentAccess(String(req.params.id), req.user!);
   res.json(await (await internal(String(req.params.id), '/snapshots')).json());
+});
+router.get('/collaborative-documents/:id/snapshots/:snapshotId', verifyJWT, async (req, res) => {
+  await documentAccess(String(req.params.id), req.user!);
+  const id = String(req.params.snapshotId);
+  if (!/^[1-9][0-9]{0,15}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new ApiError(400, '无效的版本标识');
+  res.json(await (await internal(String(req.params.id), `/snapshots/${id}`)).json());
 });
 router.post('/collaborative-documents/:id/snapshots', verifyJWT, async (req, res) => {
   const access = await documentAccess(String(req.params.id), req.user!);

@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import jwt from 'jsonwebtoken';
 import { pathToFileURL } from 'node:url';
 import { DocumentStore, MAX_BYTES } from './store.mjs';
-import { exportWord } from './export.mjs';
+import { exportWord, snapshotContent } from './export.mjs';
 
 const PEOPLE = {
   'student-a': { id: 'student-a', name: '试点学生 A', color: '#2563eb', canEdit: true },
@@ -118,7 +118,7 @@ export function createCollaborationServer({ port = 4310, host = '127.0.0.1', pat
           send(200, { documentId: 'demo-document', title: store.get('demo-document').title, user, canEdit: user.canEdit, token });
         } else {
           const internal = url.pathname.startsWith('/internal/');
-          const match = /^\/(internal|demo)\/documents\/([a-zA-Z0-9_-]{1,80})(?:\/(export|snapshots))?$/.exec(url.pathname);
+          const match = /^\/(internal|demo)\/documents\/([a-zA-Z0-9_-]{1,80})(?:\/(export|snapshots)(?:\/([1-9][0-9]{0,15}))?)?$/.exec(url.pathname);
           if (!match || (!internal && !demo)) throw fail(404, 'Not found');
           if (internal) {
             if (request.headers.authorization !== `Bearer ${secret}`) throw fail(401, 'Unauthorized');
@@ -126,7 +126,7 @@ export function createCollaborationServer({ port = 4310, host = '127.0.0.1', pat
             const context = await authorize((request.headers.authorization ?? '').replace(/^Bearer /, ''), match[2]);
             if (request.method !== 'GET' && !context.canEdit) throw fail(403, 'Read only');
           }
-          const [, , id, action] = match;
+          const [, , id, action, snapshotId] = match;
           if (!action && request.method === 'POST' && internal) {
             const input = await body(request);
             if (typeof input.title !== 'string' || input.title.length > 200) throw fail(400, 'Invalid title');
@@ -134,7 +134,12 @@ export function createCollaborationServer({ port = 4310, host = '127.0.0.1', pat
           } else {
             const row = store.get(id);
             if (!row) throw fail(404, 'Document not found');
-            if (action === 'export' && request.method === 'GET') {
+            if(snapshotId) {
+              if(action!=='snapshots'||request.method!=='GET')throw fail(405,'Method not allowed');
+              const historical=store.readSnapshot(id,Number(snapshotId));
+              if(!historical)throw fail(404,'Snapshot not found');
+              send(200,snapshotContent(historical));
+            } else if (action === 'export' && request.method === 'GET') {
               const buffer = await exportWord(row);
               response.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }); response.end(buffer);
             } else if (action === 'snapshots' && request.method === 'GET') send(200, store.snapshots(id));

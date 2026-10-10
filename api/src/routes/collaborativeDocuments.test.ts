@@ -1,3 +1,4 @@
+import {ApiError} from '../middleware/errorHandler';
 import 'express-async-errors';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
@@ -32,7 +33,7 @@ vi.mock('../config/supabase', () => ({ supabase: { from: (table: string) => {
 } } }));
 vi.mock('../middleware/auth', () => ({ verifyJWT: (req: any, _res: any, next: any) => { req.user = { id: 'student-a', role: 'student', name: 'Student A' }; next(); } }));
 vi.mock('../services/accessControl', () => ({
-  ensureSpaceAccess: async () => { if (h.denied) throw Object.assign(new Error('Group access denied'), { statusCode: 403 }); return h.space; },
+  ensureSpaceAccess: async () => { if (h.denied) throw new ApiError(403,'Group access denied'); return h.space; },
   isCourseStaff: (standing: string) => ['owner', 'manager'].includes(standing),
 }));
 vi.mock('../services/experimentCondition', () => ({ fetchExperimentMode: async () => h.experiment }));
@@ -111,4 +112,29 @@ describe('collaboration access uses the existing course/group boundary', () => {
     expect(mergeClientMetadata({ collaborative_document: { version: 1 } }, { collaborative_document: null, is_fixed: true }))
       .toEqual({ collaborative_document: { version: 1 }, is_fixed: true });
   });
+});
+
+describe('historical snapshot preview',()=>{
+ it('proxies historical content for read-only members with server credentials',async()=>{
+  h.space.group_id=null;h.experiment=true;
+  const body={id:12,version:3,created_at:'2026-10-10T00:00:00Z',content:{type:'doc',content:[]}};
+  const upstream=vi.fn(async()=>new Response(JSON.stringify(body),{status:200}));vi.stubGlobal('fetch',upstream);
+  const response=await nativeFetch(`${base}/collaborative-documents/doc-1/snapshots/12`);
+  expect(response.status).toBe(200);expect(await response.json()).toEqual(body);
+  expect(upstream).toHaveBeenCalledWith('http://localhost:4310/internal/documents/doc-1/snapshots/12',expect.objectContaining({method:'GET',headers:expect.objectContaining({Authorization:'Bearer test-secret-at-least-thirty-two-characters'})}));
+  expect((await nativeFetch(`${base}/collaborative-documents/doc-1/snapshots`,{method:'POST'})).status).toBe(403);
+ });
+ it('returns a missing historical snapshot as 404',async()=>{
+  vi.stubGlobal('fetch',async()=>new Response('{}',{status:404}));
+  expect((await nativeFetch(`${base}/collaborative-documents/doc-1/snapshots/12`)).status).toBe(404);
+ });
+ it('uses the same document access guard for list and historical content',async()=>{
+  expect((await nativeFetch(`${base}/collaborative-documents/doc-1/snapshots/12`)).status).toBe(200);
+  h.denied=true;
+  expect((await nativeFetch(`${base}/collaborative-documents/doc-1/snapshots`)).status).toBe(403);
+  expect((await nativeFetch(`${base}/collaborative-documents/doc-1/snapshots/12`)).status).toBe(403);
+ });
+ it('rejects invalid snapshot identifiers without exposing internal errors',async()=>{
+  for(const id of ['0','-1','abc','9007199254740993'])expect((await nativeFetch(`${base}/collaborative-documents/doc-1/snapshots/${id}`)).status).toBe(400);
+ });
 });

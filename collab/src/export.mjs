@@ -51,3 +51,9 @@ export async function exportWord(row) {
     }));
   } finally { doc.destroy(); }
 }
+
+export function snapshotContent(row) {
+  const doc=new Y.Doc();
+  try {Y.applyUpdate(doc,row.state);return {id:row.id,version:row.version,created_at:row.created_at,content:yDocToProsemirrorJSON(doc,'default')};}
+  finally {doc.destroy();}
+}

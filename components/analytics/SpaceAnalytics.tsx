@@ -7,6 +7,7 @@ import { KeywordChangeChart } from './DiscussionCharts';
 import { exportAnalysisChart } from './exportChart';
 import {DiscussionThreads} from './DiscussionThreads';
 import {PeerConnections,TopicCoverage} from './DiscussionFocus';
+import { useAnalyticsMotion } from '../../hooks/useAnalyticsMotion';
 import './spaceAnalytics.css';
 
 type Lang='zh'|'en';
@@ -56,6 +57,8 @@ const SpaceAnalytics:React.FC<Props>=({spaceId,lang,viewId,viewName,spaceTitle,o
   const update=<K extends keyof Filters>(key:K,value:Filters[K])=>setFilter(f=>({...f,[key]:value}));
   const [selection,setSelection]=useState<{ids:string[];label:string}|null>(null);
   const [settings,setSettings]=useState(false);
+  const [filtersOpen,setFiltersOpen]=useState(false);
+  const filterId=React.useId();
   const [draftWords,setDraftWords]=useState(filter.extraWords),[draftStop,setDraftStop]=useState(filter.extraStop);
   const closeRef=useRef(onClose);closeRef.current=onClose;
   const chartRef=useRef<HTMLDivElement>(null);
@@ -123,24 +126,26 @@ const SpaceAnalytics:React.FC<Props>=({spaceId,lang,viewId,viewName,spaceTitle,o
   const related=selection?.ids.map(id=>noteOf.get(id)).filter((n):n is SpaceDiscussion['notes'][number]=>!!n)??[];
   const requestError=discussion.error||(filter.tool==='cloud'?cloud.error:filter.tool==='changes'?changes.error:filter.tool==='peers'?peers.error:filter.tool==='topics'?topics.error:null);
   const busy=discussion.loading||(filter.tool==='cloud'?cloud.loading:filter.tool==='changes'?changes.loading:filter.tool==='peers'?peers.loading:filter.tool==='topics'?topics.loading:false);
+  const content=filter.tool==='cloud'?cloud.data:filter.tool==='changes'?changes.data:filter.tool==='peers'?peers.data:filter.tool==='topics'?topics.data:data;
+  useAnalyticsMotion(pageRef,{tool:filter.tool,busy,content:rangeInvalid||requestError?null:content,selection:selection?JSON.stringify(selection):'',settings});
   const refresh=()=>{discussion.reload();if(filter.tool==='cloud')cloud.reload();if(filter.tool==='changes')changes.reload();if(filter.tool==='peers')peers.reload();if(filter.tool==='topics')topics.reload();};
   const [exportError,setExportError]=useState('');
   const exportChart=async()=>{setExportError('');try{await exportAnalysisChart(chartRef.current?.querySelector('svg')??null,`discussion-${filter.tool}.png`);}catch{setExportError(zh?'图片未能导出，请重试。':'Could not export the image. Try again.');}};
-  return <main ref={pageRef} tabIndex={-1} aria-label={zh?'讨论分析':'Discussion analytics'} className="discussion-analysis">
-    <header className="da-header">
-      <button type="button" className="da-back" onClick={close}><RemixIcon name="arrow-left-line" size={18}/><span>{zh?'返回空间':'Back to space'}</span></button>
+  return <main ref={pageRef} tabIndex={-1} aria-label={zh?'讨论分析':'Discussion analytics'} className="discussion-analysis" data-analysis-tool={filter.tool}>
+    <header className="da-header" data-analysis-motion="chrome">
+      <button type="button" className="da-back" aria-label={zh?'返回空间':'Back to space'} onClick={close}><RemixIcon name="arrow-left-line" size={18}/><span>{zh?'返回空间':'Back to space'}</span></button>
       <div className="da-heading"><span>{spaceTitle||(zh?'知识空间':'Knowledge space')}</span><h1>{zh?'讨论分析':'Discussion analytics'}</h1></div>
-      <div className="da-header-actions"><label className="da-anonymous"><input type="checkbox" checked={filter.anonymous} onChange={e=>update('anonymous',e.target.checked)}/>{zh?'匿名显示':'Anonymise'}</label>
+      <div className="da-header-actions"><button type="button" className="da-filter-toggle" aria-label={zh?'筛选':'Filters'} aria-expanded={filtersOpen} aria-controls={filterId} onClick={()=>setFiltersOpen(open=>!open)}><RemixIcon name="filter-3-line" size={18}/><span>{zh?'筛选':'Filters'}</span></button><label className="da-anonymous"><input type="checkbox" aria-label={zh?'匿名显示':'Anonymise'} checked={filter.anonymous} onChange={e=>update('anonymous',e.target.checked)}/><span>{zh?'匿名显示':'Anonymise'}</span></label>
         <button type="button" className="da-icon-btn" aria-label={zh?'刷新':'Refresh'} onClick={refresh}><RemixIcon name="refresh-line" size={18}/></button>
       </div>
     </header>
     <div className="da-shell">
-      <nav className="da-tools" aria-label={zh?'分析工具':'Analysis tools'}><span className="da-nav-label">{zh?'工具':'TOOLS'}</span>
-        {TOOLS.map(t=><button type="button" key={t.id} aria-current={filter.tool===t.id?'page':undefined} onClick={()=>update('tool',t.id)}><RemixIcon name={t.icon} size={19}/><span>{zh?t.zh:t.en}</span></button>)}
+      <nav className="da-tools" aria-label={zh?'分析工具':'Analysis tools'} data-analysis-motion="chrome"><span className="da-nav-label">{zh?'工具':'TOOLS'}</span>
+        {TOOLS.map(t=><button type="button" key={t.id} aria-current={filter.tool===t.id?'page':undefined} onClick={()=>update('tool',t.id)}><span className="da-tool-icon"><RemixIcon name={t.icon} size={20}/></span><span>{zh?t.zh:t.en}</span></button>)}
         <p className="da-nav-foot">{zh?'从讨论中查看原文，回到画布继续。':'Explore the discussion, then return to its notes.'}</p>
       </nav>
       <div className="da-workspace">
-        <section className="da-filters" aria-label={zh?'筛选':'Filters'}>
+        <section id={filterId} className={`da-filters${filtersOpen?' da-filters-open':''}`} aria-label={zh?'筛选':'Filters'} data-analysis-motion="chrome">
           <label>{zh?'范围':'Scope'}<select aria-label={zh?'范围':'Scope'} value={filter.onlyView&&viewId?'view':'all'} onChange={e=>update('onlyView',e.target.value==='view')}><option value="all">{zh?'整个空间':'Whole space'}</option>{viewId&&<option value="view">{viewName}</option>}</select></label>
           <label>{zh?'对象':'People'}<select aria-label={zh?'对象':'People'} value={filter.authorId} onChange={e=>update('authorId',e.target.value)}><option value="">{zh?'所有学生':'All students'}</option>{data?.members.map(m=><option key={m.id} value={m.id}>{nameOf(m.id)}</option>)}</select></label>
           <label>{zh?'开始日期':'From'}<input aria-label={zh?'开始日期':'From'} type="date" value={filter.from} max={filter.through||undefined} onChange={e=>update('from',e.target.value)}/></label>
@@ -148,27 +153,27 @@ const SpaceAnalytics:React.FC<Props>=({spaceId,lang,viewId,viewName,spaceTitle,o
           {(filter.from||filter.through||filter.authorId||filter.onlyView)&&<button type="button" className="da-clear" onClick={()=>setFilter(f=>({...f,authorId:'',onlyView:false,from:'',through:'',split:''}))}>{zh?'清除筛选':'Clear filters'}</button>}
         </section>
         <div className="da-content">
-          <section className="da-main-panel">
+          <section className="da-main-panel" aria-busy={busy}>
             <div className="da-panel-heading"><div><h2>{zh?active.zh:active.en}</h2><p>{zh?active.hintZh:active.hintEn}</p></div>
               <div className="da-panel-actions">{(['cloud','changes','peers'].includes(filter.tool))&&<button type="button" onClick={()=>setSettings(s=>!s)} aria-expanded={settings}><RemixIcon name="equalizer-line" size={16}/>{zh?'词语设置':'Word settings'}</button>}
-                {['cloud','changes','topics'].includes(filter.tool)&&<button type="button" onClick={exportChart} disabled={busy||!!requestError||rangeInvalid}><RemixIcon name="download-2-line" size={16}/>{zh?'导出图片':'Export image'}</button>}
+                {['cloud','changes','topics'].includes(filter.tool)&&<button type="button" className="da-export" onClick={exportChart} disabled={busy||!!requestError||rangeInvalid}><RemixIcon name="download-2-line" size={16}/>{zh?'导出图片':'Export image'}</button>}
               </div>
             </div>
-            {settings&&(['cloud','changes','peers'].includes(filter.tool))&&<form className="da-word-settings" onSubmit={e=>{e.preventDefault();setFilter(f=>({...f,extraWords:draftWords,extraStop:draftStop}));setSettings(false);}}><label>{zh?'保留为完整词语':'Keep as whole words'}<textarea aria-label={zh?'保留词语':'Keep whole words'} maxLength={1200} value={draftWords} onChange={e=>setDraftWords(e.target.value)} placeholder={zh?'如：检索练习，课程专名':'Course terms, separated by commas'}/></label><label>{zh?'排除词语':'Exclude words'}<textarea aria-label={zh?'排除词语':'Exclude words'} maxLength={1200} value={draftStop} onChange={e=>setDraftStop(e.target.value)}/></label><button type="submit">{zh?'应用':'Apply'}</button></form>}
+            {settings&&(['cloud','changes','peers'].includes(filter.tool))&&<form className="da-word-settings" data-analysis-motion="settings" onSubmit={e=>{e.preventDefault();setFilter(f=>({...f,extraWords:draftWords,extraStop:draftStop}));setSettings(false);}}><label>{zh?'保留为完整词语':'Keep as whole words'}<textarea aria-label={zh?'保留词语':'Keep whole words'} maxLength={1200} value={draftWords} onChange={e=>setDraftWords(e.target.value)} placeholder={zh?'如：检索练习，课程专名':'Course terms, separated by commas'}/></label><label>{zh?'排除词语':'Exclude words'}<textarea aria-label={zh?'排除词语':'Exclude words'} maxLength={1200} value={draftStop} onChange={e=>setDraftStop(e.target.value)}/></label><button type="submit">{zh?'应用':'Apply'}</button></form>}
             {filter.tool==='changes'&&<div className="da-comparison"><label>{zh?'前后分界日期':'Comparison date'}<input type="date" aria-label={zh?'前后分界日期':'Comparison date'} value={filter.split} min={filter.from||undefined} max={filter.through||undefined} onChange={e=>update('split',e.target.value)}/></label><span>{filter.split?(zh?'所选日期零点起计入后段。':'The later period starts at midnight on this date.'):(zh?'未指定时，按当前笔记日期的中点分段。':'Defaults to the midpoint of the selected note dates.')}</span></div>}
             {exportError&&<p className="da-notice" role="alert">{exportError}</p>}
             <div className="da-chart" ref={chartRef}>
-              {rangeInvalid?<p className="da-empty" role="alert">{zh?'结束日期不能早于开始日期。':'End date cannot precede start date.'}</p>:requestError?<div className="da-empty" role="alert">{zh?'读取失败：':'Could not load: '}{requestError}<button type="button" className="da-more" onClick={refresh}>{zh?'重试':'Retry'}</button></div>:busy?<div className="da-loading" role="status">{zh?'正在读取…':'Loading…'}</div>:data?<>
+              {rangeInvalid?<p className="da-empty" role="alert">{zh?'结束日期不能早于开始日期。':'End date cannot precede start date.'}</p>:requestError?<div className="da-empty" role="alert">{zh?'读取失败：':'Could not load: '}{requestError}<button type="button" className="da-more" onClick={refresh}>{zh?'重试':'Retry'}</button></div>:busy?<div className="da-loading" role="status"><RemixIcon name={active.icon} size={30}/><span>{zh?'正在读取…':'Loading…'}</span><span className="da-loading-dots" aria-hidden="true">{[0,1,2].map(i=><i key={i} className="da-loading-dot"/>)}</span></div>:data?<div className={`da-result da-result-${filter.tool}`} data-analysis-motion="result" key={filter.tool}>
                 {filter.tool==='cloud'&&cloud.data&&<><WordCloud data={cloud.data} lang={lang} selected={selection?.label??null} onPick={word=>word?pick(cloud.data!.terms.find(t=>t.word===word)?.note_ids??[],word):setSelection(null)}/><p className="da-chart-caption">{zh?`${cloud.data.docs} 篇学生笔记 · 不计教师、AI 生成笔记及标记的 AI 摘录`:`${cloud.data.docs} student notes · teacher notes, AI-generated notes and marked AI excerpts excluded`}</p></>}
                 {filter.tool==='changes'&&changes.data&&<><KeywordChangeChart data={changes.data} lang={lang} onPick={pick}/><p className="da-chart-caption">{zh?'按笔记创建时间分段，分析当前正文；变化不代表掌握程度。':'Periods use note creation dates and current text; changes do not measure mastery.'}</p></>}
                 {filter.tool==='relay'&&<DiscussionThreads key={key} data={data} lang={lang} titleOf={titleOf} nameOf={nameOf} anonymous={filter.anonymous} onPick={pick}/>}
                 {filter.tool==='peers'&&peers.data&&<PeerConnections key={key} data={peers.data} lang={lang} nameOf={nameOf} authorId={filter.authorId} onPick={pick}/>}
                 {filter.tool==='topics'&&topics.data&&<TopicCoverage data={topics.data} lang={lang} onPick={pick} onSave={async(values,revision)=>{await spaceAnalytics.saveTopics(spaceId,values,revision);topics.reload();setSelection(null);}}/>}
                 {filter.tool==='pending'&&<PendingDiscussions data={data} lang={lang} titleOf={titleOf} nameOf={nameOf} onPick={pick}/>}
-              </>:null}
+              </div>:null}
             </div>
           </section>
-          <aside className="da-sources" aria-label={zh?'相关笔记':'Source notes'}><div className="da-sources-heading"><RemixIcon name="file-text-line" size={18}/><h2>{zh?'相关笔记':'Source notes'}</h2></div>
+          <aside className="da-sources" aria-label={zh?'相关笔记':'Source notes'}><div className="da-sources-heading"><RemixIcon name="file-text-line" size={18}/><h2>{zh?'相关笔记':'Source notes'}</h2>{selection&&<span className="da-sources-total" aria-live="polite">{related.length}</span>}</div>
             {!selection?<div className="da-sources-empty"><RemixIcon name="cursor-line" size={26}/><p>{zh?'点击词语、观点或议题，查看来源。':'Select a word, note or discussion to see its sources.'}</p></div>:<><div className="da-selection-label">{selection.label}</div><p className="da-source-count">{related.length} {zh?'篇笔记':'notes'}{related.length>=50&&(zh?' · 来源列表已截取':' · source list limited')}</p>{filter.anonymous&&<p className="da-notice">{zh?'匿名模式隐藏标题和正文。':'Titles and text are hidden in anonymous mode.'}</p>}
               {related.map(n=><article key={n.id} className="da-source-note"><span className="da-source-author">{nameOf(n.authorId)} · {new Date(n.createdAt).toLocaleDateString(zh?'zh-CN':'en-US')}</span><h3>{titleOf(n.id)}</h3>{!filter.anonymous&&<p>{n.excerpt}</p>}<button type="button" onClick={()=>{close();onLocateNote(n.id);}}><RemixIcon name="focus-3-line" size={14}/>{zh?'回到画布':'Locate on canvas'}</button></article>)}
               {!related.length&&<p className="da-empty">{zh?'这个范围没有相关笔记。':'No source notes in this range.'}</p>}

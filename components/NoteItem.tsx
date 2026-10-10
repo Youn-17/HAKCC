@@ -426,7 +426,8 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         className={`absolute flex flex-col ${dragCursor(note)} group select-none transition-shadow duration-200 ${className}
           ${isMultiSelected ? 'ring-2 ring-orange-400 shadow-xl' : isSelected ? 'ring-2 ring-blue-500 shadow-xl' : 'shadow-md hover:shadow-lg'}
         `}
-        style={containerStyle}
+        data-note-id={note.id}
+      style={containerStyle}
         onMouseDown={(e) => onMouseDown(e, note)}
         onDoubleClick={(e) => onDoubleClick(e, note)}
         onContextMenu={(e) => onContextMenu(e, note)}
@@ -461,7 +462,8 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
         className={`absolute flex flex-col ${dragCursor(note)} group select-none transition-shadow duration-200 ${className}
           ${isMultiSelected ? 'ring-2 ring-orange-400 shadow-2xl' : isSelected ? 'ring-2 ring-purple-500 shadow-2xl' : 'shadow-lg hover:shadow-xl'}
         `}
-        style={containerStyle}
+        data-note-id={note.id}
+      style={containerStyle}
         onMouseDown={(e) => onMouseDown(e, note)}
         onDoubleClick={(e) => onDoubleClick(e, note)}
         onContextMenu={(e) => onContextMenu(e, note)}
@@ -542,6 +544,7 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, lang = 'en', isSelected, isMu
       className={`absolute flex flex-col ${dragCursor(note)} group select-none ${className}
         ${isSelected ? 'z-50' : 'z-20'}
       `}
+      data-note-id={note.id}
       style={containerStyle}
       onMouseDown={(e) => onMouseDown(e, note)}
       onDoubleClick={(e) => onDoubleClick(e, note)}

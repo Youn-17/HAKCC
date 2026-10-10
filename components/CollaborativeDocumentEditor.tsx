@@ -11,6 +11,8 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
 import type { CollaborationAdapter, CollaborationSession } from '../services/collaborativeDocuments';
 import RemixIcon from './RemixIcon';
+import CollaborationHistory from './CollaborationHistory';
+import {useInteractionMotion} from '../hooks/useInteractionMotion';
 import './CollaborativeDocumentEditor.css';
 
 async function hash(doc: Y.Doc) {
@@ -35,6 +37,12 @@ export default function CollaborativeDocumentEditor({ adapter, onClose }: { adap
   const [zoom, setZoom] = useState(100);
   const [showRuler, setShowRuler] = useState(true);
   const savedRef = useRef(false);
+  const shell=useRef<HTMLElement>(null);const motion=useInteractionMotion();
+  const [historyOpen,setHistoryOpen]=useState(false),[snapshotRevision,setSnapshotRevision]=useState(0);
+  const previousSaved=useRef(false);
+  useEffect(()=>{if(saved&&!previousSaved.current){const target=shell.current?.querySelector<HTMLElement>('.collab-save-state');if(target)motion.highlight(target,'collab-saved');}previousSaved.current=saved;},[saved,motion]);
+  useEffect(()=>{if(snapshotRevision){const target=shell.current?.querySelector<HTMLElement>('[data-save-snapshot]');if(target)motion.highlight(target,'version-saved');}},[snapshotRevision,motion]);
+  useEffect(()=>{if(room){motion.enter([...(shell.current?.querySelectorAll<HTMLElement>('.collab-header,.collab-footer')??[])],'document-open');}},[room,motion]);
   useEffect(() => {
     let cancelled = false;
     let doc: Y.Doc | undefined;
@@ -92,7 +100,7 @@ export default function CollaborativeDocumentEditor({ adapter, onClose }: { adap
     setBusy(true); setError('');
     try {
       if (!saved) throw new Error('请等到显示“已保存”后再操作');
-      if (kind === 'snapshot') { await adapter.snapshot(); setStatus('在线 · 已保存版本快照'); }
+      if (kind === 'snapshot') { await adapter.snapshot(); setStatus('在线 · 已保存版本快照'); setSnapshotRevision(value=>value+1); }
       else {
         const url = URL.createObjectURL(await adapter.export());
         const link = document.createElement('a'); link.href = url;
@@ -102,7 +110,7 @@ export default function CollaborativeDocumentEditor({ adapter, onClose }: { adap
     } catch (err) { setError(err instanceof Error ? err.message : '操作失败'); }
     finally { setBusy(false); }
   };
-  return <section className="collab-shell" role="dialog" aria-modal="true" aria-label="协作文档" data-canvas-overlay>
+  return <section ref={shell} className="collab-shell" role="dialog" aria-modal="true" aria-label="协作文档" data-canvas-overlay>
     <header className="collab-header">
       <button className="collab-back collab-icon-button" aria-label="关闭协作文档" title="返回知识空间" onClick={onClose}><RemixIcon name="arrow-left-line" size={19} /></button>
       <span className="collab-document-mark"><RemixIcon name="file-word-2-line" size={24} /></span>
@@ -118,12 +126,13 @@ export default function CollaborativeDocumentEditor({ adapter, onClose }: { adap
         <span>{people.length ? `${people.length} 人协作` : '正在连接'}</span>
       </div>
       <div className="collab-actions">
-        {room?.session.canEdit && <button disabled={!saved || busy} onClick={() => void action('snapshot')} title="保留当前版本快照"><RemixIcon name="history-line" size={16} /><span>保存版本</span></button>}
+        {adapter.snapshots&&adapter.readSnapshot&&<button disabled={!room} aria-expanded={historyOpen} onClick={()=>setHistoryOpen(open=>!open)} title="查看已保存版本"><RemixIcon name="time-line" size={16}/><span>版本记录</span></button>}
+        {room?.session.canEdit && <button data-save-snapshot disabled={!saved || busy} onClick={() => void action('snapshot')} title="保留当前版本快照"><RemixIcon name="history-line" size={16} /><span>保存版本</span></button>}
         <button className="collab-export" disabled={!saved || busy} onClick={() => void action('export')} title="下载 Word 副本，复杂排版可能简化"><RemixIcon name="download-2-line" size={16} /><span>导出 Word</span></button>
       </div>
     </header>
     {error && <p className="collab-error" role="alert">{error}</p>}
-    {room ? <DocumentBody room={room} onError={setError} onCount={setCharacterCount} zoom={zoom} onZoom={setZoom} showRuler={showRuler} onRuler={setShowRuler} />
+    {room ? <div className="collab-document-stage"><DocumentBody room={room} onError={setError} onCount={setCharacterCount} zoom={zoom} onZoom={setZoom} showRuler={showRuler} onRuler={setShowRuler} />{historyOpen&&<CollaborationHistory adapter={adapter} revision={snapshotRevision} onClose={()=>setHistoryOpen(false)}/>}</div>
       : <div className="collab-loading">正在打开文档…</div>}
     <footer className="collab-footer">
       <div className="collab-document-info"><span><RemixIcon name="file-text-line" size={14} />页面视图</span><span>{characterCount.toLocaleString()} 字</span><span className="collab-footer-mode">{room?.session.canEdit ? '协同编辑' : '只读模式'}</span></div>
@@ -141,6 +150,8 @@ function DocumentBody({ room, onError, onCount, zoom, onZoom, showRuler, onRuler
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [tab, setTab] = useState<'start' | 'insert' | 'view'>('start');
+  const ribbon=useRef<HTMLElement>(null);const motion=useInteractionMotion();
+  useEffect(()=>{if(ribbon.current)motion.enter([ribbon.current],'document-toolbar');return()=>motion.stop('document-toolbar');},[tab,motion]);
   const editor = useEditor({
     immediatelyRender: false, editable: room.session.canEdit,
     extensions: [StarterKit.configure({ undoRedo: false }), Collaboration.configure({ document: room.doc }),
@@ -188,7 +199,7 @@ function DocumentBody({ room, onError, onCount, zoom, onZoom, showRuler, onRuler
         }}>{item.label}</button>)}</div>
       <span className="collab-edit-mode"><RemixIcon name={disabled ? 'lock-line' : 'edit-line'} size={13} />{disabled ? '只读' : '编辑中'}</span>
     </div>
-    <nav className="collab-ribbon" role="tabpanel" aria-labelledby={`collab-tab-${tab}`} id={`collab-ribbon-${tab}`}>
+    <nav ref={ribbon} className="collab-ribbon" role="tabpanel" aria-labelledby={`collab-tab-${tab}`} id={`collab-ribbon-${tab}`}>
       {tab === 'start' && <>
         {group('历史', <div className="collab-history-buttons">{button('撤销', 'arrow-go-back-line', () => { editor.chain().focus().undo().run(); }, undefined, !state.undo)}{button('重做', 'arrow-go-forward-line', () => { editor.chain().focus().redo().run(); }, undefined, !state.redo)}</div>)}
         {group('文字格式', <div className="collab-font-controls"><span className="collab-font-caption">文字与重点</span><div className="collab-button-row">

@@ -6,7 +6,7 @@
 
 import type { CourseGoal, CourseTask, CourseTaskStatus, KnowledgeLack, TaskSubmission, TaskSubmissionStatus } from '../types';
 import { recordApiFailure } from './clientDiagnostics';
-import type { CollaborationAdapter, CollaborationSession } from './collaborativeDocuments';
+import type { CollaborationAdapter, CollaborationSession, CollaborationSnapshot, CollaborationSnapshotContent } from './collaborativeDocuments';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const SESSION_ID = Math.random().toString(36).slice(2);
@@ -34,6 +34,8 @@ export const collaborativeDocuments = {
       },
       export: () => requestBlob('GET', `${path}/export`),
       snapshot: async () => { await request('POST', `${path}/snapshots`); },
+      snapshots: ()=>request<CollaborationSnapshot[]>('GET',`${path}/snapshots`),
+      readSnapshot: id=>request<CollaborationSnapshotContent>('GET',`${path}/snapshots/${id}`),
     };
   },
 };

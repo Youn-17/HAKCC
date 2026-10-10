@@ -3,6 +3,7 @@ import type { HistoryRelation } from '../services/apiClient';
 import { CARD_HEIGHT, CARD_WIDTH, type layoutKnowledgeMap } from './knowledgeExplorerModel';
 import { RELATION_COLORS, RELATION_LABELS } from './relationColors';
 import RemixIcon from './RemixIcon';
+import {useInteractionMotion} from '../hooks/useInteractionMotion';
 
 type Graph=ReturnType<typeof layoutKnowledgeMap>;
 type Camera={x:number;y:number;zoom:number};
@@ -28,6 +29,12 @@ export default function KnowledgeMapCanvas({graph,relations,selectedId,onSelect,
   useEffect(()=>{const el=stage.current;if(!el)return;const wheel=(e:WheelEvent)=>{e.preventDefault();const box=el.getBoundingClientRect();zoomAt(Math.exp(-e.deltaY*.0015),e.clientX-box.left,e.clientY-box.top);};el.addEventListener('wheel',wheel,{passive:false});return()=>el.removeEventListener('wheel',wheel);},[zoomAt]);
   const counts=useMemo(()=>{const counts=new Map<string,{incoming:number;outgoing:number}>();for(const r of relations){const source=counts.get(r.source)??{incoming:0,outgoing:0};source.incoming++;counts.set(r.source,source);const target=counts.get(r.target)??{incoming:0,outgoing:0};target.outgoing++;counts.set(r.target,target);}return counts;},[relations]);
   const positions=new Map(graph.nodes.map(n=>[n.id,{...n,...offsets[n.id]}]));
+  const motion=useInteractionMotion();
+  useEffect(()=>{
+    motion.stop('relationship-focus');
+    if(selectedId)motion.draw([...(svg.current?.querySelectorAll<SVGPathElement>('path[data-motion-related="true"]')??[])],'relationship-focus');
+    return()=>motion.stop('relationship-focus');
+  },[selectedId,graph,motion]);
   const active=hover??selectedId;
   const neighbors=new Set([active]);
   if(active)for(const r of relations){if(r.source===active)neighbors.add(r.target);if(r.target===active)neighbors.add(r.source);}
@@ -68,7 +75,7 @@ export default function KnowledgeMapCanvas({graph,relations,selectedId,onSelect,
             const path=forward?`M${x1},${y1} C${x1+bend},${y1} ${x2-bend},${y2} ${x2-5},${y2}`:`M${x1},${y1} C${x1+bend},${y1} ${x2+bend},${y2} ${x2+4},${y2}`;
             const type=r.relationType??'extend',highlight=active===r.source||active===r.target;
             return <g key={r.id} className="knowledge-map-edge" opacity={active&&!highlight ? .12 : 1}>
-              <path d={path} fill="none" stroke={RELATION_COLORS[type]??'#8a96ac'} strokeWidth={highlight?2.8:1.7} markerEnd={`url(#progress-arrow-${type})`}/>
+              <path data-motion-related={selectedId===r.source||selectedId===r.target} d={path} fill="none" stroke={RELATION_COLORS[type]??'#8a96ac'} strokeWidth={highlight?2.8:1.7} markerEnd={`url(#progress-arrow-${type})`}/>
               {highlight&&<g transform={`translate(${(x1+x2)/2},${(y1+y2)/2})`}><rect x="-26" y="-12" width="52" height="24" rx="10" className="knowledge-edge-label-bg"/><text textAnchor="middle" y="4" fill={RELATION_COLORS[type]} fontSize="11">{RELATION_LABELS[lang][type]??type}</text></g>}
             </g>;
           })}

@@ -2,6 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { TimelineItem } from '../services/apiClient';
 import { sequenceFrame, stepSequence, timelineSequence, type SequenceMarker } from './timelineSequenceModel';
 import RemixIcon from './RemixIcon';
+import {useInteractionMotion} from '../hooks/useInteractionMotion';
 import '../styles/timelineSequence.css';
 
 interface Props {
@@ -34,6 +35,15 @@ export default function ConstructionSequence({ events, lang, selectedId, actorNa
   const active = useMemo(() => sequence.series.filter(s => s.total || ['note', 'build_on', 'revision'].includes(s.kind)), [sequence]);
   const height = rowTop + active.length * rowGap + 25;
   const frame = useMemo(() => sequenceFrame(sequence, progress), [sequence, progress]);
+  const motion=useInteractionMotion();
+  const previousMarkers=useRef(new Set<string>());
+  useEffect(()=>{
+    const markers=[...(svg.current?.querySelectorAll<SVGGElement>('.sequence-marker.is-visible')??[])];
+    const keys=new Set(markers.map(el=>el.dataset.motionEvent!));
+    if(playing){const targets=markers.filter(el=>!previousMarkers.current.has(el.dataset.motionEvent!)).flatMap(el=>[...el.querySelectorAll<SVGCircleElement>('.sequence-marker-dot')]);if(targets.length)motion.enter(targets,'timeline-events');}
+    else motion.stop('timeline-events');
+    previousMarkers.current=keys;
+  },[playing,frame.count,events,motion]);
   const maximum = Math.max(1, ...sequence.series.map(s => s.total));
   const ceiling = Math.max(1, Math.ceil(maximum / 4) * 4);
   const x = (at: number) => left + sequence.position(at) * plotWidth;
@@ -125,7 +135,7 @@ export default function ConstructionSequence({ events, lang, selectedId, actorNa
             const visible = marker.events.filter(e => Date.parse(e.at) <= frame.at);
             const selected = marker.events.some(e => e.id === selectedId);
             const markerAt = visible.length ? visible.reduce((sum, e) => sum + Date.parse(e.at), 0) / visible.length : marker.at;
-            return <g key={m} transform={`translate(${x(markerAt)},${rowTop + index * rowGap})`} className={`sequence-marker ${visible.length ? 'is-visible' : 'is-future'} ${selected ? 'is-selected' : ''}`}
+            return <g key={m} data-motion-event={`${visible[0]?.id??marker.events[0]?.id}:${visible.length}`} transform={`translate(${x(markerAt)},${rowTop + index * rowGap})`} className={`sequence-marker ${visible.length ? 'is-visible' : 'is-future'} ${selected ? 'is-selected' : ''}`}
               role={visible.length ? 'button' : undefined} tabIndex={visible.length ? 0 : undefined}
               aria-label={visible.length ? `${labels[s.kind]} · ${date(Date.parse(visible[0].at), true)} · ${visible.length} ${zh ? '条记录' : 'events'} · ${visible[0].noteTitle}` : undefined}
               onClick={() => choose(marker)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(marker); } }}

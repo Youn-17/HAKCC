@@ -72,6 +72,9 @@ export class DocumentStore {
       return Number(result.lastInsertRowid);
     })();
   }
+  readSnapshot(id, snapshotId) {
+    return this.db.prepare('SELECT s.id, s.version, s.created_at, s.state FROM snapshots s WHERE s.document_id = ? AND s.id = ?').get(id, snapshotId);
+  }
   snapshots(id) {
     return this.db.prepare('SELECT id, version, created_at FROM snapshots WHERE document_id = ? ORDER BY id DESC').all(id);
   }

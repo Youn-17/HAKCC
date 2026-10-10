@@ -183,6 +183,23 @@ describe('SpaceAnalytics', () => {
     expect(host.querySelector('.da-source-note')?.textContent).toContain('先试着回忆');
   });
 
+  it('可展开筛选，收起后保留个人选择，切换工具不重置筛选',async()=>{
+    await mount();
+    const toggle=button('筛选');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const filterId=toggle.getAttribute('aria-controls')!;
+    expect(document.getElementById(filterId)?.getAttribute('aria-label')).toBe('筛选');
+    await act(async()=>toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const person=host.querySelector('select[aria-label="对象"]') as HTMLSelectElement;
+    await act(async()=>{person.value='bo';person.dispatchEvent(new Event('change',{bubbles:true}));});
+    await act(async()=>toggle.click());
+    await act(async()=>button('关键词变化').click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(person.value).toBe('bo');
+    expect(api.spaceAnalytics.changes).toHaveBeenLastCalledWith('space-1',expect.objectContaining({authorId:'bo'}));
+  });
+
   it('React StrictMode 不会重复增加分析的浏览器历史入口',async()=>{
     const push=vi.spyOn(window.history,'pushState');
     await act(async()=>root.render(React.createElement(React.StrictMode,null,React.createElement(SpaceAnalytics,{spaceId:'space-1',lang:'zh',viewId:null,viewName:'Welcome',onClose,onLocateNote,noteTitles:new Map()}))));

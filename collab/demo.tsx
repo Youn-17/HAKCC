@@ -20,7 +20,7 @@ function Demo() {
       if (!response.ok) throw new Error('操作失败，请重新连接'); return response;
     };
     return { session, token: async () => { await session(); return token; },
-      export: async () => (await request('export')).blob(), snapshot: async () => { await request('snapshots', 'POST'); } };
+      export: async () => (await request('export')).blob(), snapshot: async () => { await request('snapshots', 'POST'); }, snapshots: async ()=>(await request('snapshots')).json(),readSnapshot:async id=>(await request(`snapshots/${id}`)).json() };
   }, [person]);
   return <main className="collab-demo">
     <div className="collab-demo-banner">

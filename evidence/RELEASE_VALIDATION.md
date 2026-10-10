@@ -98,3 +98,11 @@ npm test --prefix collab
 ```
 
 The manifest excludes itself. See [Getting started](../GETTING_STARTED.md) and the [v0.6.0 guide](../write/UPDATES_v0.6.0.en.md) for setup, data ownership and the isolated Docker demo.
+
+## 2026-10-10 source update verification
+
+The public source now includes short interaction feedback, compact discussion analysis and a read-only collaborative snapshot panel. Previewing saved content uses a separate editor and does not apply it to the live Yjs document. Application visual updates receive no new changelog entry. Public dependency and privacy adaptations are retained.
+
+Application regressions passed: 2,455 tests across 222 files. The initial run passed 2,451 tests; four Python-dependent cases were then run successfully against the existing isolated production Python runtime using fictional inputs, without accessing participant records. Collaboration service tests passed (6). Frontend TypeScript and frontend/API builds passed. Local fictional-browser checks covered save failure feedback, insertion markup, repeated location, reduced motion, recorded replay and concurrent editing during history preview. These checks do not establish classroom effects or VPS capacity.
+
+Separate production checks used temporary fictional identities: desktop coediting, read-only historical previews while the live document continued syncing, toolbar switching, Word export and per-document access checks passed. The existing mobile workspace is a separate component; production collaborative editing was verified through the desktop entry. All fictional acceptance identities, their isolated course and documents were removed. Production Pages and custom-domain JavaScript/CSS assets matched the deployment build byte for byte. Deployment configuration and acceptance fixtures are excluded from this source package.

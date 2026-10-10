@@ -1,0 +1,2 @@
+.interaction-highlight{position:fixed;z-index:10020;pointer-events:none;border:2px solid #687dcc;border-radius:8px;background:rgb(104 125 204 / 8%);box-shadow:0 0 0 3px rgb(104 125 204 / 12%);box-sizing:border-box;}
+.dark .interaction-highlight{border-color:#b3c2ff;background:rgb(179 194 255 / 8%);box-shadow:0 0 0 3px rgb(179 194 255 / 12%);}

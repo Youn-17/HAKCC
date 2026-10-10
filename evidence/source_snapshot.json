@@ -2,8 +2,8 @@
   "snapshot_date": "2026-10-10",
   "source_revision": "eb1ba146bb1268a8295a4b1afa65627f2ded5ed5",
   "working_tree_included": true,
-  "publication_version": "main-after-v0.7.0",
-  "note": "Source update after sanitized v0.7.0: discussion threads, peer connections, saved teacher-defined topics and AI surface motion. Public application changelog receives no visual-update entry. Exact public bytes are identified below; private history, credentials, operations, real participant data and local acceptance artifacts are excluded.",
+  "publication_version": "main-interaction-motion",
+  "note": "Interaction feedback, compact discussion analysis and read-only collaborative history preview. Visual interface updates do not add an application changelog entry. Private history, credentials, operations, real participant data and acceptance fixtures remain excluded.",
   "published_source_files": [
     {
       "path": ".dockerignore",
@@ -152,12 +152,12 @@
     },
     {
       "path": "api/src/routes/collaborativeDocuments.test.ts",
-      "public_sha256": "bec12ba172b8f902c7099e42aa41ebf7cdb0277f15235c25a2ff6644289b5bae",
+      "public_sha256": "533eb00d45b052f1a7c8d853fdff1e801df368c9325168643d57e617a692e6ee",
       "modified_for_publication": false
     },
     {
       "path": "api/src/routes/collaborativeDocuments.ts",
-      "public_sha256": "d77d04aa26eefed04fa1b614ee85b329cda86a798b0cf2cb59e5f4937cc944a7",
+      "public_sha256": "623a7b1ffb5195d851c4480f18c3aad396fd46e07f0384482ea690e7e39e4650",
       "modified_for_publication": false
     },
     {
@@ -1542,7 +1542,7 @@
     },
     {
       "path": "collab/demo.tsx",
-      "public_sha256": "e321c077a2e38318d131fc12e9d6114d9c3f33407142eac3c75c13bee8f07665",
+      "public_sha256": "f38e7ed459d3a58a56edecc152182bfb4095a7d5f7694219c932c4bf43526977",
       "modified_for_publication": false
     },
     {
@@ -1557,22 +1557,27 @@
     },
     {
       "path": "collab/src/export.mjs",
-      "public_sha256": "ab6ca780b31dbdc3154d48da97c21124c8c00886fa4af12bfa762497463163a1",
+      "public_sha256": "3fc647ca942e27cb9e7d14c5b1b001f19b5c9c4ec96d4e57179c68c7c6f33355",
       "modified_for_publication": false
     },
     {
       "path": "collab/src/server.mjs",
-      "public_sha256": "a2592bca2cf7e895e5a2d6035f898bbbbd815908dc776047361acc7c22ce0014",
+      "public_sha256": "e965317fed4924deaa1c35adf2fd5c5a2be9d52c2b27d72094df22bbb9f85735",
       "modified_for_publication": false
     },
     {
       "path": "collab/src/store.mjs",
-      "public_sha256": "21b5b6b0023f98fbaa2d95a45bf098f94d683c56688016386bffbc7515a53323",
+      "public_sha256": "ee3a67fe572647b5b0e8501ccccd9bcfb00c41f0018d38c6c816e2f727021b8a",
       "modified_for_publication": false
     },
     {
       "path": "collab/test/collaboration.test.mjs",
       "public_sha256": "987f688cb4bc082fddeeefee4d1901ada6dbdc5cce9045689ccd6f1e306717ba",
+      "modified_for_publication": false
+    },
+    {
+      "path": "collab/test/snapshots.test.mjs",
+      "public_sha256": "ffc2b5b30f216a29dbef0ba988bcab91edc3ce41ddad5fbc7c45a2f201b06280",
       "modified_for_publication": false
     },
     {
@@ -1666,18 +1671,23 @@
       "modified_for_publication": false
     },
     {
+      "path": "components/CollaborationHistory.tsx",
+      "public_sha256": "d21da8877e00bc8be15ef1c68a07d11098a9d452d1109a0152effe894de3c50a",
+      "modified_for_publication": false
+    },
+    {
       "path": "components/CollaborativeDocumentEditor.css",
-      "public_sha256": "2b1d6698726b1a1ecb33d325b3d83660eea7fbb27ddc2882b1743ec774369cb5",
+      "public_sha256": "8dde605545fd331c20549b1c7940b6501286ee7ef3ac526a34258da44a0b7121",
       "modified_for_publication": false
     },
     {
       "path": "components/CollaborativeDocumentEditor.tsx",
-      "public_sha256": "0fc8c630d45d96210831c8cf20708446693df98095f7bbb7fc37fb1f8d207855",
+      "public_sha256": "909d3a1d58ea8f35c67cfd5a641f12f04ef9007fc6b1d5e937bb174305945ab1",
       "modified_for_publication": false
     },
     {
       "path": "components/ConstructionSequence.tsx",
-      "public_sha256": "834e306433ed775af254a001321cfaa573f20a562089d6eeb895671738601fdb",
+      "public_sha256": "9ea12f84aa8ec48d3153bf8c566bbca9504107606afad2a923f0c003de566509",
       "modified_for_publication": false
     },
     {
@@ -1767,7 +1777,7 @@
     },
     {
       "path": "components/KnowledgeMapCanvas.tsx",
-      "public_sha256": "be40558771dd0828b9a420fc16122d2761804ea4f8296f643339491788848dd6",
+      "public_sha256": "17de3a05d75cab5f14d4af5fcc657ecb438f929c5f3ae87ad161a8163e3f2f29",
       "modified_for_publication": false
     },
     {
@@ -1792,7 +1802,7 @@
     },
     {
       "path": "components/NoteEditorModal.tsx",
-      "public_sha256": "468d87ca9b078f91f13026ea743575adcb6762eb6afe48d96e0d91ee7aec6300",
+      "public_sha256": "605b3147dca734428957be30a9df2b15ab9eee91a63960600fd30df9bf9616f3",
       "modified_for_publication": false
     },
     {
@@ -1802,7 +1812,7 @@
     },
     {
       "path": "components/NoteItem.tsx",
-      "public_sha256": "6cbec7d1d256898c71877c151892c63ff8baba1ced0821c0f28bb6e7b28ce259",
+      "public_sha256": "ed709958d852c3cfc35157d523e3e5085b24369c5a682975c67a85045bf5eec4",
       "modified_for_publication": false
     },
     {
@@ -1932,7 +1942,7 @@
     },
     {
       "path": "components/Workspace.tsx",
-      "public_sha256": "25731efe29eedc785cd75d3bedb5800258f228e786d862436348585128ec7603",
+      "public_sha256": "421fb7811c77b8196be1093a9b8314386fffed71b02c5e64692fa5ecf49411dc",
       "modified_for_publication": false
     },
     {
@@ -2032,7 +2042,7 @@
     },
     {
       "path": "components/analytics/SpaceAnalytics.tsx",
-      "public_sha256": "4cdfd30208a1836a64d8ab7619ee454e2f9d708fa710c4cda848da159a5c6981",
+      "public_sha256": "e939e56e7f4d5cfc4aa63ce5d8a1500f7170b9f5aa17aa8cce7a572880b5d096",
       "modified_for_publication": false
     },
     {
@@ -2052,12 +2062,12 @@
     },
     {
       "path": "components/analytics/spaceAnalytics.css",
-      "public_sha256": "05870ad8a4dfe0e780182b61d173f1431dd7b8bdda4cf0ca40ace33d92a5afda",
+      "public_sha256": "d6586ff400456205905229106d067f30db283aa4806e8b233b282621626537e8",
       "modified_for_publication": false
     },
     {
       "path": "components/analytics/spaceAnalytics.test.ts",
-      "public_sha256": "a90dd73eee18b9c8ef6fb63e7b1a783d30292db674a3072f9ab26162e8e39773",
+      "public_sha256": "af8add913f63eb58a95b30bc59f1708651ff84809b29bd76dd564103097165a0",
       "modified_for_publication": false
     },
     {
@@ -2138,6 +2148,11 @@
     {
       "path": "components/chatMarkdown.tsx",
       "public_sha256": "a6f4e17e919ce92478b7d72a2d4fae92b598e990881e91c01ac48f168b4ae962",
+      "modified_for_publication": false
+    },
+    {
+      "path": "components/collaborationHistory.test.ts",
+      "public_sha256": "235e3c64f3ba5457a7f12f7e8f18340e5fb055ac257c53408b06686ab4a73a6a",
       "modified_for_publication": false
     },
     {
@@ -2966,6 +2981,16 @@
       "modified_for_publication": false
     },
     {
+      "path": "hooks/useAnalyticsMotion.test.ts",
+      "public_sha256": "b345f25885acbd65bb41bb7579f558fae925cdc7d56673a11e780450b0b33295",
+      "modified_for_publication": false
+    },
+    {
+      "path": "hooks/useAnalyticsMotion.ts",
+      "public_sha256": "9711041ab0c4cea3cada8e6ba8a035efda6a1b565ee1fdec107f95a05d8ca966",
+      "modified_for_publication": false
+    },
+    {
       "path": "hooks/useChatPreferences.tsx",
       "public_sha256": "650515db2c59ef9330ee8d5721256731da0530eded100c4000edc2a4b8ae28fc",
       "modified_for_publication": false
@@ -2983,6 +3008,16 @@
     {
       "path": "hooks/useGrowingTextarea.ts",
       "public_sha256": "8db76fafcc87aeb9d9f466b1749de2de443a020e06d32d2177cdb3af6b087fbb",
+      "modified_for_publication": false
+    },
+    {
+      "path": "hooks/useInteractionMotion.test.ts",
+      "public_sha256": "7e2b71e7d56a813f4fb376e53f11f32e5625f6410faa9ccedcfd1137d9f753a3",
+      "modified_for_publication": false
+    },
+    {
+      "path": "hooks/useInteractionMotion.ts",
+      "public_sha256": "914ee1fc8b24ed17238e8c8a640974e58cd01886bbead92a29ff7fe9cd0c7a15",
       "modified_for_publication": false
     },
     {
@@ -3023,6 +3058,16 @@
     {
       "path": "hooks/useTraditionalChinese.ts",
       "public_sha256": "295e6325eb3d5bbfda926e5402c5f9cbdddc844a1daaa6b4c15b50aae85f30c2",
+      "modified_for_publication": false
+    },
+    {
+      "path": "hooks/useWorkspaceNoteMotion.test.ts",
+      "public_sha256": "2142a035b52d8cc2902d663033f99ed22bfd2c118bb06bcebe6f25228f048646",
+      "modified_for_publication": false
+    },
+    {
+      "path": "hooks/useWorkspaceNoteMotion.ts",
+      "public_sha256": "97a89f7bdfd3e8ac48ed5ef229fb317318b458e520b81749dff91108a67e850b",
       "modified_for_publication": false
     },
     {
@@ -3592,7 +3637,7 @@
     },
     {
       "path": "services/apiClient.ts",
-      "public_sha256": "b5992d84f13e665620cb8a18c3d25fd210f1dbe57e1af5642f15f5034731610d",
+      "public_sha256": "e89b4e25bc0c225c2fe7f868f7932494ef6074d627fafc7b20a115bc7d7f5f4a",
       "modified_for_publication": false
     },
     {
@@ -3612,7 +3657,7 @@
     },
     {
       "path": "services/collaborativeDocuments.ts",
-      "public_sha256": "edd4495f85087b2ac8724270e057c555f5895c51ae459f0f9d5ea90229fbc0a2",
+      "public_sha256": "dd2587fea6265978e5536a4c2bfc5a3583edbe6c4f862f6bfa8cc63faccab579",
       "modified_for_publication": false
     },
     {
@@ -3633,6 +3678,11 @@
     {
       "path": "styles/courseSettings.css",
       "public_sha256": "89f2a848134653ff1ed0d63d851eb95295929c1926cc83183ee8e405525e54ff",
+      "modified_for_publication": false
+    },
+    {
+      "path": "styles/interactionMotion.css",
+      "public_sha256": "17fedbd42a413c3e502ec0d104a730eea116cb2f5ac6b3c7e0b889f702be44d8",
       "modified_for_publication": false
     },
     {
