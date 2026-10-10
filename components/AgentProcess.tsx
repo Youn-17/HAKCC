@@ -31,18 +31,22 @@ const COPY = {
   zh: {
     thinking: '正在思考',
     composing: '正在组织回答',
-    slow: '想得久一点，回答会更完整',
+    slow: '还在处理，请稍等',
     seconds: (s: string) => `${s} 秒`,
     used: (n: number) => `用了 ${n} 步`,
+    working: (n: number) => `正在处理 ${n} 步`,
+    incomplete: (n: number) => `${n} 步 · 有步骤未完成`,
     show: '看每一步',
     hide: '收起',
   },
   en: {
     thinking: 'Thinking',
     composing: 'Putting the answer together',
-    slow: 'Taking a little longer to get it right',
+    slow: 'Still working on it',
     seconds: (s: string) => `${s}s`,
     used: (n: number) => `${n} ${n === 1 ? 'step' : 'steps'}`,
+    working: (n: number) => `${n} ${n === 1 ? 'step' : 'steps'} in progress`,
+    incomplete: (n: number) => `${n} ${n === 1 ? 'step' : 'steps'} · incomplete`,
     show: 'Show steps',
     hide: 'Hide',
   },
@@ -57,8 +61,8 @@ const StepRow: React.FC<{ step: ToolCallInfo; lang: 'zh' | 'en' }> = ({ step, la
   const t = COPY[lang];
   const { text, icon } = label(step.name, lang);
   return (
-    <li className="agent-step-enter flex min-w-0 items-center gap-2 text-[0.75rem] leading-5">
-      <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
+    <li data-ai-motion="step" data-ai-motion-state={step.status} className="ai-motion-step flex min-w-0 items-center gap-2 text-[0.75rem] leading-5">
+      <span data-ai-motion="indicator" data-ai-motion-state={step.status} className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
         {step.status === 'running'
           ? <Loader2 size={13} className="animate-spin text-[#000080] dark:text-blue-300" />
           : step.status === 'error'
@@ -97,7 +101,7 @@ const AgentProcess: React.FC<AgentProcessProps> = ({ steps, phase, lang, started
           </ul>
         )}
         {!anyRunning && (
-          <div className="agent-step-enter flex items-center gap-2 text-[0.75rem] leading-5">
+          <div data-ai-motion="status" className="flex items-center gap-2 text-[0.75rem] leading-5">
             <AiThinkingDots />
             <span className="ai-shimmer font-medium">{thinking || steps.length === 0 ? t.thinking : t.composing}</span>
             {waited >= SHOW_SECONDS_AFTER_MS && (
@@ -113,17 +117,23 @@ const AgentProcess: React.FC<AgentProcessProps> = ({ steps, phase, lang, started
   }
 
   if (steps.length === 0) return null;
-  const summary = [t.used(steps.length), elapsedMs != null ? t.seconds(formatSeconds(elapsedMs)) : null].filter(Boolean).join(' · ');
+  const failed = steps.some(step => step.status === 'error');
+  const busy = steps.some(step => step.status === 'running');
+  const state = failed ? 'error' : busy ? 'running' : 'done';
+  const summary = [failed ? t.incomplete(steps.length) : busy ? t.working(steps.length) : t.used(steps.length), elapsedMs != null ? t.seconds(formatSeconds(elapsedMs)) : null].filter(Boolean).join(' · ');
   return (
-    <div className="mb-2" data-agent-process={phase}>
+    <div data-ai-motion="status" data-ai-motion-state={state} className="mb-2" data-agent-process={phase}>
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
         title={open ? t.hide : t.show}
-        className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000080] dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
+        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.6875rem] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000080] ${failed
+          ? 'border-rose-100 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300'
+          : busy ? 'border-blue-100 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-300'
+          : 'border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950'}`}
       >
-        <RemixIcon name="checkbox-circle-fill" size={12} />
+        <RemixIcon name={failed ? 'error-warning-fill' : busy ? 'time-line' : 'checkbox-circle-fill'} size={12} />
         {summary}
         <RemixIcon name={open ? 'arrow-up-s-line' : 'arrow-down-s-line'} size={13} />
       </button>

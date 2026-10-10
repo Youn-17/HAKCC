@@ -4082,9 +4082,23 @@ export interface SpaceKeywordChanges {
   periods: {before: {docs: number; tokens: number}; after: {docs: number; tokens: number}};
   terms: Array<{word: string; before: {count: number; notes: number; note_ids: string[]}; after: {count: number; notes: number; note_ids: string[]}; delta: number}>;
 }
+export interface AnalyticsTopic {id:string;title:string;terms:string[]}
+export interface TopicConfig {topics:AnalyticsTopic[];revision:string|null}
+export interface SpaceTopicCoverage {
+  available:boolean;config:TopicConfig;docs:number;students:number;
+  topics:Array<AnalyticsTopic&{notes:number;students:number;note_ids:string[];peer_note_ids:string[]}>;
+}
+export interface SpacePeerConnections {
+  available:boolean;members:Array<{id:string;name:string;notes:number;peers:number}>;
+  connections:Array<{a:string;b:string;aToB:number;bToA:number;noteIds:string[]}>;
+  candidates:Array<{a:string;b:string;words:string[];noteIds:string[]}>;candidateCount:number;
+}
 const discussionQuery = (opts: DiscussionOptions) => ({view_id:opts.viewId,author_id:opts.authorId,from:opts.from,until:opts.until});
 
 export const spaceAnalytics = {
+  peers:(spaceId:string,opts:DiscussionOptions&{extraWords?:string;extraStop?:string}={})=>request<SpacePeerConnections>('GET',`/spaces/${spaceId}/analytics/peers${analyticsQuery({...discussionQuery(opts),extra_words:opts.extraWords,extra_stop:opts.extraStop})}`),
+  topics:(spaceId:string,opts:DiscussionOptions={})=>request<SpaceTopicCoverage>('GET',`/spaces/${spaceId}/analytics/topics${analyticsQuery(discussionQuery(opts))}`),
+  saveTopics:(spaceId:string,topics:AnalyticsTopic[],expectedRevision:string|null)=>request<TopicConfig>('PUT',`/spaces/${spaceId}/analytics/topics`,{topics,expectedRevision}),
   discussion: (spaceId: string, opts: DiscussionOptions = {}) => request<SpaceDiscussion>('GET', `/spaces/${spaceId}/analytics/discussion${analyticsQuery(discussionQuery(opts))}`),
   changes: (spaceId: string, opts: DiscussionOptions & {splitAt?: string | null; extraWords?: string; extraStop?: string} = {}) => request<SpaceKeywordChanges>('GET', `/spaces/${spaceId}/analytics/changes${analyticsQuery({...discussionQuery(opts),split_at:opts.splitAt,extra_words:opts.extraWords,extra_stop:opts.extraStop})}`),
   overview: (spaceId: string, viewId?: string | null, period: Pick<DiscussionOptions, 'from' | 'until'> = {}) =>

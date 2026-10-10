@@ -16,6 +16,10 @@ const h = vi.hoisted(() => ({
   extractKeywords: vi.fn(),
   layoutCloud: vi.fn(),
   keywordChanges: vi.fn(),
+  peerFocus: vi.fn(),
+  topicCoverage: vi.fn(),
+  loadTopics: vi.fn(),
+  saveTopics: vi.fn(),
 }));
 
 vi.mock('../config/supabase', () => ({ supabase: {} }));
@@ -36,8 +40,9 @@ vi.mock('../services/spaceAnalytics', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/spaceAnalytics')>()),
   loadSpaceAnalytics: h.loadSpaceAnalytics,
 }));
-vi.mock('../services/python/textWorker', () => ({ extractKeywords: h.extractKeywords, layoutCloud: h.layoutCloud, keywordChanges: h.keywordChanges }));
+vi.mock('../services/python/textWorker', () => ({ extractKeywords: h.extractKeywords, layoutCloud: h.layoutCloud, keywordChanges: h.keywordChanges, peerFocus: h.peerFocus, topicCoverage: h.topicCoverage }));
 
+vi.mock('../services/analyticsTopics', async (original) => ({...(await original<typeof import('../services/analyticsTopics')>()),loadTopics:h.loadTopics,saveTopics:h.saveTopics}));
 import metricsRouter from './metrics';
 import { errorHandler } from '../middleware/errorHandler';
 
@@ -74,6 +79,10 @@ afterAll(() => new Promise<void>(done => server.close(() => done())));
 
 beforeEach(() => {
   h.staff = true;
+  h.peerFocus.mockReset().mockResolvedValue({authors:[{id:'amy',terms:[{word:'检索练习',note_ids:['n1']}]},{id:'bo',terms:[{word:'检索练习',note_ids:['n2']}]}]});
+  h.loadTopics.mockReset().mockResolvedValue({topics:[{id:'t1',title:'检索练习',terms:['检索练习']}],revision:'11111111-1111-4111-8111-111111111111'});
+  h.saveTopics.mockReset().mockImplementation(async(_space,_user,topics)=>({topics,revision:'22222222-2222-4222-8222-222222222222'}));
+  h.topicCoverage.mockReset().mockResolvedValue({docs:2,topics:[{id:'t1',title:'检索练习',terms:['检索练习'],notes:1,students:1,note_ids:['n2'],peer_note_ids:[]}]});
   h.loadSpaceAnalytics.mockReset().mockImplementation(async () => fixture());
   h.extractKeywords.mockReset().mockResolvedValue({ terms: [{ word: '检索练习', weight: 1, count: 2, notes: 2, note_ids: ['n1', 'n2'] }], docs: 2, tokens: 9 });
   h.keywordChanges.mockReset().mockResolvedValue({terms:[],periods:{before:{docs:1,tokens:5},after:{docs:1,tokens:5}}});
@@ -166,4 +175,34 @@ describe('keyword changes route', () => {
     expect((await get('/spaces/change-test/analytics/changes?split_at=bad')).status).toBe(403);
     h.staff=true; expect((await get('/spaces/change-test/analytics/changes?split_at=bad')).status).toBe(400);
   });
+});
+
+describe('peer and topic tools',()=>{
+ it('保存与跨请求读取教师主题，拒绝坏输入和学生写入；个人报告仍使用同范围全体原文',async()=>{
+  const path='/spaces/topic-report/analytics/topics';
+  const put=async(body:unknown)=>{const r=await fetch(base+path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
+  const topics=[{id:'memory',title:'记忆',terms:['检索练习']}];
+  expect((await put({topics,expectedRevision:null})).status).toBe(200);
+  expect(h.saveTopics).toHaveBeenCalledWith('topic-report','t1',topics,null);
+  expect((await put({topics:[{id:'bad',title:'',terms:[]}],expectedRevision:null})).status).toBe(400);
+  const report=await get(path+'?author_id=amy');expect(report.status).toBe(200);expect(report.body.config.topics[0].id).toBe('t1');
+  expect(h.topicCoverage.mock.calls[0][0].map((d:{id:string})=>d.id)).toEqual(['n1','n2']);expect(h.topicCoverage.mock.calls[0][2]).toBe('amy');
+  h.staff=false;expect((await put({topics,expectedRevision:null})).status).toBe(403);
+ });
+ it('文本缓存包含字典，权限撤销不能读取缓存；主题并发修改返回 409',async()=>{
+  const path='/spaces/peer-cache/analytics/peers';
+  await get(path);await get(path);expect(h.peerFocus).toHaveBeenCalledTimes(1);
+  await get(path+'?extra_stop=检索练习');expect(h.peerFocus).toHaveBeenCalledTimes(2);
+  h.staff=false;expect((await get(path)).status).toBe(403);h.staff=true;
+  const {ApiError}=await import('../middleware/errorHandler');h.saveTopics.mockRejectedValueOnce(new ApiError(409,'Changed'));
+  const r=await fetch(base+'/spaces/s1/analytics/topics',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({topics:[],expectedRevision:'11111111-1111-4111-8111-111111111111'})});expect(r.status).toBe(409);
+ });
+
+ it('先鉴权再读取配置或 Python；真实连接在 Python 故障时仍保留',async()=>{
+  h.staff=false;
+  for(const path of ['/peers','/topics'])expect((await get('/spaces/new-tools/analytics'+path)).status).toBe(403);
+  expect(h.loadTopics).not.toHaveBeenCalled();expect(h.peerFocus).not.toHaveBeenCalled();
+  h.staff=true;h.peerFocus.mockRejectedValueOnce(new Error('worker unavailable'));
+  const result=await get('/spaces/new-tools/analytics/peers');expect(result.status).toBe(200);expect(result.body.available).toBe(false);expect(result.body.connections).toHaveLength(1);
+ });
 });

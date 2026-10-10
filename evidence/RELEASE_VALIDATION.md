@@ -1,5 +1,25 @@
 # Release validation
 
+Checked on **2026-10-10** for the **main source update after v0.7.0**. This is a source commit, not a new tagged release.
+
+## Current source checks
+
+- **218 test files / 2,440 tests passed**, with fictional browser configuration and the local Python text libraries enabled. No tests were skipped in this run.
+- Frontend TypeScript check, frontend build with placeholder browser configuration, and API build passed. Existing chunk-size warnings remain.
+- The AI surfaces were checked in the private local source using fictional API events: workspace panel, Note assistant, personal agent, mobile and dark layouts, and live reduced-motion changes. These checks do not establish live AI-provider behavior.
+- The production frontend JS/CSS files match the private local build. The public source has its own sanitized configuration and was independently tested and built.
+- The known-local-credential and operational-marker scan found no matches in public files. The credential-shape, source fingerprint and full-file manifest checks cover the public package. These are bounded automated checks.
+- The previous publication-only lockfile changes are preserved; Anime.js 4.5.0 is added. The dated dependency snapshots below were not refreshed into a new security audit.
+
+## Current analysis requirements and limits
+
+Discussion threads replace idea relay; peer connections use actual exchanges and shared text terms. Teacher-defined topics require migration `087_space_analytics_topics.sql` on an existing compatible database. API staff authorization and service-only table access remain required. Topic mentions and shared words are not mastery scores or evidence of learning effects. Keyword periods still group current Note text by creation date. Anonymous display does not anonymize source words. The migration archive is not verified as a complete fresh-database replay. Private operations and production acceptance records are excluded.
+
+## Previous tagged release evidence
+
+The records below describe their named releases and are retained as historical evidence.
+
+
 Checked on **2026-10-10** for **v0.7.0**. This successor retains the sanitized v0.6.0 package and adds inspected discussion-analysis, optional citation-check and scaffold-suggestion source changes.
 
 ## Current checks

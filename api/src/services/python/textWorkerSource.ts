@@ -195,6 +195,40 @@ def changes(payload):
     return {"terms": terms, "periods": periods}
 
 
+
+def focus(payload):
+    docs = payload.get("docs") or []
+    _, _, spelling, by_doc = collect(payload)
+    authors = defaultdict(list)
+    for doc in docs:
+        authors[doc["authorId"]].append(doc["id"])
+    result = []
+    for author, ids in authors.items():
+        tf, where = Counter(), defaultdict(list)
+        for id in ids:
+            tf.update(by_doc[id])
+            for word in by_doc[id]:
+                where[word].append(id)
+        terms = [{"word": spelling[word].most_common(1)[0][0], "note_ids": where[word][:50]} for word, _ in ranked_terms(tf, where, len(ids))[:20]]
+        result.append({"id": author, "terms": terms})
+    return {"authors": result}
+
+
+
+def topic_coverage(payload):
+    docs = payload.get("docs") or []
+    author = payload.get("author_id")
+    selected = [d for d in docs if not author or d["authorId"] == author]
+    rows = []
+    for topic in payload.get("topics") or []:
+        patterns = [re.compile((r"(?<![A-Za-z0-9_])" + re.escape(term) + r"(?![A-Za-z0-9_])") if re.search(r"[A-Za-z]", term) else re.escape(term), re.IGNORECASE) for term in topic["terms"]]
+        found = [d for d in docs if any(pattern.search(d.get("text") or "") for pattern in patterns)]
+        own = [d for d in found if not author or d["authorId"] == author]
+        peers = [d for d in found if author and d["authorId"] != author]
+        rows.append({**topic, "notes": len(own), "students": len(set(d["authorId"] for d in own)), "note_ids": [d["id"] for d in own][:50], "peer_note_ids": [d["id"] for d in peers][:50]})
+    return {"docs": len(selected), "topics": rows}
+
+
 def cloud(payload):
     words = {w["word"]: float(w["weight"]) for w in (payload.get("words") or []) if w.get("word") and float(w.get("weight") or 0) > 0}
     if not words:
@@ -226,7 +260,7 @@ def ping(_payload):
     return {"jieba": jieba.__version__, "wordcloud": wcmod.__version__, "font": bool(FONT), "python": sys.version.split()[0]}
 
 
-OPS = {"ping": ping, "keywords": keywords, "cloud": cloud, "changes": changes}
+OPS = {"ping": ping, "keywords": keywords, "cloud": cloud, "changes": changes, "focus": focus, "topics": topic_coverage}
 
 sys.stdout.write(json.dumps({"id": None, "ok": True, "result": {"ready": True}}) + "\n")
 sys.stdout.flush()

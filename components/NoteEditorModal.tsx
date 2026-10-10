@@ -117,6 +117,7 @@ import { useChatPreferences, ChatPreferenceControls } from '../hooks/useChatPref
 import { useGrowingTextarea } from '../hooks/useGrowingTextarea';
 import RemixIcon from './RemixIcon';
 import AgentProcess from './AgentProcess';
+import { useAiSurfaceMotion } from '../hooks/useAiMotion';
 import KbSourceCards, { parseKbSources } from './KbSourceCards';
 import { applyToolEvent, stepsFromMetadata } from './agentProcessSteps';
 import type { ToolCallInfo } from './AgentToolCallDisplay';
@@ -649,6 +650,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const editorTextOffsetRef = useRef<number | null>(null);
   const aiInputRef = useRef<HTMLTextAreaElement>(null);
   useGrowingTextarea(aiInputRef, aiInput, isOpen && aiOpen);
+  const aiMotionRef = useAiSurfaceMotion<HTMLElement>({ open: isOpen && aiOpen, ready: !threadLoading });
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
@@ -3485,11 +3487,11 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     deletedIds: deletedThreadIdsRef.current,
   });
   const aiPanel = (
-    <aside data-large-text={largeText} aria-label={t.aiPartner} className="assistant-panel flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 dark:border-gray-800">
+    <aside ref={aiMotionRef} data-large-text={largeText} aria-label={t.aiPartner} className="ai-motion-surface assistant-panel flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 dark:border-gray-800">
       {/* 标题、新建、历史、收起放在一行。原来标题、两个按钮、分隔线、「围绕当前 Note 讨论」叠了四层，
           占掉侧栏顶上一百多像素，真正的对话区反而挤在下面。历史列表做成浮在下面的菜单，不再把对话往下顶。 */}
       <div ref={historyMenuRef} className="relative shrink-0 border-b border-gray-100 dark:border-gray-800">
-        <div className="assistant-header flex items-center gap-2">
+        <div data-ai-motion-chrome className="assistant-header flex items-center gap-2">
           <span className="assistant-mark" aria-hidden="true"><RemixIcon name="chat-quote-line" size={18} /></span>
           <div className="assistant-header-title">
             <h2 className="truncate" title={t.aroundThisNote}>{t.aiPartner}</h2>
@@ -3632,7 +3634,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
 
             if (!isAssistant) {
               return (
-                <div key={message.id} className="flex justify-end">
+                <div key={message.id} data-ai-motion="message" data-ai-motion-key={index} className="flex justify-end">
                   <div className="assistant-user-message min-w-0 max-w-[85%] px-3.5 py-2.5 text-[0.8125rem] leading-6">
                     <MarkdownMessage content={message.content} isMine={false} />
                   </div>
@@ -3653,7 +3655,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             if (waitingForText && !sending) return null;
 
             return (
-              <div key={message.id} className="flex items-start gap-2">
+              <div key={message.id} data-ai-motion="message" data-ai-motion-key={index} className="flex items-start gap-2">
                 <span
                   className={`mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#000080] dark:text-blue-300 ${
                     startsRun
@@ -3768,7 +3770,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       </div>
 
       <div className="assistant-footer border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-gray-800">
-        <div ref={composerMenuRef} data-ai-composer className="assistant-composer assistant-composer-refinable relative">
+        <div ref={composerMenuRef} data-ai-motion-chrome data-ai-composer className="assistant-composer assistant-composer-refinable relative">
           {aiAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2 px-2.5 pt-2.5">
               {aiAttachments.map(attachment => (

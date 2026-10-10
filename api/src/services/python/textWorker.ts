@@ -175,6 +175,15 @@ export function keywordChanges(docs: Array<{id: string; text: string; period: 'b
   }>('changes', {docs, names:opts.names ?? [], extra_words:opts.extraWords ?? [], extra_stop:opts.extraStop ?? []});
 }
 
+export function peerFocus(docs: Array<{id:string;authorId:string;text:string}>, opts:{names?:string[];extraWords?:string[];extraStop?:string[]}={}) {
+  return shared().call<{authors:Array<{id:string;terms:Array<{word:string;note_ids:string[]}>}>}>('focus',{docs,names:opts.names??[],extra_words:opts.extraWords??[],extra_stop:opts.extraStop??[]});
+}
+
+export interface TopicCoverageRow {id:string;title:string;terms:string[];notes:number;students:number;note_ids:string[];peer_note_ids:string[]}
+export function topicCoverage(docs:Array<{id:string;authorId:string;text:string}>,topics:Array<{id:string;title:string;terms:string[]}>,authorId?:string|null) {
+  return shared().call<{docs:number;topics:TopicCoverageRow[]}>('topics',{docs,topics,author_id:authorId??null});
+}
+
 export function layoutCloud(words: Array<{ word: string; weight: number }>, opts: { width?: number; height?: number; seed?: number } = {}) {
   return shared().call<{ items: CloudItem[]; width: number; height: number }>('cloud', {
     words, width: opts.width ?? 900, height: opts.height ?? 420, seed: opts.seed ?? 7,

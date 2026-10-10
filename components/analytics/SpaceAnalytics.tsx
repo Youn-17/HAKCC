@@ -3,12 +3,14 @@ import RemixIcon from '../RemixIcon';
 import { spaceAnalytics, type SpaceDiscussion, type DiscussionOptions } from '../../services/apiClient';
 import { anonymousNames } from './analyticsModel';
 import { WordCloud } from './AnalyticsCharts';
-import { KeywordChangeChart, RelayChart } from './DiscussionCharts';
+import { KeywordChangeChart } from './DiscussionCharts';
 import { exportAnalysisChart } from './exportChart';
+import {DiscussionThreads} from './DiscussionThreads';
+import {PeerConnections,TopicCoverage} from './DiscussionFocus';
 import './spaceAnalytics.css';
 
 type Lang='zh'|'en';
-type Tool='cloud'|'changes'|'relay'|'pending';
+type Tool='cloud'|'changes'|'relay'|'pending'|'peers'|'topics';
 interface Props {
   spaceId:string; lang:Lang; viewId:string|null; viewName:string; spaceTitle?:string;
   onClose:()=>void; onLocateNote:(id:string)=>void;
@@ -19,7 +21,9 @@ const DEFAULT:Filters={tool:'cloud',authorId:'',onlyView:false,from:'',through:'
 const TOOLS: Array<{id:Tool;icon:string;zh:string;en:string;hintZh:string;hintEn:string}>=[
   {id:'cloud',icon:'font-size-2',zh:'词云',en:'Word cloud',hintZh:'点击词语，查看相关笔记。',hintEn:'Click a word to read its source notes.'},
   {id:'changes',icon:'bar-chart-grouped-line',zh:'关键词变化',en:'Keyword changes',hintZh:'比较前后两段，条形表示涉及该词的笔记比例。',hintEn:'Compare two periods. Bars show the share of notes mentioning each word.'},
-  {id:'relay',icon:'node-tree',zh:'观点接力',en:'Idea relay',hintZh:'箭头从原观点指向回应。选中个人时保留相关同学的接续。',hintEn:'Arrows run from the original note to its response. Individual views retain connected peers.'},
+  {id:'relay',icon:'chat-history-line',zh:'讨论脉络',en:'Discussion threads',hintZh:'沿一段讨论阅读后续回应、质疑与证据，查看还需接续的位置。',hintEn:'Read a discussion’s responses, questions and evidence, and find openings for follow-up.'},
+  {id:'peers',icon:'group-line',zh:'同伴连接',en:'Peer connections',hintZh:'查看已有交流与可邀请阅读的同伴笔记。',hintEn:'Inspect actual exchanges and invite peers to read related Notes.'},
+  {id:'topics',icon:'list-check-2',zh:'主题覆盖',en:'Topic coverage',hintZh:'按教师设定的关键词组，查看全体或个人提及的讨论范围。',hintEn:'Inspect whole-community or individual mentions of teacher-defined topic keywords.'},
   {id:'pending',icon:'question-answer-line',zh:'待推进议题',en:'Open discussions',hintZh:'查看尚无人回应的笔记和提问后未见后续的讨论。',hintEn:'Find notes without responses and questions without follow-ups.'},
 ];
 function loadFilters(spaceId:string):Filters {
@@ -97,12 +101,15 @@ const SpaceAnalytics:React.FC<Props>=({spaceId,lang,viewId,viewName,spaceTitle,o
   const opts:DiscussionOptions={viewId:filter.onlyView?viewId:null,authorId:filter.authorId||null,from:dateInstant(filter.from),until:dateInstant(filter.through,true)};
   const rangeInvalid=!!opts.from && !!opts.until && opts.from>=opts.until;
   const key=JSON.stringify({spaceId,...opts});
-  const discussion=useLoad(()=>spaceAnalytics.discussion(spaceId,opts),key,!rangeInvalid);
+  const discussionOpts={...opts,authorId:['peers','topics'].includes(filter.tool)?null:opts.authorId};
+  const discussion=useLoad(()=>spaceAnalytics.discussion(spaceId,discussionOpts),JSON.stringify({spaceId,...discussionOpts}),!rangeInvalid);
   const textOpts={...opts,extraWords:filter.extraWords,extraStop:filter.extraStop};
   const textKey=JSON.stringify({spaceId,...textOpts});
   const cloud=useLoad(()=>spaceAnalytics.wordCloud(spaceId,{...textOpts,width:900,height:440}),textKey,filter.tool==='cloud'&&!rangeInvalid);
   const changesOpts={...textOpts,splitAt:dateInstant(filter.split)};
   const changes=useLoad(()=>spaceAnalytics.changes(spaceId,changesOpts),JSON.stringify({spaceId,...changesOpts}),filter.tool==='changes'&&!rangeInvalid);
+  const peers=useLoad(()=>spaceAnalytics.peers(spaceId,textOpts),textKey,filter.tool==='peers'&&!rangeInvalid);
+  const topics=useLoad(()=>spaceAnalytics.topics(spaceId,opts),key,filter.tool==='topics'&&!rangeInvalid);
   useEffect(()=>setSelection(null),[key,filter.tool,filter.extraWords,filter.extraStop,filter.split,filter.anonymous]);
   const data=discussion.data;
   const names=useMemo(()=>new Map(data?.members.map(m=>[m.id,m.name])??[]),[data]);
@@ -114,9 +121,9 @@ const SpaceAnalytics:React.FC<Props>=({spaceId,lang,viewId,viewName,spaceTitle,o
   const pick=(ids:string[],label:string)=>setSelection({ids,label});
   const active=TOOLS.find(t=>t.id===filter.tool)!;
   const related=selection?.ids.map(id=>noteOf.get(id)).filter((n):n is SpaceDiscussion['notes'][number]=>!!n)??[];
-  const requestError=discussion.error||(filter.tool==='cloud'?cloud.error:filter.tool==='changes'?changes.error:null);
-  const busy=discussion.loading||(filter.tool==='cloud'?cloud.loading:filter.tool==='changes'?changes.loading:false);
-  const refresh=()=>{discussion.reload();if(filter.tool==='cloud')cloud.reload();if(filter.tool==='changes')changes.reload();};
+  const requestError=discussion.error||(filter.tool==='cloud'?cloud.error:filter.tool==='changes'?changes.error:filter.tool==='peers'?peers.error:filter.tool==='topics'?topics.error:null);
+  const busy=discussion.loading||(filter.tool==='cloud'?cloud.loading:filter.tool==='changes'?changes.loading:filter.tool==='peers'?peers.loading:filter.tool==='topics'?topics.loading:false);
+  const refresh=()=>{discussion.reload();if(filter.tool==='cloud')cloud.reload();if(filter.tool==='changes')changes.reload();if(filter.tool==='peers')peers.reload();if(filter.tool==='topics')topics.reload();};
   const [exportError,setExportError]=useState('');
   const exportChart=async()=>{setExportError('');try{await exportAnalysisChart(chartRef.current?.querySelector('svg')??null,`discussion-${filter.tool}.png`);}catch{setExportError(zh?'图片未能导出，请重试。':'Could not export the image. Try again.');}};
   return <main ref={pageRef} tabIndex={-1} aria-label={zh?'讨论分析':'Discussion analytics'} className="discussion-analysis">
@@ -143,18 +150,20 @@ const SpaceAnalytics:React.FC<Props>=({spaceId,lang,viewId,viewName,spaceTitle,o
         <div className="da-content">
           <section className="da-main-panel">
             <div className="da-panel-heading"><div><h2>{zh?active.zh:active.en}</h2><p>{zh?active.hintZh:active.hintEn}</p></div>
-              <div className="da-panel-actions">{(filter.tool==='cloud'||filter.tool==='changes')&&<button type="button" onClick={()=>setSettings(s=>!s)} aria-expanded={settings}><RemixIcon name="equalizer-line" size={16}/>{zh?'词语设置':'Word settings'}</button>}
-                {filter.tool!=='pending'&&<button type="button" onClick={exportChart} disabled={busy||!!requestError||rangeInvalid}><RemixIcon name="download-2-line" size={16}/>{zh?'导出图片':'Export image'}</button>}
+              <div className="da-panel-actions">{(['cloud','changes','peers'].includes(filter.tool))&&<button type="button" onClick={()=>setSettings(s=>!s)} aria-expanded={settings}><RemixIcon name="equalizer-line" size={16}/>{zh?'词语设置':'Word settings'}</button>}
+                {['cloud','changes','topics'].includes(filter.tool)&&<button type="button" onClick={exportChart} disabled={busy||!!requestError||rangeInvalid}><RemixIcon name="download-2-line" size={16}/>{zh?'导出图片':'Export image'}</button>}
               </div>
             </div>
-            {settings&&(filter.tool==='cloud'||filter.tool==='changes')&&<form className="da-word-settings" onSubmit={e=>{e.preventDefault();setFilter(f=>({...f,extraWords:draftWords,extraStop:draftStop}));setSettings(false);}}><label>{zh?'保留为完整词语':'Keep as whole words'}<textarea aria-label={zh?'保留词语':'Keep whole words'} maxLength={1200} value={draftWords} onChange={e=>setDraftWords(e.target.value)} placeholder={zh?'如：检索练习，课程专名':'Course terms, separated by commas'}/></label><label>{zh?'排除词语':'Exclude words'}<textarea aria-label={zh?'排除词语':'Exclude words'} maxLength={1200} value={draftStop} onChange={e=>setDraftStop(e.target.value)}/></label><button type="submit">{zh?'应用':'Apply'}</button></form>}
+            {settings&&(['cloud','changes','peers'].includes(filter.tool))&&<form className="da-word-settings" onSubmit={e=>{e.preventDefault();setFilter(f=>({...f,extraWords:draftWords,extraStop:draftStop}));setSettings(false);}}><label>{zh?'保留为完整词语':'Keep as whole words'}<textarea aria-label={zh?'保留词语':'Keep whole words'} maxLength={1200} value={draftWords} onChange={e=>setDraftWords(e.target.value)} placeholder={zh?'如：检索练习，课程专名':'Course terms, separated by commas'}/></label><label>{zh?'排除词语':'Exclude words'}<textarea aria-label={zh?'排除词语':'Exclude words'} maxLength={1200} value={draftStop} onChange={e=>setDraftStop(e.target.value)}/></label><button type="submit">{zh?'应用':'Apply'}</button></form>}
             {filter.tool==='changes'&&<div className="da-comparison"><label>{zh?'前后分界日期':'Comparison date'}<input type="date" aria-label={zh?'前后分界日期':'Comparison date'} value={filter.split} min={filter.from||undefined} max={filter.through||undefined} onChange={e=>update('split',e.target.value)}/></label><span>{filter.split?(zh?'所选日期零点起计入后段。':'The later period starts at midnight on this date.'):(zh?'未指定时，按当前笔记日期的中点分段。':'Defaults to the midpoint of the selected note dates.')}</span></div>}
             {exportError&&<p className="da-notice" role="alert">{exportError}</p>}
             <div className="da-chart" ref={chartRef}>
               {rangeInvalid?<p className="da-empty" role="alert">{zh?'结束日期不能早于开始日期。':'End date cannot precede start date.'}</p>:requestError?<div className="da-empty" role="alert">{zh?'读取失败：':'Could not load: '}{requestError}<button type="button" className="da-more" onClick={refresh}>{zh?'重试':'Retry'}</button></div>:busy?<div className="da-loading" role="status">{zh?'正在读取…':'Loading…'}</div>:data?<>
                 {filter.tool==='cloud'&&cloud.data&&<><WordCloud data={cloud.data} lang={lang} selected={selection?.label??null} onPick={word=>word?pick(cloud.data!.terms.find(t=>t.word===word)?.note_ids??[],word):setSelection(null)}/><p className="da-chart-caption">{zh?`${cloud.data.docs} 篇学生笔记 · 不计教师、AI 生成笔记及标记的 AI 摘录`:`${cloud.data.docs} student notes · teacher notes, AI-generated notes and marked AI excerpts excluded`}</p></>}
                 {filter.tool==='changes'&&changes.data&&<><KeywordChangeChart data={changes.data} lang={lang} onPick={pick}/><p className="da-chart-caption">{zh?'按笔记创建时间分段，分析当前正文；变化不代表掌握程度。':'Periods use note creation dates and current text; changes do not measure mastery.'}</p></>}
-                {filter.tool==='relay'&&<><RelayChart data={data} lang={lang} titleOf={titleOf} nameOf={nameOf} selectedId={selection?.ids[0]??null} onPick={pick}/><p className="da-chart-caption">{zh?`仅显示范围内实际采用的 Build-on 关系。${filter.authorId?'个人笔记以蓝色标出。':''}`:`Shows actual adopted Build-on links in this range.${filter.authorId?' Selected notes are marked in blue.':''}`}</p></>}
+                {filter.tool==='relay'&&<DiscussionThreads key={key} data={data} lang={lang} titleOf={titleOf} nameOf={nameOf} anonymous={filter.anonymous} onPick={pick}/>}
+                {filter.tool==='peers'&&peers.data&&<PeerConnections key={key} data={peers.data} lang={lang} nameOf={nameOf} authorId={filter.authorId} onPick={pick}/>}
+                {filter.tool==='topics'&&topics.data&&<TopicCoverage data={topics.data} lang={lang} onPick={pick} onSave={async(values,revision)=>{await spaceAnalytics.saveTopics(spaceId,values,revision);topics.reload();setSelection(null);}}/>}
                 {filter.tool==='pending'&&<PendingDiscussions data={data} lang={lang} titleOf={titleOf} nameOf={nameOf} onPick={pick}/>}
               </>:null}
             </div>

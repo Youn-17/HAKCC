@@ -80,8 +80,8 @@ describe('textWorker', () => {
     expect(['python3', '/opt/hakcc-py/bin/python']).toContain(pythonCommand({}));
   });
 
-  it('源码里有分词、关键词、排版三个操作，课程词典里有「知识建构」', () => {
-    expect(TEXT_WORKER_SOURCE).toContain('OPS = {"ping": ping, "keywords": keywords, "cloud": cloud, "changes": changes}');
+  it('源码里注册文本分析操作，课程词典里有「知识建构」', () => {
+    expect(TEXT_WORKER_SOURCE).toContain('OPS = {"ping": ping, "keywords": keywords, "cloud": cloud, "changes": changes, "focus": focus, "topics": topic_coverage}');
     expect(TEXT_WORKER_SOURCE).toContain('"知识建构"');
     expect(TEXT_WORKER_SOURCE).not.toContain('`');
   });

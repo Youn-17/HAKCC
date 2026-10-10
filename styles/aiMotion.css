@@ -1,0 +1,15 @@
+/* Anime.js owns motion within these surfaces. Keep static CSS as the no-motion baseline. */
+.ai-motion-surface[data-ai-motion-floating][aria-hidden="true"] { transform: translateX(100%); }
+.ai-motion-surface .ai-dot { animation: none; opacity: .65; }
+.ai-motion-surface .ai-shimmer { animation: none; background: none; color: #52525b; }
+.dark .ai-motion-surface .ai-shimmer { color: #b7bfcc; }
+.ai-motion-surface .ai-avatar-working { animation: none; }
+.ai-motion-surface [data-ai-motion="indicator"] .animate-spin { animation: none; }
+.ai-motion-step { border-left: 2px solid transparent; padding-left: .5rem; }
+.ai-motion-step[data-ai-motion-state="running"] { border-color: #6262b4; background: #00008005; border-radius: 0 .3rem .3rem 0; }
+.ai-motion-step[data-ai-motion-state="done"] { border-color: #7aab99; }
+.ai-motion-step[data-ai-motion-state="error"] { border-color: #c27c7c; }
+.dark .ai-motion-step[data-ai-motion-state="running"] { border-color: #93aafd; background: #93aafd0a; }
+@media (prefers-reduced-motion: reduce) {
+  .ai-motion-surface .animate-spin, .ai-motion-surface .animate-pulse { animation: none; }
+}

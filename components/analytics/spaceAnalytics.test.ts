@@ -12,7 +12,7 @@ import { anonymousNames, bucketTimeline, circleLayout, dayLabel, labelWidth, lin
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const api = vi.hoisted(() => ({
-  spaceAnalytics: { overview: vi.fn(), student: vi.fn(), wordCloud: vi.fn(), discussion: vi.fn(), changes: vi.fn() },
+  spaceAnalytics: { overview: vi.fn(), student: vi.fn(), wordCloud: vi.fn(), discussion: vi.fn(), changes: vi.fn(), peers:vi.fn(), topics:vi.fn(), saveTopics:vi.fn() },
 }));
 vi.mock('../../services/apiClient', () => api);
 
@@ -121,6 +121,9 @@ describe('SpaceAnalytics', () => {
     api.spaceAnalytics.discussion.mockReset().mockResolvedValue(DISCUSSION);
     api.spaceAnalytics.wordCloud.mockReset().mockResolvedValue(CLOUD);
     api.spaceAnalytics.changes.mockReset().mockResolvedValue({available:true,splitAt:'2026-10-08T00:00:00Z',periods:{before:{docs:1,tokens:5},after:{docs:1,tokens:7}},terms:[{word:'检索练习',before:{count:1,notes:1,note_ids:['n9']},after:{count:2,notes:1,note_ids:['n2']},delta:0}]});
+    api.spaceAnalytics.peers.mockReset().mockResolvedValue({available:true,members:DISCUSSION.members.map(m=>({...m,notes:1,peers:0})),connections:[],candidates:[{a:'amy',b:'bo',words:['检索练习'],noteIds:['n9','n2']}],candidateCount:1});
+    api.spaceAnalytics.topics.mockReset().mockResolvedValue({available:true,docs:2,students:3,config:{topics:[{id:'t1',title:'记忆',terms:['检索练习']}],revision:'rev-1'},topics:[{id:'t1',title:'记忆',terms:['检索练习'],notes:1,students:1,note_ids:['n2'],peer_note_ids:['n9']}]});
+    api.spaceAnalytics.saveTopics.mockReset().mockResolvedValue({revision:'rev-2',topics:[]});
     onClose.mockReset();onLocateNote.mockReset();
     host=document.createElement('div'); document.body.appendChild(host);root=createRoot(host);
   });
@@ -161,6 +164,23 @@ describe('SpaceAnalytics', () => {
     expect(host.querySelectorAll('.da-source-note').length).toBe(0);
     await act(async()=>window.dispatchEvent(new PopStateEvent('popstate')));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('讨论脉络按原文阅读，不再重复网络图；同伴候选可查看双方来源',async()=>{
+    await mount();await act(async()=>button('讨论脉络').click());
+    expect(host.querySelector('.da-thread-timeline')?.textContent).toContain('先试着回忆');
+    expect(host.querySelector('.da-relay')).toBeNull();expect(host.querySelector('svg')).toBeNull();
+    await act(async()=>button('查看来源').click());expect(host.querySelector('.da-source-note')).not.toBeNull();
+    await act(async()=>button('同伴连接').click());await act(async()=>button('可邀请阅读').click());await act(async()=>button('查看双方笔记').click());
+    expect(host.querySelectorAll('.da-source-note')).toHaveLength(2);
+  });
+  it('教师可保存主题关键词组，图表与同伴阅读均有来源',async()=>{
+    await mount();await act(async()=>button('主题覆盖').click());await act(async()=>button('设置主题').click());
+    expect(host.querySelector('input[aria-label="主题 1 名称"]')).not.toBeNull();
+    await act(async()=>host.querySelector('form.da-topic-editor')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+    expect(api.spaceAnalytics.saveTopics).toHaveBeenCalledWith('space-1',[{id:'t1',title:'记忆',terms:['检索练习']}],'rev-1');
+    await act(async()=>host.querySelector('svg[aria-label="主题提及范围"] g')!.dispatchEvent(new MouseEvent('click',{bubbles:true})));
+    expect(host.querySelector('.da-source-note')?.textContent).toContain('先试着回忆');
   });
 
   it('React StrictMode 不会重复增加分析的浏览器历史入口',async()=>{

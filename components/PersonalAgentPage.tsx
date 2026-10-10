@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowUp, Loader2, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import RemixIcon from './RemixIcon';
-import AgentToolCallDisplay, { ToolCallInfo } from './AgentToolCallDisplay';
+import AgentProcess from './AgentProcess';
+import type { ToolCallInfo } from './AgentToolCallDisplay';
+import { AiThinkingDots } from './AiThinking';
+import { useAiSurfaceMotion } from '../hooks/useAiMotion';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguagePreference } from '../hooks/useLanguagePreference';
 import { personalAgent as personalAgentApi, AgentConversation, getAuthToken, apiFileUrl } from '../services/apiClient';
@@ -422,6 +425,8 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<AgentConversation[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [restoringChat, setRestoringChat] = useState(false);
+  const motionRef = useAiSurfaceMotion({ open: true, ready: !configsLoading && !restoringChat });
 
   // Derived
   const chatConfigs = useMemo(
@@ -516,6 +521,7 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
 
   const restoreConversation = useCallback(async (conv: AgentConversation) => {
     setConversationId(conv.id);
+    setRestoringChat(true);
     setHistoryOpen(false);
     setError(null);
     try {
@@ -529,6 +535,8 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
       setMessages(restored);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load conversation');
+    } finally {
+      setRestoringChat(false);
     }
   }, []);
 
@@ -803,9 +811,9 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
   const showingAgentPanel = !configsLoading && !hasMessages && !!initialAgentMode && !isAnalyticsMode && !isAssessmentMode && !isLessonPrepMode;
 
   return (
-    <div className={`flex flex-col bg-white dark:bg-gray-900 ${embedded ? 'h-full' : 'h-[100dvh]'}`}>
+    <div ref={motionRef} className={`ai-motion-surface flex flex-col bg-white dark:bg-gray-900 ${embedded ? 'h-full' : 'h-[100dvh]'}`}>
       {/* ── Top bar ─────────────────────────────────────────────── */}
-      <header className={`flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900 ${embedded ? 'py-2' : 'py-2.5'}`}>
+      <header data-ai-motion-chrome className={`flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900 ${embedded ? 'py-2' : 'py-2.5'}`}>
         <div className="flex items-center gap-2.5">
           {!embedded && (
             <button
@@ -1229,23 +1237,23 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
           {/* Messages */}
           {!configsLoading && hasMessages && (
             <div className="space-y-6">
-              {messages.map((msg) => (
+              {messages.map((msg, index) => (
                 <React.Fragment key={msg.id}>
                   {msg.role === 'user' ? (
                     /* ── User message ── */
-                    <div className="flex justify-end">
+                    <div data-ai-motion="message" data-ai-motion-key={index} className="flex justify-end">
                       <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-[#000080] px-4 py-2.5 text-[0.87rem] leading-relaxed text-white sm:max-w-[70%]">
                         <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                       </div>
                     </div>
                   ) : (
                     /* ── AI message ── */
-                    <div className="flex items-start gap-3">
+                    <div data-ai-motion="message" data-ai-motion-key={index} className="flex items-start gap-3">
                       <img src="/assets/ai-tutor-avatar.png" alt="" className="mt-0.5 h-7 w-7 flex-shrink-0 rounded-lg object-cover" />
                       <div className="min-w-0 flex-1 text-gray-700 dark:text-gray-300">
                         {msg.tools && msg.tools.length > 0 && (
                           <div className="mb-2">
-                            <AgentToolCallDisplay tools={msg.tools} lang={t.isZh ? 'zh' : 'en'} />
+                            <AgentProcess steps={msg.tools} phase={msg.isStreaming ? 'writing' : 'done'} lang={t.isZh ? 'zh' : 'en'} />
                           </div>
                         )}
                         <div className="break-words">
@@ -1265,7 +1273,7 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
                 <div className="flex items-start gap-3">
                   <img src="/assets/ai-tutor-avatar.png" alt="" className="mt-0.5 h-7 w-7 flex-shrink-0 rounded-lg object-cover" />
                   <div className="min-w-0 flex-1">
-                    <AgentToolCallDisplay tools={activeTools} lang={t.isZh ? 'zh' : 'en'} compact />
+                    <AgentProcess steps={activeTools} phase="waiting" lang={t.isZh ? 'zh' : 'en'} />
                   </div>
                 </div>
               )}
@@ -1279,15 +1287,11 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
               )}
 
               {/* Thinking indicator — animated dots */}
-              {isThinking && !drawing && !messages.some((m) => m.isStreaming) && (
+              {isThinking && !drawing && activeTools.length === 0 && !messages.some((m) => m.isStreaming) && (
                 <div className="flex items-start gap-3">
                   <img src="/assets/ai-tutor-avatar.png" alt="" className="mt-0.5 h-7 w-7 flex-shrink-0 rounded-lg object-cover" />
                   <div className="flex items-center gap-2 pt-1">
-                    <span className="flex gap-1">
-                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#000080]/30 dark:bg-[#4169E1]/40" style={{ animationDelay: '0ms' }} />
-                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#000080]/30 dark:bg-[#4169E1]/40" style={{ animationDelay: '150ms' }} />
-                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#000080]/30 dark:bg-[#4169E1]/40" style={{ animationDelay: '300ms' }} />
-                    </span>
+                    <AiThinkingDots />
                     <span className="text-[0.8125rem] text-gray-400 dark:text-gray-500">{t.thinking}</span>
                   </div>
                 </div>
@@ -1309,7 +1313,7 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
 
       {/* ── Input area (hidden when agent panel is showing) ───── */}
       {!showingAgentPanel && !isLessonPrepMode && (
-      <div className="bg-white px-4 pb-4 pt-3 dark:bg-gray-900">
+      <div data-ai-motion-chrome className="bg-white px-4 pb-4 pt-3 dark:bg-gray-900">
         <div className={`mx-auto ${isAnalyticsMode || isAssessmentMode ? '' : !configsLoading && !hasMessages && !initialAgentMode ? 'max-w-6xl' : 'max-w-3xl'}`}>
           {fallbackHint && (
             <p className="mb-2 flex items-start gap-1.5 text-[0.75rem] leading-relaxed text-zinc-500 dark:text-zinc-400">

@@ -4,7 +4,7 @@
 
 [Visit the platform](https://ideaweave.tech/) · [简体中文](README.zh-CN.md) · [System guide](write/SYSTEM_OVERVIEW.en.md) · [Getting started](GETTING_STARTED.md) · [MIT License](LICENSE)
 
-Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Public package: **v0.7.0**.
+Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Latest tagged package: **v0.7.0**. The `main` branch includes subsequent source changes.
 
 ## New in v0.7.0
 
@@ -179,6 +179,8 @@ The [theoretical guide](write/THEORETICAL_FOUNDATIONS.en.md) supplies full refer
 | [Implementation evidence](write/IMPLEMENTATION_EVIDENCE.en.md) | Claims mapped to source files |
 | [Development record](evidence/DEVELOPMENT_RECORD.md) | Source correspondence and SHA-256 manifests |
 | [Release validation](evidence/RELEASE_VALIDATION.md) | Executed checks and known limitations |
+
+For the current `main` source, also apply `supabase/migrations/087_space_analytics_topics.sql` to an existing compatible database before using saved discussion topics.
 
 Start with the installation guide. The migration archive contains deployment-era changes and has not been validated as a complete fresh database replay. See the validation record before using the snapshot as a deployment baseline.
 

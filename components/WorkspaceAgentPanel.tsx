@@ -19,6 +19,7 @@ import { Loader2, X } from 'lucide-react';
 import RemixIcon from './RemixIcon';
 import type { ToolCallInfo } from './AgentToolCallDisplay';
 import AgentProcess from './AgentProcess';
+import { useAiSurfaceMotion } from '../hooks/useAiMotion';
 import KbSourceCards, { parseKbSources } from './KbSourceCards';
 import DiscussionDigestPanel from './DiscussionDigest';
 import { ai as aiApi, getAuthToken, workspaceAgent as workspaceAgentApi } from '../services/apiClient';
@@ -624,19 +625,22 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
 
   // -- Render ----------------------------------------------------------------
 
+  const motionRef = useAiSurfaceMotion({ open: embedded || isOpen, ready: !restoring && !openingId, floating: !embedded });
   const emptyChat = messages.length === 0 && !streaming;
 
   return (
     <div
+      ref={motionRef}
+      data-ai-motion-floating={!embedded || undefined}
       data-large-text={largeText}
       data-ws-agent-panel
       role="complementary"
       aria-label={t.title}
       aria-hidden={!embedded && !isOpen}
       inert={!embedded && !isOpen}
-      className={`assistant-panel ${embedded
+      className={`ai-motion-surface assistant-panel ${embedded
         ? 'relative w-full h-full flex flex-col bg-white dark:bg-gray-900'
-        : `fixed inset-y-0 right-0 z-50 max-w-full bg-white dark:bg-gray-900 shadow-2xl shadow-black/10 border-l border-gray-200 dark:border-gray-800 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`
+        : `fixed inset-y-0 right-0 z-50 max-w-full bg-white dark:bg-gray-900 shadow-2xl shadow-black/10 border-l border-gray-200 dark:border-gray-800 flex flex-col`
       }`}
       style={embedded ? undefined : { width: `${panelWidth}px` }}
     >
@@ -646,7 +650,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
       />}
 
       {/* ── Header：一行。标题、今日用量、新对话、历史对话、关闭 ───────────── */}
-      <div className="assistant-header relative z-20 flex shrink-0 items-center gap-2 border-b">
+      <div data-ai-motion-chrome className="assistant-header relative z-20 flex shrink-0 items-center gap-2 border-b">
         <span className="assistant-mark" aria-hidden="true"><RemixIcon name="chat-quote-line" size={18} /></span>
         <div className="assistant-header-title">
           <h2 className="truncate">{t.title}</h2>
@@ -849,8 +853,8 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
           )
         )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        {messages.map((msg, index) => (
+          <div key={msg.id} data-ai-motion="message" data-ai-motion-key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`min-w-0 space-y-1.5 ${msg.role === 'user' ? 'max-w-[80%]' : 'max-w-full'}`}>
               {msg.role === 'assistant' && (
                 // 写回答的时候、写完以后：收成一行「用了 3 步 · 6 秒」，点开能看每一步
@@ -916,7 +920,7 @@ const WorkspaceAgentPanel: React.FC<WorkspaceAgentPanelProps> = ({
       )}
 
       {/* ── 输入区：输入框在上，附件 / 范围 / 模型 / 发送收成下面一排 ───────── */}
-      <div className="assistant-footer shrink-0 border-t px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5">
+      <div data-ai-motion-chrome className="assistant-footer shrink-0 border-t px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5">
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {attachments.map(a => (

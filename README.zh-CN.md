@@ -2,7 +2,7 @@
 
 [English](README.md) · [访问平台](https://ideaweave.tech/) · [系统说明](write/SYSTEM_OVERVIEW.md) · [MIT 开源许可证](LICENSE)
 
-**作者与维护者：Zhenhai He（[Youn-17](https://github.com/Youn-17)）。** 本仓库开源应用代码、机制图和系统说明，英文为主、中文为辅。当前公开版本为 **v0.7.0**。
+**作者与维护者：Zhenhai He（[Youn-17](https://github.com/Youn-17)）。** 本仓库开源应用代码、机制图和系统说明，英文为主、中文为辅。最新标签版本为 **v0.7.0**；`main` 分支包含后续源码更新。
 
 ## 本次更新 · v0.7.0
 
@@ -79,3 +79,5 @@ KB 理论主要来自 **Marlene Scardamalia 与 Carl Bereiter**，Note、View、
 发布包不包含真实课程数据、密钥、运维账户信息、未公开论文或参考图原件。版本记录与文件指纹支持核查公开内容及时间，不独立证明全部机制的最早发明权。
 
 本次更新：[讨论分析](write/UPDATES_v0.7.0.md)。
+
+当前 `main` 源码的自定讨论主题需要在已有兼容数据库上执行 `supabase/migrations/087_space_analytics_topics.sql`。迁移归档尚未验证为可完整重放的新库初始化流程。

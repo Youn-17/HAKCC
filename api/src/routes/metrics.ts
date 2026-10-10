@@ -8,8 +8,11 @@ import { ensureSpaceAccess, ensureSpaceStaff, ensureNoteAccess } from '../servic
 import { clampNumber } from '../services/requestParams';
 import { buildOverview, buildStudentDetail, loadSpaceAnalytics, wordCloudDocs } from '../services/spaceAnalytics';
 import { buildDiscussion, filterDiscussionPeriod, type DiscussionFilter } from '../services/discussionAnalytics';
-import { extractKeywords, keywordChanges, layoutCloud, type CloudItem, type KeywordTerm } from '../services/python/textWorker';
+import { extractKeywords, keywordChanges, layoutCloud, peerFocus, topicCoverage, type CloudItem, type KeywordTerm } from '../services/python/textWorker';
 
+import {buildPeerConnections} from '../services/peerConnections';
+import {loadTopics,saveTopics,validateTopics} from '../services/analyticsTopics';
+import {studentAuthoredText} from '../services/feedbackUptake';
 const router = Router();
 
 // ── 讨论分析（2026-10-09）：教师看全班和个人的讨论情况，只给这门课的教职 ──────────────
@@ -159,6 +162,54 @@ router.get('/spaces/:spaceId/analytics/changes', verifyJWT, async (req: Request,
   } catch {
     res.json({available:false,splitAt,terms:[],periods:{before:{docs:0,tokens:0},after:{docs:0,tokens:0}}});
   }
+});
+
+// Cache only pure text results; always reauthorize and rebuild actual relations.
+const discussionTextCache=new Map<string,{at:number;value:unknown}>();
+async function cachedDiscussionText<T>(spaceId:string,operation:string,payload:unknown,run:()=>Promise<T>):Promise<T> {
+  const key=spaceId+'|'+operation+'|'+createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  const now=Date.now(),hit=discussionTextCache.get(key);
+  if(hit&&now-hit.at<10*60_000)return hit.value as T;
+  const value=await run();
+  for(const [k,entry] of discussionTextCache)if(now-entry.at>=10*60_000)discussionTextCache.delete(k);
+  discussionTextCache.set(key,{at:now,value});
+  while(discussionTextCache.size>100)discussionTextCache.delete(discussionTextCache.keys().next().value as string);
+  return value;
+}
+async function discussionTextInput(req:Request) {
+  const spaceId=String(req.params.spaceId);
+  await ensureSpaceStaff(spaceId,req.user!);
+  const filter=discussionFilter(req);
+  const input=await loadSpaceAnalytics(spaceId,{viewId:queryView(req.query.view_id)});
+  if(filter.authorId&&!input.members.some(m=>m.id===filter.authorId&&!m.isStaff))throw new ApiError(404,'Student not in this space');
+  const scope=buildDiscussion(input,{...filter,authorId:null});
+  const ids=new Set(scope.notes.map(n=>n.id));
+  const docs=input.notes.filter(n=>ids.has(n.id)).map(n=>({id:n.id,authorId:n.authorId!,text:`${n.title}\n${studentAuthoredText(n.content)}`}));
+  return {spaceId,input,filter,scope,docs};
+}
+router.get('/spaces/:spaceId/analytics/peers',verifyJWT,async(req:Request,res:Response)=>{
+  const {spaceId,input,filter,docs}=await discussionTextInput(req);
+  const options={names:input.members.map(m=>m.name),...termOptions(req)};
+  try {
+    const focus=docs.length?await cachedDiscussionText(spaceId,'focus',{docs,options},()=>peerFocus(docs,options)):{authors:[]};
+    res.json({...buildPeerConnections(input,focus.authors,filter),available:true});
+  }catch{res.json({...buildPeerConnections(input,[],filter),available:false});}
+});
+router.get('/spaces/:spaceId/analytics/topics',verifyJWT,async(req:Request,res:Response)=>{
+  const {spaceId,input,filter,docs}=await discussionTextInput(req);
+  const config=await loadTopics(spaceId);
+  const students=filter.authorId?1:input.members.filter(m=>!m.isStaff).length;
+  try {
+    const result=await cachedDiscussionText(spaceId,'topics',{docs,config,authorId:filter.authorId},()=>topicCoverage(docs,config.topics,filter.authorId));
+    res.json({...result,config,students,available:true});
+  }catch{res.json({available:false,config,students,docs:docs.filter(d=>!filter.authorId||d.authorId===filter.authorId).length,topics:[]});}
+});
+router.put('/spaces/:spaceId/analytics/topics',verifyJWT,async(req:Request,res:Response)=>{
+  const spaceId=String(req.params.spaceId);await ensureSpaceStaff(spaceId,req.user!);
+  const topics=validateTopics(req.body?.topics);
+  const revision=req.body?.expectedRevision;
+  if(revision!==null&&(typeof revision!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(revision)))throw new ApiError(400,'Invalid expected revision');
+  res.json(await saveTopics(spaceId,req.user!.id,topics,revision));
 });
 
 // GET /api/spaces/:spaceId/metrics/summary - space metrics summary (any member)

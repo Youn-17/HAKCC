@@ -19,7 +19,7 @@ export function waitedSeconds(elapsedMs: number): number {
 
 /** 三个点。单独拿出来：回复一边流出来的时候，文字后面也挂一组，表示还在写 */
 export const AiThinkingDots: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <span className={`ai-dots ${className}`} aria-hidden="true">
+  <span data-ai-motion="dots" className={`ai-dots ${className}`} aria-hidden="true">
     <span className="ai-dot" />
     <span className="ai-dot" />
     <span className="ai-dot" />

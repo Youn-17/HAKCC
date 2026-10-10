@@ -153,7 +153,7 @@ export default function KbSourceCards({ sources, content, streaming, lang, onOpe
             </>
           );
           return (
-            <li key={source.n}>
+            <li key={source.n} data-ai-motion="source">
               {noteId && onOpen ? (
                 <button
                   type="button"
