@@ -24,6 +24,7 @@
 
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
+import { DAILY_AI_LIMIT, assertDailyAiQuota } from '../services/aiQuota';
 import { verifyJWT, requireRole } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
 import { callTavilySearch } from '../services/tavilySearch';
@@ -71,6 +72,7 @@ import {
 } from '../services/aiFeatureModels';
 import { extractChatContent } from '../services/modelCatalog';
 import { CHAT_ENDPOINTS, MINIMAX_ENDPOINTS, MODELS_ENDPOINTS } from '../services/providerEndpoints';
+import { apikeyfanUrl } from '../services/openAiImage';
 import { synthesizeMinimaxSpeech } from '../services/minimaxMedia';
 import { produceDrawing } from '../services/drawTurn';
 import type { DrawTurn } from '../services/drawPlanner';
@@ -95,19 +97,6 @@ const DEFAULT_MAX_TOKENS = 900;
  */
 const STREAM_MAX_TOKENS = 1600;
 
-const DAILY_AI_LIMIT = 100;
-
-async function assertDailyAiQuota(userId: string): Promise<void> {
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { count: todayUsage } = await supabase
-    .from('ai_interventions')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .gte('created_at', since24h);
-  if ((todayUsage ?? 0) >= DAILY_AI_LIMIT) {
-    throw new ApiError(429, `Daily AI usage limit reached (${DAILY_AI_LIMIT} interactions per 24h). Try again later.`);
-  }
-}
 
 async function canReadProviderEndpointUrl(courseId: string, req: Request): Promise<boolean> {
   if (!req.user) return false;
@@ -158,9 +147,11 @@ router.post(
     }
     const providerId = provider_id.trim();
     const apiKey = api_key.trim();
-    const endpointUrl = typeof endpoint_url === 'string' && endpoint_url.trim()
+    const rawEndpoint = typeof endpoint_url === 'string' && endpoint_url.trim()
       ? endpoint_url.trim()
       : undefined;
+    // APIKEY.FAN 控制台给的是只有域名的地址：存成完整的对话接口，别处直接拿来用都对
+    const endpointUrl = rawEndpoint && providerId.startsWith('apikeyfan') ? apikeyfanUrl(rawEndpoint, 'chat/completions') : rawEndpoint;
     if (endpointUrl) await assertSafePublicUrl(endpointUrl);
 
     // Quick liveness check for known providers
@@ -190,6 +181,36 @@ router.post(
       config: providerConfigToApi(data, { includeEndpointUrl: true }),
       verified,
     });
+  },
+);
+
+/**
+ * PATCH /api/courses/:courseId/ai-configs/:providerId {enabled_models} — 只改这家启用哪些模型（2026-10-11 用户：
+ * AI 设置太复杂）。原来改一下勾选也得把 API Key 重新输一遍；Key、接口地址、验证结果都不动。
+ */
+router.patch(
+  '/courses/:courseId/ai-configs/:providerId',
+  verifyJWT,
+  requireRole('teacher', 'admin'),
+  async (req: Request, res: Response) => {
+    const courseId = String(req.params.courseId);
+    const providerId = String(req.params.providerId);
+    await ensureCourseInstructor(courseId, req.user!);
+    const raw = (req.body ?? {}).enabled_models;
+    const models = Array.isArray(raw) ? raw.filter((m: unknown): m is string => typeof m === 'string' && m.trim().length > 0) : null;
+    if (!models || models.length === 0) throw new ApiError(400, 'enabled_models must list at least one model');
+
+    const cols = 'id, course_id, provider_id, api_key_encrypted, endpoint_url, is_verified, enabled_models, configured_at';
+    const existing = await supabase.from('teacher_ai_configs').select(cols).eq('course_id', courseId).eq('provider_id', providerId).maybeSingle();
+    if (!existing.data) throw new ApiError(404, 'This provider is not configured for the course');
+
+    const enabledModels = normalizeEnabledModels(providerId, models);
+    const { error } = await supabase.from('teacher_ai_configs')
+      .update({ enabled_models: enabledModels })
+      .eq('course_id', courseId)
+      .eq('provider_id', providerId);
+    if (error) throw new ApiError(500, error.message);
+    res.json({ config: providerConfigToApi({ ...existing.data, enabled_models: enabledModels }, { includeEndpointUrl: true }) });
   },
 );
 
@@ -584,16 +605,17 @@ router.post('/ai/search', verifyJWT, async (req: Request, res: Response) => {
   const spaceId = await resolvePrimarySpaceId(course_id);
 
   // Log usage
-  await supabase.from('ai_interventions').insert({
+  const { error: interventionErr } = await supabase.from('ai_interventions').insert({
     space_id: spaceId,
     user_id: req.user!.id,
     trigger_type: 'web_search',
     provider_id: 'tavily',
-    model_name: 'tavily-search',
+    model_full_name: 'tavily-search',
     input_context_summary: query.slice(0, 200),
     response_text: result.answer?.slice(0, 500) ?? '',
     visibility_scope: 'private',
   });
+  if (interventionErr) console.error('[ai_interventions] web_search insert failed:', interventionErr.message);
 
   res.json(result);
 });
@@ -671,16 +693,17 @@ router.post('/ai/image', verifyJWT, async (req: Request, res: Response) => {
   if (!result.ok) throw new ApiError(502, result.error);
 
   const markdown = result.markdown;
-  await supabase.from('ai_interventions').insert({
+  const { error: interventionErr } = await supabase.from('ai_interventions').insert({
     space_id: await resolvePrimarySpaceId(String(course_id)),
     user_id: req.user!.id,
     trigger_type: feature === 'doc_ai' ? 'doc_ai_direct_image' : 'chat_direct_image',
     provider_id: result.provider,
-    model_name: result.model,
+    model_full_name: result.model,
     input_context_summary: prompt.slice(0, 200),
     response_text: result.url.slice(0, 500),
     visibility_scope: 'private',
   });
+  if (interventionErr) console.error('[ai_interventions] direct image insert failed:', interventionErr.message);
 
   res.json({
     url: result.url, markdown, provider_id: result.provider, model: result.model, caption: result.caption, kind: result.kind,
@@ -787,12 +810,12 @@ router.post('/ai/chat', verifyJWT, async (req: Request, res: Response) => {
   const estInputTokens = Math.ceil(inputText.length / 3.5);
   const estOutputTokens = Math.ceil(reply.length / 3.5);
 
-  await supabase.from('ai_interventions').insert({
+  const { error: interventionErr } = await supabase.from('ai_interventions').insert({
     space_id: spaceId,
     user_id: req.user!.id,
     trigger_type: 'user_chat',
     provider_id,
-    model_name: model,
+    model_full_name: model,
     input_context_summary: messages.at(-1)?.content?.slice(0, 200) ?? '',
     response_text: reply.slice(0, 500),
     visibility_scope: 'private',
@@ -802,6 +825,7 @@ router.post('/ai/chat', verifyJWT, async (req: Request, res: Response) => {
       est_total_tokens: estInputTokens + estOutputTokens,
     },
   });
+  if (interventionErr) console.error('[ai_interventions] user_chat insert failed:', interventionErr.message);
 
   res.json({ reply, provider_id, model, search_results: searchResults.length > 0 ? searchResults : undefined });
 });
@@ -1052,11 +1076,16 @@ async function verifyProviderKey(
       case 'xai':
       case 'alibaba':
       case 'zhipu':
-      case 'openrouter': {
+      case 'openrouter':
+      case 'apikeyfan':
+      case 'apikeyfan-grok': {
         const endpoints: Record<string, string> = MODELS_ENDPOINTS;
-        const url = endpointUrl
-          ? endpointUrl.replace(/\/chat\/completions$/, '/models')
-          : endpoints[providerId];
+        // APIKEY.FAN 的地址教师常只填 https://api.apikey.fan（控制台就是这么写的），按主机名拼出 /v1/models
+        const url = providerId.startsWith('apikeyfan')
+          ? apikeyfanUrl(endpointUrl, 'models')
+          : endpointUrl
+            ? endpointUrl.replace(/\/chat\/completions$/, '/models')
+            : endpoints[providerId];
         const r = await aiFetch(url, {
           headers: { Authorization: `Bearer ${apiKey}` },
         });
@@ -1200,16 +1229,17 @@ router.post('/ai/chat/stream', verifyJWT, async (req: Request, res: Response) =>
     res.end();
 
     const spaceId = await resolvePrimarySpaceId(course_id);
-    void supabase.from('ai_interventions').insert({
+    const { error: interventionErr } = await supabase.from('ai_interventions').insert({
       space_id: spaceId,
       user_id: req.user!.id,
       trigger_type: 'user_chat',
       provider_id,
-      model_name: model,
+      model_full_name: model,
       input_context_summary: messages.at(-1)?.content?.slice(0, 200) ?? '',
       response_text: fullReply.slice(0, 500),
       visibility_scope: 'private',
     });
+    if (interventionErr) console.error('[ai_interventions] user_chat stream insert failed:', interventionErr.message);
   } catch (err: any) {
     res.write(`data: ${JSON.stringify({ error: err.message ?? 'Stream error' })}\n\n`);
     res.write('data: [DONE]\n\n');
@@ -1400,7 +1430,7 @@ router.get('/ai/history', verifyJWT, async (req: Request, res: Response) => {
 
   let query = supabase
     .from('ai_interventions')
-    .select('id, trigger_type, provider_id, model_name, input_context_summary, response_text, visibility_scope, created_at')
+    .select('id, trigger_type, provider_id, model_full_name, input_context_summary, response_text, visibility_scope, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -1460,7 +1490,7 @@ router.get('/ai/usage', verifyJWT, async (req: Request, res: Response) => {
     providerCounts[pid] = (providerCounts[pid] ?? 0) + 1;
   }
 
-  const dailyLimit = 100;
+  const dailyLimit = DAILY_AI_LIMIT;
   res.json({
     usage: {
       today: todayRes.count ?? 0,
@@ -1514,7 +1544,7 @@ router.get(
       for (const row of interventions) {
         csvRows.push([
           row.id, row.space_id, row.user_id, row.trigger_type,
-          row.provider_id, row.model_name, row.created_at,
+          row.provider_id, row.model_full_name, row.created_at,
           `"${(row.response_text ?? '').replace(/"/g, '""').slice(0, 200)}"`,
         ].join(','));
       }

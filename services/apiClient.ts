@@ -86,6 +86,11 @@ export function apiFileUrl(pathOrUrl: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
 }
 
+/** 后端返回的相对路径（如 /artifacts/x/view?...）拼上 API 域名，不带登录令牌：给自带签名的公开链接用 */
+export function apiUrl(path: string): string {
+  return `${BASE_URL}${path.startsWith('/api/') ? path.slice(4) : path}`;
+}
+
 export function clearStoredAuthSession() {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
@@ -1250,6 +1255,8 @@ export interface ApiGroup {
   courseId: string;
   leaderId?: string;
   color?: string;
+  /** 小组 logo（迁移 089） */
+  logoUrl?: string | null;
   aiFeedbackCondition?: 'treatment' | 'control' | null;
   createdAt: string;
   memberIds: string[];
@@ -1322,10 +1329,21 @@ export interface IdeaGraphSnapshot {
   payload: IdeaGraphPayload;
   trigger: 'auto' | 'manual';
 }
+/** 某一期的摘要（不带图），用来列往期 */
+export interface IdeaGraphHistoryItem {
+  id: string;
+  generated_at: string;
+  window_start: string;
+  window_end: string;
+  note_count: number;
+  trigger: 'auto' | 'manual';
+}
 export interface IdeaGraphResponse {
   graph: IdeaGraphSnapshot | null;
   periodDays: number;
   regenerated: boolean;
+  /** 历次快照的摘要，新的在前（2026-10-11 起每周一期） */
+  history?: IdeaGraphHistoryItem[];
   /** 笔记还不够生成一张有信息量的图时为 true */
   pending?: boolean;
   needNotes?: number;
@@ -1603,12 +1621,22 @@ export const groups = {
   refreshIdeaGraph: (groupId: string) =>
     request<IdeaGraphResponse>('POST', `/groups/${groupId}/idea-graph/refresh`),
   ideaGraphHistory: (groupId: string) =>
-    request<{ history: Array<{ id: string; generated_at: string; window_start: string; window_end: string; note_count: number; trigger: string }> }>(
-      'GET', `/groups/${groupId}/idea-graph/history`),
+    request<{ history: IdeaGraphHistoryItem[] }>('GET', `/groups/${groupId}/idea-graph/history`),
+  /** 某一期的完整图谱（看往期） */
+  ideaGraphSnapshot: (groupId: string, snapshotId: string) =>
+    request<{ graph: IdeaGraphSnapshot }>('GET', `/groups/${groupId}/idea-graph/snapshots/${snapshotId}`),
   addMembers: (groupId: string, userIds: string[]) =>
     request<{ message: string }>('POST', `/groups/${groupId}/members`, { user_ids: userIds }),
   removeMember: (groupId: string, userId: string) =>
     request<{ message: string }>('DELETE', `/groups/${groupId}/members/${userId}`),
+  /** 指定或取消组长：教职随时可以；组员在没有组长时可以自己定，有了组长只有组长本人能移交或卸任 */
+  setLeader: (groupId: string, leaderId: string | null) =>
+    request<{ group: { id: string; leaderId: string | null } }>('PUT', `/groups/${groupId}/leader`, { leader_id: leaderId }),
+  /** 上传小组 logo（只有教职能改）。data_url 是浏览器里缩到 512 像素以内的 PNG，见 components/groupLogo.ts */
+  setLogo: (groupId: string, data: { file_name: string; mime_type: string; data_url: string }) =>
+    request<{ group: { id: string; logoUrl: string } }>('POST', `/groups/${groupId}/logo`, data),
+  clearLogo: (groupId: string) =>
+    request<{ group: { id: string; logoUrl: null } }>('DELETE', `/groups/${groupId}/logo`),
   // Tasks
   listTasks: (groupId: string, phase?: string) =>
     request<{ tasks: ApiGroupTask[] }>(
@@ -1630,6 +1658,52 @@ export const groups = {
   }) => request<{ task: ApiGroupTask }>('PATCH', `/groups/${groupId}/tasks/${taskId}`, data),
   deleteTask: (groupId: string, taskId: string) =>
     request<{ message: string }>('DELETE', `/groups/${groupId}/tasks/${taskId}`),
+};
+
+// ── 教师给各组发布的任务（迁移 088）：小组空间里显示成任务面板，不是笔记 ─────────
+
+export interface ApiGroupAssignment {
+  id: string;
+  courseId: string;
+  title: string;
+  content: string;
+  requirements: string[];
+  requirementsText: string;
+  dueAt: string | null;
+  /** any = 所有视图；view = spaceId 里的 viewId；group_view = spaceId 里各组自己的视图 */
+  placement: 'any' | 'view' | 'group_view';
+  spaceId: string | null;
+  viewId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author: { id: string; name: string } | null;
+  groups: Array<{ id: string; name: string }>;
+}
+
+export interface GroupAssignmentInput {
+  title?: string;
+  content?: string;
+  requirements?: string;
+  due_at?: string | null;
+  group_ids?: string[];
+  placement?: 'any' | 'view' | 'group_view';
+  space_id?: string | null;
+  view_id?: string | null;
+  lang?: 'zh' | 'en';
+}
+
+export const groupAssignments = {
+  listForCourse: (courseId: string) =>
+    request<{ assignments: ApiGroupAssignment[] }>('GET', `/courses/${courseId}/group-assignments`),
+  publish: (courseId: string, data: GroupAssignmentInput) =>
+    request<{ assignment: ApiGroupAssignment }>('POST', `/courses/${courseId}/group-assignments`, data),
+  update: (id: string, data: GroupAssignmentInput) =>
+    request<{ assignment: ApiGroupAssignment }>('PATCH', `/group-assignments/${id}`, data),
+  withdraw: (id: string) =>
+    request<{ ok: true }>('DELETE', `/group-assignments/${id}`),
+  /** 工作区任务面板：这个空间里该看到的任务，按视图筛在前端 */
+  forSpace: (spaceId: string) =>
+    request<{ assignments: ApiGroupAssignment[] }>('GET', `/spaces/${spaceId}/group-assignments`),
 };
 
 // ── AI Chat & Provider Configs ────────────────────────────────
@@ -1858,6 +1932,13 @@ export const ai = {
   }).then((result) => ({ ...result, config: normalizeAIConfig(result.config) })),
   deleteConfig: (courseId: string, providerId: string) =>
     request<{ message: string }>('DELETE', `/courses/${courseId}/ai-configs/${providerId}`),
+  /** 只改这家启用哪些模型，不用重输 Key */
+  updateConfigModels: (courseId: string, providerId: string, enabledModels: string[]) =>
+    request<{ config: ApiAIConfig }>('PATCH', `/courses/${courseId}/ai-configs/${providerId}`, {
+      enabled_models: providerId === 'deepseek' || providerId === 'dmx' || providerId === 'dmxapi'
+        ? Array.from(new Set(enabledModels.map(model => normalizeModelForProvider(providerId, model))))
+        : enabledModels,
+    }).then((result) => ({ config: normalizeAIConfig(result.config) })),
 
   // Trigger settings (teacher AI control panel)
   /** providerConfigured=false 时这门课还没有服务商配置行，保存会 404。 */
@@ -1922,6 +2003,7 @@ export const ai = {
 
 export type NoteConversationTargetType = 'group' | 'member' | 'ai';
 export type NoteConversationAgentMode =
+  | 'maker'
   | 'idea_coach'
   | 'gap_finder'
   | 'connection_scout'
@@ -2127,6 +2209,8 @@ export const noteConversations = {
     agent_mode?: NoteConversationAgentMode;
     /** 简短 / 适中 / 详细（2026-10-05 起），实际字数由后端按问题难度再调 */
     answer_length?: 'short' | 'medium' | 'long';
+    /** 学生点了上一轮选项卡上的哪一个（智能体，2026-10-11） */
+    choice?: { question_id: string; label: string; other?: boolean };
   }, agentStream = true): Promise<ReadableStreamDefaultReader<Uint8Array>> => {
     const endpoint = agentStream ? 'ai/agent-stream' : 'ai/stream';
     const res = await fetch(`${BASE_URL}/note-conversations/${threadId}/${endpoint}`, {
@@ -2669,6 +2753,10 @@ export interface ApiView {
   title: string;
   description?: string;
   creatorId: string;
+  /** 「为每组建视图」建的视图属于哪个组，其余为 null（迁移 088） */
+  groupId?: string | null;
+  /** 那个组的 logo（迁移 089） */
+  groupLogoUrl?: string | null;
   createdAt: string;
   lastModified: string;
 }
@@ -2694,6 +2782,10 @@ export const views = {
     card_x: number;
     card_y: number;
   }) => request<{ view: ApiView; card: ApiViewCard }>('POST', `/spaces/${spaceId}/views`, data),
+
+  /** 为每组建视图：给还没有视图的组各建一个（标题用组名），主画布上从 origin 起横排入口卡片 */
+  createGroupViews: (spaceId: string, data: { origin_x: number; origin_y: number; gap: number }) =>
+    request<{ views: ApiView[]; cards: ApiViewCard[]; existing: number }>('POST', `/spaces/${spaceId}/group-views`, data),
 
   rename: (viewId: string, title: string) =>
     request<{ view: ApiView }>('PUT', `/views/${viewId}`, { title }),
@@ -2804,6 +2896,8 @@ export interface AiModelInfo {
 export interface AiModelCatalog {
   dmx: { text: AiModelInfo[]; vision: AiModelInfo[]; image: AiModelInfo[]; defaults: string[] };
   native: Record<string, AiModelInfo[]>;
+  /** 各厂商自有 key 能画图的型号（2026-10-11 起有） */
+  nativeImage?: Record<string, AiModelInfo[]>;
   tiers: Record<string, string[]>;
 }
 
@@ -3316,6 +3410,10 @@ export const workspaceAgent = {
   loadMessages: (courseId: string, convId: string) =>
     request<{ messages: AgentMessage[] }>('GET', `/workspace-agent/${courseId}/conversations/${convId}/messages`),
 
+  /** 删掉一段对话（软删除，这段对话的记忆摘要一起清掉） */
+  deleteConversation: (courseId: string, convId: string) =>
+    request<{ ok: true }>('DELETE', `/workspace-agent/${courseId}/conversations/${convId}`),
+
   stream: async (courseId: string, data: {
     content: string;
     provider_id: string;
@@ -3336,6 +3434,44 @@ export const workspaceAgent = {
     }
     return res.body!.getReader();
   },
+};
+
+// ── AI 记得什么（学生自己的记忆：看、删、关）─────────────────
+
+export type StudentMemoryItem = {
+  id: string;
+  kind: 'profile' | 'episode';
+  type: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+};
+
+export type StudentMemoryView = {
+  enabled: boolean;
+  scaffolding: { level: 'high' | 'medium' | 'low' | 'minimal'; interactions: number } | null;
+  profile: StudentMemoryItem[];
+  episodes: StudentMemoryItem[];
+  conversation: { summary: string; updatedAt: string | null } | null;
+};
+
+export const memoryApi = {
+  get: (courseId: string, opts?: { surface?: 'workspace' | 'note'; conversationId?: string | null }) => {
+    const qs = new URLSearchParams();
+    if (opts?.surface) qs.set('surface', opts.surface);
+    if (opts?.conversationId) qs.set('conversation_id', opts.conversationId);
+    const tail = qs.toString();
+    return request<StudentMemoryView>('GET', `/memory/${courseId}${tail ? `?${tail}` : ''}`);
+  },
+  deleteItem: (id: string) => request<{ ok: true }>('DELETE', `/memory/item/${id}`),
+  clear: (courseId: string, kind: 'profile' | 'episode' | 'all') =>
+    request<{ ok: true; removed: number }>('POST', `/memory/${courseId}/clear`, { kind }),
+  setEnabled: (courseId: string, enabled: boolean) =>
+    request<{ ok: true; enabled: boolean }>('PUT', `/memory/${courseId}/settings`, { enabled }),
+  /** 把智能体的回答导入了笔记：记一个关键时刻（网页挂到笔记由后端自己记） */
+  recordImport: (courseId: string, noteId: string, lang: 'zh' | 'en') =>
+    request<{ ok: true }>('POST', `/memory/${courseId}/imported`, { note_id: noteId, lang }),
 };
 
 // ── Personal Agent ───────────────────────────────────────────
@@ -3655,6 +3791,28 @@ export interface AgentCheckpoint {
   snapshot: Record<string, unknown>;
   created_at: string;
 }
+
+/** 智能体做的网页（2026-10-11，后端 routes/artifacts.ts）：本人和本课教职能看 */
+export interface AgentArtifactDetail {
+  id: string;
+  groupId: string;
+  version: number;
+  title: string;
+  html: string;
+  sources: Array<{ title: string; author?: string }>;
+  model: string | null;
+  createdAt: string;
+  /** 「在新窗口打开」的只读签名链接（相对 API 的路径，几小时后过期） */
+  viewPath?: string;
+}
+
+export const artifacts = {
+  get: (id: string) =>
+    request<{ artifact: AgentArtifactDetail; versions: Array<{ id: string; version: number; createdAt: string }> }>('GET', `/artifacts/${id}`),
+  /** 导入笔记时把网页挂到那条笔记上：看得到这条笔记的人都能打开（只有网页主人、能改那条笔记的人能挂） */
+  attach: (id: string, noteId: string) =>
+    request<{ ok: true }>('POST', `/artifacts/${id}/attach`, { note_id: noteId }),
+};
 
 export const agentRuns = {
   list: (params?: { course_id?: string; agent_type?: string; limit?: number }) =>
@@ -4096,6 +4254,47 @@ export interface SpacePeerConnections {
   candidates:Array<{a:string;b:string;words:string[];noteIds:string[]}>;candidateCount:number;
 }
 const discussionQuery = (opts: DiscussionOptions) => ({view_id:opts.viewId,author_id:opts.authorId,from:opts.from,until:opts.until});
+
+// ── 讨论分析 → 智能体做法（做法卡、网页模板；只给教职）─────────
+
+export type PracticeTaskKind = 'ask' | 'make' | 'plan' | 'ghostwrite' | 'polish';
+export type PracticeRate = { took: number; total: number; rate: number };
+export type PracticeCardView = {
+  id: string;
+  taskKind: PracticeTaskKind;
+  practice: string;
+  rationale: string | null;
+  evidence: { feature?: string; with?: PracticeRate; without?: PracticeRate };
+  origin: 'induced' | 'teacher';
+  status: 'candidate' | 'active' | 'rejected' | 'retired';
+  baselineRate: number | null;
+  decidedAt: string | null;
+  retiredReason: string | null;
+  createdAt: string;
+  trial?: { uses: number; rate: number; verdict: 'trial' | 'keep' | 'retire' };
+};
+export type PageTemplateView = { id?: string; slug: string; name: string; whenToUse: string; guide?: string; usage: { made: number; adopted: number } };
+export type GoodPageView = { artifactId: string; title: string; brief: string; template: string | null; createdAt: string; notes: number; viewPath: string; savedAsTemplate: boolean };
+export type AgentPracticesView = {
+  cards: PracticeCardView[];
+  stats: { turns: number; windowDays: number; minKindTurns: number; byKind: Record<PracticeTaskKind, PracticeRate>; lastGeneratedAt: string | null };
+  templates: { builtin: PageTemplateView[]; course: PageTemplateView[] };
+  goodPages: GoodPageView[];
+};
+
+export const agentPracticesApi = {
+  get: (spaceId: string) => request<AgentPracticesView>('GET', `/spaces/${spaceId}/agent-practices`),
+  generate: (spaceId: string) =>
+    request<{ created: number; turns: number; reason?: 'not_enough' | 'nothing_clear' }>('POST', `/spaces/${spaceId}/agent-practices/generate`),
+  write: (spaceId: string, taskKind: PracticeTaskKind, practice: string) =>
+    request<{ card: PracticeCardView }>('POST', `/spaces/${spaceId}/agent-practices`, { task_kind: taskKind, practice }),
+  decide: (spaceId: string, cardId: string, status: 'active' | 'rejected' | 'retired') =>
+    request<{ ok: true }>('PATCH', `/spaces/${spaceId}/agent-practices/${cardId}`, { status }),
+  saveTemplate: (spaceId: string, artifactId: string) =>
+    request<{ template: PageTemplateView }>('POST', `/spaces/${spaceId}/page-templates/from-artifact`, { artifact_id: artifactId }),
+  setTemplateStatus: (spaceId: string, templateId: string, status: 'active' | 'retired') =>
+    request<{ ok: true }>('PATCH', `/spaces/${spaceId}/page-templates/${templateId}`, { status }),
+};
 
 export const spaceAnalytics = {
   peers:(spaceId:string,opts:DiscussionOptions&{extraWords?:string;extraStop?:string}={})=>request<SpacePeerConnections>('GET',`/spaces/${spaceId}/analytics/peers${analyticsQuery({...discussionQuery(opts),extra_words:opts.extraWords,extra_stop:opts.extraStop})}`),

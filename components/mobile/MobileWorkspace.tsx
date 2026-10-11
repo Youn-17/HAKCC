@@ -14,7 +14,7 @@ import { courses as coursesApi, notes as notesApi, noteAiFeedback, relations as 
 import type { RelationType, Space } from '../../services/apiClient';
 import { apiRelationToEdge } from '../../hooks/useSpaceData';
 import { placeNewNote } from '../notePlacement';
-import { hotBuildOnCounts } from '../noteBadges';
+import { hotBuildOnCounts, isOwnNote } from '../noteBadges';
 import type { Note, Scaffold, UserRole, Language } from '../../types';
 
 interface MobileWorkspaceProps {
@@ -305,7 +305,13 @@ const MobileWorkspace: React.FC<MobileWorkspaceProps> = ({ userRole, lang, setLa
               userRole={userRole}
               lang={lang}
               aiConfigs={wsAgentConfigs}
-              spaceNotes={notes.filter(note => note.type !== 'attachment' && note.type !== 'drawing').map(note => ({ id: note.id, title: note.title, author: note.author }))}
+              spaceNotes={notes
+                .filter(note => note.type !== 'attachment' && note.type !== 'drawing')
+                // authorId 只给自己写的：「导入笔记」只列这些
+                .map(note => ({ id: note.id, title: note.title, author: note.author, authorId: isOwnNote(note, user?.id) ? note.authorId : undefined, updatedAt: note.createdAt }))}
+              currentUserId={user?.id ?? null}
+              onNotesChanged={refetchSpace}
+              onOpenNote={(id) => { const note = notes.find(n => n.id === id); if (note) handleNoteOpen(note); }}
               embedded
             />
           </div>

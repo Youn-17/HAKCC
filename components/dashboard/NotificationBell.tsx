@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import RemixIcon from '../RemixIcon';
 import { useDismissible } from '../../hooks/useDismissible';
 import { notifications as notificationsApi, type ApiNotification } from '../../services/apiClient';
+import { useEnterMotion } from '../../hooks/useEnterMotion';
 
 interface Props {
   lang: 'zh' | 'en';
@@ -30,6 +31,8 @@ const NotificationBell: React.FC<Props> = ({ lang, placement, onOpenFeedback, bu
   const [pos, setPos] = useState<React.CSSProperties>({});
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  // 打开时一条条出现
+  useEnterMotion(panelRef, open && loaded ? 'open' : null, { step: 24, maxStagger: 6, distance: 4 });
 
   const load = useCallback(async () => {
     try {
@@ -109,7 +112,7 @@ const NotificationBell: React.FC<Props> = ({ lang, placement, onOpenFeedback, bu
           role="dialog"
           aria-label={zh ? '通知' : 'Notifications'}
           style={pos}
-          className="fixed z-50 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg shadow-stone-900/10 dark:border-gray-800 dark:bg-gray-950"
+          className={`fixed z-50 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg shadow-stone-900/10 animate-in fade-in duration-150 dark:border-gray-800 dark:bg-gray-950 ${placement === 'sidebar' ? 'slide-in-from-bottom-1' : 'slide-in-from-top-1'}`}
         >
           <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
             <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{zh ? '通知' : 'Notifications'}</span>
@@ -135,6 +138,7 @@ const NotificationBell: React.FC<Props> = ({ lang, placement, onOpenFeedback, bu
               <button
                 key={n.id}
                 type="button"
+                data-enter-item
                 onClick={() => markRead(n)}
                 className={`flex w-full gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-900 ${n.read ? '' : 'bg-[#000080]/[0.02]'}`}
               >

@@ -414,25 +414,25 @@ const TRANSLATIONS = {
     hero: {
       badge: '基于 Scardamalia & Bereiter 知识建构理论',
       title: '人智知识协作空间',
-      subtitle: 'HAKCC 把 AI 引入知识建构的协作过程：观点在这里被记录、关联、质疑与改进，由社区共同推进知识的边界。',
+      subtitle: 'HAKCC 支持师生记录观点、讨论证据，并与同伴和 AI 一起改进解释。',
       cta: { primary: '开始探索', secondary: '了解更多' },
       skipNav: '跳转到主要内容'
     },
     features: {
       title: '核心功能',
-      subtitle: '赋能深度协作学习，支持知识持续改进',
+      subtitle: '记录观点、交流证据、共同改进解释',
       items: {
-        knowledgeBuilding: { title: '知识建构', description: '基于知识论坛理念，支持观点记录、关联、改进和升华，让知识在协作中不断进化。' },
-        aiAssistance: { title: 'AI 智能辅助', description: '集成 Gemini 等 AI 模型，提供智能提示、观点分析和知识图谱生成，增强学习体验。' },
+        knowledgeBuilding: { title: '知识建构', description: '记录观点、建立 Build-on 联系，并在讨论中修改和综合解释。' },
+        aiAssistance: { title: 'AI 智能辅助', description: '围绕笔记提问、查找课程资料，讨论观点之间的联系。' },
         collaborativeTools: { title: '协作工具集', description: '计算思维画布、绘图工具、文件共享等多样化工具，支持多模态知识表达。' },
-        progressTracking: { title: '学习追踪', description: '可视化学习进度，个人与社区知识成长轨迹一目了然。' },
+        progressTracking: { title: '学习追踪', description: '查看笔记、回应和修改记录，回顾个人与社区的讨论。' },
         roleManagement: { title: '多角色支持', description: '学生、教师、管理员不同权限设计，满足教育场景多样化需求。' },
-        securePlatform: { title: '安全可靠', description: '完善的身份认证与数据保护，保障学习社区安全稳定运行。' }
+        securePlatform: { title: '访问权限', description: '按课程、小组和身份控制访问权限。' }
       }
     },
     principles: {
       title: '知识建构十二原则',
-      subtitle: '基于 Marlene Scardamalia & Carl Bereiter 的开创性研究',
+      subtitle: '基于 Marlene Scardamalia & Carl Bereiter 的研究',
       reference: '参考: Scardamalia, M. (2002). Collective cognitive responsibility for the advancement of knowledge.',
       expandTip: '点击展开完整描述'
     },
@@ -452,7 +452,7 @@ const TRANSLATIONS = {
     },
     auth: {
       loginTitle: '欢迎回来',
-      loginSub: '登录以继续您的知识建构之旅',
+      loginSub: '登录后查看课程，继续讨论',
       registerTitle: '加入社区',
       registerSub: '创建账户，开始协作学习',
       tabs: { login: '登录', register: '注册' },
@@ -469,25 +469,25 @@ const TRANSLATIONS = {
     hero: {
       badge: 'Based on Scardamalia & Bereiter\'s Knowledge Building Theory',
       title: 'Human-AI Knowledge Collaboration Commons',
-      subtitle: 'HAKCC is an innovative collaborative learning platform that integrates Knowledge Building theory with AI technology, enabling learners to advance knowledge boundaries together.',
+      subtitle: 'HAKCC is a shared space for recording ideas, discussing evidence, and improving explanations with peers and AI.',
       cta: { primary: 'Start Exploring', secondary: 'Learn More' },
       skipNav: 'Skip to main content'
     },
     features: {
       title: 'Core Features',
-      subtitle: 'Empowering deep collaborative learning and continuous knowledge improvement',
+      subtitle: 'Record ideas, discuss evidence, and improve explanations together',
       items: {
         knowledgeBuilding: { title: 'Knowledge Building', description: 'Based on Knowledge Forum principles, support idea recording, linking, improvement, and rise-above.' },
-        aiAssistance: { title: 'AI Assistance', description: 'Integrated with Gemini and other AI models, providing intelligent prompts and knowledge graph generation.' },
+        aiAssistance: { title: 'AI Assistance', description: 'Ask questions about Notes, find course materials, and discuss connections between ideas.' },
         collaborativeTools: { title: 'Collaborative Tools', description: 'Computational thinking canvas, drawing tools, file sharing to support multimodal knowledge expression.' },
-        progressTracking: { title: 'Progress Tracking', description: 'Visualize learning progress, making personal and community knowledge growth trajectories clear.' },
+        progressTracking: { title: 'Progress Tracking', description: 'Review Notes, replies, and revisions from individuals and the community.' },
         roleManagement: { title: 'Multi-Role Support', description: 'Different permission designs for students, teachers, and administrators.' },
-        securePlatform: { title: 'Secure & Reliable', description: 'Comprehensive authentication and data protection ensure safe operation.' }
+        securePlatform: { title: 'Access control', description: 'Access is controlled by course, group, and role.' }
       }
     },
     principles: {
       title: '12 Knowledge Building Principles',
-      subtitle: 'Based on groundbreaking research by Marlene Scardamalia & Carl Bereiter',
+      subtitle: 'Based on research by Marlene Scardamalia & Carl Bereiter',
       reference: 'Reference: Scardamalia, M. (2002). Collective cognitive responsibility for the advancement of knowledge.',
       expandTip: 'Click to expand description'
     },
@@ -507,7 +507,7 @@ const TRANSLATIONS = {
     },
     auth: {
       loginTitle: 'Welcome back',
-      loginSub: 'Sign in to continue your knowledge-building journey',
+      loginSub: 'Sign in to view your courses and continue the discussion',
       registerTitle: 'Join the community',
       registerSub: 'Create an account to start collaborative learning',
       tabs: { login: 'Sign In', register: 'Register' },
@@ -524,25 +524,25 @@ const TRANSLATIONS = {
     hero: {
       badge: '基於 Scardamalia & Bereiter 知識建構理論',
       title: '人智知識協作空間',
-      subtitle: 'HAKCC 把 AI 引入知識建構的協作過程：觀點在這裡被記錄、關聯、質疑與改進，由社群共同推進知識的邊界。',
+      subtitle: 'HAKCC 支援師生記錄觀點、討論證據，並與同儕和 AI 一起改進解釋。',
       cta: { primary: '開始探索', secondary: '了解更多' },
       skipNav: '跳轉到主要內容'
     },
     features: {
       title: '核心功能',
-      subtitle: '賦能深度協作學習，支援知識持續改進',
+      subtitle: '記錄觀點、交流證據、共同改進解釋',
       items: {
-        knowledgeBuilding: { title: '知識建構', description: '基於知識論壇理念，支援觀點記錄、關聯、改進和昇華，讓知識在協作中不斷進化。' },
-        aiAssistance: { title: 'AI 智慧輔助', description: '整合 Gemini 等 AI 模型，提供智慧提示、觀點分析和知識圖譜生成，增強學習體驗。' },
+        knowledgeBuilding: { title: '知識建構', description: '記錄觀點、建立 Build-on 聯繫，並在討論中修改和綜合解釋。' },
+        aiAssistance: { title: 'AI 智慧輔助', description: '圍繞筆記提問、查找課程資料，討論觀點之間的聯繫。' },
         collaborativeTools: { title: '協作工具集', description: '計算思維畫布、繪圖工具、檔案共享等多樣化工具，支援多模態知識表達。' },
-        progressTracking: { title: '學習追蹤', description: '視覺化學習進度，個人與社群知識成長軌跡一目瞭然。' },
+        progressTracking: { title: '學習追蹤', description: '查看筆記、回應和修改記錄，回顧個人與社群的討論。' },
         roleManagement: { title: '多角色支援', description: '學生、教師、管理員不同權限設計，滿足教育場景多樣化需求。' },
-        securePlatform: { title: '安全可靠', description: '完善的身分認證與資料保護，保障學習社群安全穩定運作。' }
+        securePlatform: { title: '存取權限', description: '按課程、小組和身分控制存取權限。' }
       }
     },
     principles: {
       title: '知識建構十二原則',
-      subtitle: '基於 Marlene Scardamalia & Carl Bereiter 的開創性研究',
+      subtitle: '基於 Marlene Scardamalia & Carl Bereiter 的研究',
       reference: '參考: Scardamalia, M. (2002). Collective cognitive responsibility for the advancement of knowledge.',
       expandTip: '點擊展開完整描述'
     },
@@ -562,7 +562,7 @@ const TRANSLATIONS = {
     },
     auth: {
       loginTitle: '歡迎回來',
-      loginSub: '登入以繼續您的知識建構之旅',
+      loginSub: '登入後查看課程，繼續討論',
       registerTitle: '加入社區',
       registerSub: '創建帳號，開始協作學習',
       tabs: { login: '登入', register: '註冊' },
@@ -1047,7 +1047,7 @@ const GenerativeLearningSurface: React.FC<{ isZh: boolean }> = ({ isZh }) => {
                 {isZh ? 'Generative learning UI' : 'Generative learning UI'}
               </div>
               <h2 className="font-react-bits text-3xl font-normal leading-tight tracking-normal text-slate-950 dark:text-white sm:text-4xl lg:text-5xl">
-                {isZh ? 'AI 不只是回复文字，而是生成学习行动界面。' : 'AI should not only reply. It should shape the next learning surface.'}
+                {isZh ? '与 AI 讨论问题、生成网页，再将需要的内容导入笔记。' : 'Discuss a question with AI, create a page, and import useful content into a Note.'}
               </h2>
             </div>
             <p className="max-w-md text-sm leading-6 text-slate-600 dark:text-white/68">

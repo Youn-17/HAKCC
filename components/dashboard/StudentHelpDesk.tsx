@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Send, ChevronDown, ChevronRight } from 'lucide-react';
 import RemixIcon from '../RemixIcon';
 import { support, type SupportQuestion } from '../../services/apiClient';
+import { useLayoutMotion } from '../../hooks/useLayoutMotion';
+import { useEnterMotion } from '../../hooks/useEnterMotion';
 
 /**
  * 教师端：学生求助。
@@ -80,6 +82,9 @@ const StudentHelpDesk: React.FC<Props> = ({ courseId: initialCourseId, lang, cou
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // 加载完一条条出现；回复后从「待回复」里拿掉、展开详情时，其余的平滑补位
+  const listMotion = useLayoutMotion<HTMLUListElement>({ step: 24, maxStagger: 6 });
+  useEnterMotion(listMotion.root, loading ? null : `${courseId}:${filter}`, { step: 40, maxStagger: 6 });
 
   const t = zh ? {
     title: '学生求助',
@@ -162,6 +167,7 @@ const StudentHelpDesk: React.FC<Props> = ({ courseId: initialCourseId, lang, cou
     setSending(id);
     try {
       const { question } = await support.answer(id, text);
+      listMotion.capture();
       setItems(prev => (filter === 'open'
         ? prev.filter(q => q.id !== id)
         : prev.map(q => (q.id === id ? question : q))));
@@ -174,11 +180,11 @@ const StudentHelpDesk: React.FC<Props> = ({ courseId: initialCourseId, lang, cou
     }
   };
 
-  const toggle = (id: string) => setExpanded(prev => {
+  const toggle = (id: string) => { listMotion.capture(); setExpanded(prev => {
     const next = new Set(prev);
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
-  });
+  }); };
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -243,7 +249,7 @@ const StudentHelpDesk: React.FC<Props> = ({ courseId: initialCourseId, lang, cou
       ) : items.length === 0 ? (
         <p className="py-16 text-center text-sm text-gray-400">{filter === 'open' ? t.empty : t.emptyAll}</p>
       ) : (
-        <ul className="space-y-4">
+        <ul ref={listMotion.ref} className="space-y-4">
           {items.map(q => {
             const key = q.question.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().slice(0, 40);
             const dup = repeated.get(key) ?? 1;
@@ -251,7 +257,7 @@ const StudentHelpDesk: React.FC<Props> = ({ courseId: initialCourseId, lang, cou
             const ctxRows = readableContext(q.context ?? {}, zh);
             const errors = readRecentErrors(q.context);
             return (
-              <li key={q.id} className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+              <li key={q.id} data-layout-item data-enter-item className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex flex-wrap items-baseline gap-2">
                   <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{q.userName ?? '—'}</span>
                   <span className="text-[0.6875rem] text-gray-400">{new Date(q.createdAt).toLocaleString()}</span>

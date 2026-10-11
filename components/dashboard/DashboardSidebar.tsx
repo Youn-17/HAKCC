@@ -76,7 +76,7 @@ function getNavItems(role: UserRole, lang: Language): NavItem[] {
       { id: 'r-lsa', icon: 'bar-chart-grouped-line', label: zh ? '序列分析' : 'LSA' },
       { id: 'r-discourse', icon: 'chat-quote-line', label: zh ? '话语分析' : 'Discourse' },
       { id: 'r-equity', icon: 'scales-3-line', label: zh ? '参与公平性' : 'Equity' },
-      { id: 'r-ai-insights', icon: 'sparkling-2-line', label: zh ? 'AI 建议' : 'AI Insights' },
+      { id: 'r-ai-insights', icon: 'sparkling-2-line', label: zh ? '教学建议' : 'Teaching suggestions' },
       { id: 'r-coding', icon: 'code-s-slash-line', label: zh ? '质性编码' : 'Coding' },
       { id: 'r-export', icon: 'download-2-line', label: zh ? '数据导出' : 'Export' },
       { id: 'manual', icon: 'book-read-line', label: zh ? '使用手册' : 'User Manual', section: zh ? '平台理念与帮助' : 'Rationale & Help' },

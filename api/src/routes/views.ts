@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
-import { ensureSpaceAccess, isCourseStaff } from '../services/accessControl';
+import { ensureSpaceAccess, ensureSpaceStaff, isCourseStaff } from '../services/accessControl';
 
 const router = Router();
 
@@ -16,16 +16,32 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const MAX_TITLE = 60;
 
-function viewToApi(row: Record<string, unknown>) {
+function viewToApi(row: Record<string, unknown>, logos?: Map<string, string>) {
   return {
     id: row.id,
     spaceId: row.space_id,
     title: row.title,
     description: row.description,
     creatorId: row.creator_id,
+    /** 「为每组建视图」建的视图属于哪个组（迁移 088），其余为 null */
+    groupId: row.group_id ?? null,
+    /** 那个组的 logo（迁移 089），画布上的视图卡片显示 */
+    groupLogoUrl: (typeof row.group_id === 'string' && logos?.get(row.group_id)) || null,
     createdAt: row.created_at,
     lastModified: row.last_modified,
   };
+}
+
+/** 小组视图对应小组的 logo。查不到就不带，视图列表照常返回（画布不能因为 logo 打不开） */
+async function groupLogos(rows: Array<Record<string, unknown>>): Promise<Map<string, string>> {
+  const ids = [...new Set(rows.map(r => r.group_id).filter((id): id is string => typeof id === 'string'))];
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabase.from('groups').select('id, logo_url').in('id', ids);
+  if (error) {
+    console.warn('[views] group logos not loaded:', error.message);
+    return new Map();
+  }
+  return new Map((data ?? []).filter(g => g.logo_url).map(g => [g.id as string, g.logo_url as string]));
 }
 
 function cardToApi(row: Record<string, unknown>) {
@@ -92,8 +108,9 @@ router.get('/spaces/:spaceId/views', verifyJWT, async (req: Request, res: Respon
   if (viewsResult.error) throw new ApiError(500, viewsResult.error.message);
   if (cardsResult.error) throw new ApiError(500, cardsResult.error.message);
 
+  const logos = await groupLogos(viewsResult.data ?? []);
   res.json({
-    views: (viewsResult.data ?? []).map(viewToApi),
+    views: (viewsResult.data ?? []).map(row => viewToApi(row, logos)),
     cards: (cardsResult.data ?? []).map(cardToApi),
   });
 });
@@ -138,6 +155,64 @@ router.post('/spaces/:spaceId/views', verifyJWT, async (req: Request, res: Respo
   if (cardError) throw new ApiError(500, cardError.message);
 
   res.status(201).json({ view: viewToApi(data), card: cardToApi(card) });
+});
+
+/**
+ * POST /api/spaces/:spaceId/group-views — 为每组建视图（2026-10-10 用户：「为每组建空间」实际就是为每组建视图）。
+ * 课程教职用：给这门课里还没有视图的组各建一个，标题用组名，记上 group_id，重复点不会重复建。
+ * 每个新视图在主画布上放一张入口卡片，从 origin 起横着排开。绑定了小组的空间不能建（那本来就是一个组的）。
+ */
+router.post('/spaces/:spaceId/group-views', verifyJWT, async (req: Request, res: Response) => {
+  const spaceId = String(req.params.spaceId);
+  const space = await ensureSpaceStaff(spaceId, req.user!);
+  if (space.group_id) throw new ApiError(400, 'This space already belongs to one group');
+
+  const [groupsResult, viewsResult] = await Promise.all([
+    supabase.from('groups').select('id, name, created_at, logo_url').eq('course_id', space.course_id).order('created_at', { ascending: true }),
+    supabase.from('views').select('id, group_id').eq('space_id', spaceId),
+  ]);
+  if (groupsResult.error) throw new ApiError(500, groupsResult.error.message);
+  if (viewsResult.error) throw new ApiError(500, viewsResult.error.message);
+
+  const covered = new Set((viewsResult.data ?? []).map(v => v.group_id).filter(Boolean));
+  const pending = (groupsResult.data ?? []).filter(g => !covered.has(g.id));
+  if (pending.length === 0) {
+    res.json({ views: [], cards: [], existing: covered.size });
+    return;
+  }
+
+  const { data: created, error } = await supabase
+    .from('views')
+    .insert(pending.map(g => ({
+      space_id: spaceId,
+      title: String(g.name ?? '').trim().slice(0, MAX_TITLE) || '小组',
+      description: null,
+      creator_id: req.user!.id,
+      group_id: g.id,
+    })))
+    .select();
+  if (error) throw new ApiError(500, error.message);
+
+  const originX = coord(req.body?.origin_x);
+  const originY = coord(req.body?.origin_y);
+  const gap = Math.min(800, Math.max(120, Number(req.body?.gap) || 300));
+  const byGroup = new Map((created ?? []).map(v => [v.group_id as string, v]));
+  const ordered = pending.map(g => byGroup.get(g.id)).filter((v): v is Record<string, unknown> => Boolean(v));
+  const { data: cards, error: cardError } = await supabase
+    .from('view_cards')
+    .insert(ordered.map((v, i) => ({
+      space_id: spaceId,
+      view_id: v.id,
+      host_view_id: WELCOME_VIEW_ID,
+      x: coord(originX + i * gap),
+      y: originY,
+      created_by: req.user!.id,
+    })))
+    .select();
+  if (cardError) throw new ApiError(500, cardError.message);
+
+  const logos = new Map((groupsResult.data ?? []).filter(g => g.logo_url).map(g => [g.id as string, g.logo_url as string]));
+  res.status(201).json({ views: ordered.map(row => viewToApi(row, logos)), cards: (cards ?? []).map(cardToApi), existing: covered.size });
 });
 
 // PUT /api/views/:id — rename

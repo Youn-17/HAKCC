@@ -38,6 +38,8 @@ const ZH_CLASSROOM_UBIQUITOUS = new Set([
   '提供', '实现', '解决', '改变', '提升', '增强', '避免', '关注', '强调', '指出', '说明',
   '领域', '平均', '确定', '任何', '记住', '跟踪', '答案', '真的', '完全', '一定', '大量',
   'extension', 'ai', '延伸',
+  // 2026-10-11 线上一期图谱里冒出来的：疑问词和说法套话，不是观点
+  '哪些', '如何', '是否', '方式', '类型', '体现', '值得讨论',
 ]);
 
 const EN_STOP_WORDS = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'have', 'will', 'would', 'could', 'should', 'about', 'which', 'their', 'there', 'these', 'those', 'because', 'been', 'were', 'they', 'them', 'then', 'than', 'also', 'more', 'some', 'such', 'very', 'when', 'what', 'your', 'into', 'only', 'other', 'most', 'like', 'just', 'think', 'know', 'want', 'need', 'good', 'make', 'made', 'many', 'much', 'each', 'both', 'same', 'different', 'example', 'question', 'answer', 'idea', 'ideas', 'note', 'notes', 'discuss', 'discussion']);
@@ -88,6 +90,28 @@ const ZH_LEADING_VERBS = [
 ];
 /** 概念不会以这些字开头或结尾 —— 一律是虚字或结构助词。 */
 const ZH_DANGLING_CHARS = new Set('的了得是在和与就都也还很太更把被让使对为以及所之其个种此该并且或又再比真最没有会能要说'.split(''));
+
+/**
+ * 半截词：开头的字和左边的字（或结尾的字和右边的字）在别处也常连在一起成词 ——
+ * 「老|师的角色」「教|师的角色」里的「老师」「教师」，「取|代教师」「替|代教师」里的「取代」「替代」——
+ * 说明这一段是从更长的说法里切出来的，不是学生说的观点（2026-10-11 线上一期就冒出了这两个）。
+ * 下面的边界自由度只拦「左邻右邻几乎不变、出现 3 次以上」的，换着前缀出现的半截词拦不住。
+ * 判据：八成以上的出现都是这样；左边是虚字的不算（「的认知卸载」是正常的上下文）。
+ */
+function looksLikeFragment(term: string, s: TermStat, stats: Map<string, TermStat>): boolean {
+  if (s.freq < 2) return false;
+  const cutsWord = (neighbours: Map<string, number>, join: (ch: string) => string) => {
+    let cut = 0;
+    for (const [ch, n] of neighbours) {
+      if (!/[一-鿿]/.test(ch) || ZH_STOP_CHARS.has(ch) || ZH_DANGLING_CHARS.has(ch)) continue;
+      const word = stats.get(join(ch));
+      // 连起来的两个字在这个说法之外也出现过，才算一个独立的词
+      if (word && word.freq - n >= 1) cut += n;
+    }
+    return cut / s.freq >= 0.8;
+  };
+  return cutsWord(s.left, ch => ch + term[0]) || cutsWord(s.right, ch => term[term.length - 1] + ch);
+}
 
 function hasStopWordBoundary(term: string): boolean {
   if (!/[一-鿿]/.test(term) || term.length < 3) return false;
@@ -175,6 +199,7 @@ export function extractConceptsScored(
     if (ZH_GENERIC_TERMS.has(term)) continue;
     if (discriminative && ZH_CLASSROOM_UBIQUITOUS.has(term)) continue;
     if (discriminative && hasStopWordBoundary(term)) continue;
+    if (discriminative && /[一-鿿]/.test(term) && looksLikeFragment(term, s, stats)) continue;
 
     const isCjk = /[一-鿿]/.test(term);
     let cohesion = 1;

@@ -25,6 +25,8 @@ const h = vi.hoisted(() => {
     reads: [] as string[],
     history: null as null | Array<{ sender_kind: string; content: string }>,
     failHistory: false,
+    /** 像线上那样整条拒收 ai_interventions 的写入（PostgREST 不认识的列） */
+    rejectInterventions: false,
   };
 
   // 课内身份：teacher-1 是创建者，admin-1 是平台管理员；其余（含 teacher-2 这个
@@ -55,6 +57,9 @@ const h = vi.hoisted(() => {
 
   const resultFor = (table: string, action: Action, payload: unknown, terminal: Terminal) => {
     if (action === 'update' || action === 'upsert') return ok(null);
+    if (table === 'ai_interventions' && action === 'insert' && state.rejectInterventions) {
+      return { data: null, error: { code: 'PGRST204', message: "Could not find the 'model_name' column of 'ai_interventions' in the schema cache" } };
+    }
     switch (table) {
       case 'notes':
         return ok(NOTE);
@@ -240,6 +245,7 @@ beforeEach(() => {
   h.state.inserts.length = 0;
   h.state.history = null;
   h.state.failHistory = false;
+  h.state.rejectInterventions = false;
   (globalThis as any).__streams = [];
   (globalThis as any).__aiBodies = [];
   h.ensureSpaceAccess.mockReset();
@@ -303,6 +309,41 @@ describe('智能体（ai/agent-stream）', () => {
     const reply = savedReply();
     expect(reply.ai_metadata.tool_steps).toEqual([expect.objectContaining({ name: 'search_notes', summary: '找到 3 条相关笔记' })]);
     expect(reply.ai_metadata.answer_length).toMatchObject({ preset: 'long', continuations: 1 });
+  });
+
+  it('每一轮记一条 ai_interventions，列名和线上一致（整行比对，模型列叫 model_full_name）', async () => {
+    await post('/note-conversations/thread-b/ai/agent-stream', { ...ASK, agent_mode: 'idea_coach' });
+    // 记的是真正调用的型号：deepseek-chat 归一成原厂现在的 deepseek-flash
+    expect((h.runAgentLoopStream.mock.calls[0][0] as unknown as { model: string }).model).toBe('deepseek-flash');
+    expect(h.state.inserts.filter(i => i.table === 'ai_interventions').map(i => i.payload)).toEqual([{
+      space_id: 'space-b',
+      note_id: 'note-b',
+      user_id: 'student-a',
+      trigger_type: 'note_conversation_agent_loop',
+      provider_id: 'deepseek',
+      model_full_name: 'deepseek-flash',
+      input_context_summary: ASK.content,
+      response_text: 'AI 的回复',
+      visibility_scope: 'private',
+    }]);
+  });
+
+  it('记录被库拒收：这一轮照常结束，错误写进日志', async () => {
+    h.state.rejectInterventions = true;
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await post('/note-conversations/thread-b/ai/agent-stream', { ...ASK, agent_mode: 'idea_coach' });
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('"assistantMessage"');
+      expect(res.text).not.toContain('"error"');
+      expect(savedReply().content).toBe('AI 的回复');
+      expect(logged).toHaveBeenCalledWith(
+        '[ai_interventions] note_conversation_agent_loop insert failed:',
+        expect.stringContaining('model_name'),
+      );
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 

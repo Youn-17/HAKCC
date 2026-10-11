@@ -8,10 +8,11 @@ import { exportAnalysisChart } from './exportChart';
 import {DiscussionThreads} from './DiscussionThreads';
 import {PeerConnections,TopicCoverage} from './DiscussionFocus';
 import { useAnalyticsMotion } from '../../hooks/useAnalyticsMotion';
+import AgentPractices from './AgentPractices';
 import './spaceAnalytics.css';
 
 type Lang='zh'|'en';
-type Tool='cloud'|'changes'|'relay'|'pending'|'peers'|'topics';
+type Tool='cloud'|'changes'|'relay'|'pending'|'peers'|'topics'|'agent';
 interface Props {
   spaceId:string; lang:Lang; viewId:string|null; viewName:string; spaceTitle?:string;
   onClose:()=>void; onLocateNote:(id:string)=>void;
@@ -26,6 +27,7 @@ const TOOLS: Array<{id:Tool;icon:string;zh:string;en:string;hintZh:string;hintEn
   {id:'peers',icon:'group-line',zh:'同伴连接',en:'Peer connections',hintZh:'查看已有交流与可邀请阅读的同伴笔记。',hintEn:'Inspect actual exchanges and invite peers to read related Notes.'},
   {id:'topics',icon:'list-check-2',zh:'主题覆盖',en:'Topic coverage',hintZh:'按教师设定的关键词组，查看全体或个人提及的讨论范围。',hintEn:'Inspect whole-community or individual mentions of teacher-defined topic keywords.'},
   {id:'pending',icon:'question-answer-line',zh:'待推进议题',en:'Open discussions',hintZh:'查看尚无人回应的笔记和提问后未见后续的讨论。',hintEn:'Find notes without responses and questions without follow-ups.'},
+  {id:'agent',icon:'lightbulb-flash-line',zh:'指导策略',en:'Guidance strategies',hintZh:'查看智能体回答后的互动记录，选择或编写 AI 指导策略；已导入笔记的网页可提取为模板。',hintEn:'Review follow-up activity, choose or write AI guidance strategies, and extract templates from pages imported into Notes.'},
 ];
 function loadFilters(spaceId:string):Filters {
   try {const saved=JSON.parse(sessionStorage.getItem(`discussion:${spaceId}`)??'{}');return {...DEFAULT,...saved,tool:TOOLS.some(t=>t.id===saved.tool)?saved.tool:'cloud'};}catch{return DEFAULT;}
@@ -163,7 +165,7 @@ const SpaceAnalytics:React.FC<Props>=({spaceId,lang,viewId,viewName,spaceTitle,o
             {filter.tool==='changes'&&<div className="da-comparison"><label>{zh?'前后分界日期':'Comparison date'}<input type="date" aria-label={zh?'前后分界日期':'Comparison date'} value={filter.split} min={filter.from||undefined} max={filter.through||undefined} onChange={e=>update('split',e.target.value)}/></label><span>{filter.split?(zh?'所选日期零点起计入后段。':'The later period starts at midnight on this date.'):(zh?'未指定时，按当前笔记日期的中点分段。':'Defaults to the midpoint of the selected note dates.')}</span></div>}
             {exportError&&<p className="da-notice" role="alert">{exportError}</p>}
             <div className="da-chart" ref={chartRef}>
-              {rangeInvalid?<p className="da-empty" role="alert">{zh?'结束日期不能早于开始日期。':'End date cannot precede start date.'}</p>:requestError?<div className="da-empty" role="alert">{zh?'读取失败：':'Could not load: '}{requestError}<button type="button" className="da-more" onClick={refresh}>{zh?'重试':'Retry'}</button></div>:busy?<div className="da-loading" role="status"><RemixIcon name={active.icon} size={30}/><span>{zh?'正在读取…':'Loading…'}</span><span className="da-loading-dots" aria-hidden="true">{[0,1,2].map(i=><i key={i} className="da-loading-dot"/>)}</span></div>:data?<div className={`da-result da-result-${filter.tool}`} data-analysis-motion="result" key={filter.tool}>
+              {filter.tool==='agent'?<AgentPractices spaceId={spaceId} lang={lang}/>:rangeInvalid?<p className="da-empty" role="alert">{zh?'结束日期不能早于开始日期。':'End date cannot precede start date.'}</p>:requestError?<div className="da-empty" role="alert">{zh?'读取失败：':'Could not load: '}{requestError}<button type="button" className="da-more" onClick={refresh}>{zh?'重试':'Retry'}</button></div>:busy?<div className="da-loading" role="status"><RemixIcon name={active.icon} size={30}/><span>{zh?'正在读取…':'Loading…'}</span><span className="da-loading-dots" aria-hidden="true">{[0,1,2].map(i=><i key={i} className="da-loading-dot"/>)}</span></div>:data?<div className={`da-result da-result-${filter.tool}`} data-analysis-motion="result" key={filter.tool}>
                 {filter.tool==='cloud'&&cloud.data&&<><WordCloud data={cloud.data} lang={lang} selected={selection?.label??null} onPick={word=>word?pick(cloud.data!.terms.find(t=>t.word===word)?.note_ids??[],word):setSelection(null)}/><p className="da-chart-caption">{zh?`${cloud.data.docs} 篇学生笔记 · 不计教师、AI 生成笔记及标记的 AI 摘录`:`${cloud.data.docs} student notes · teacher notes, AI-generated notes and marked AI excerpts excluded`}</p></>}
                 {filter.tool==='changes'&&changes.data&&<><KeywordChangeChart data={changes.data} lang={lang} onPick={pick}/><p className="da-chart-caption">{zh?'按笔记创建时间分段，分析当前正文；变化不代表掌握程度。':'Periods use note creation dates and current text; changes do not measure mastery.'}</p></>}
                 {filter.tool==='relay'&&<DiscussionThreads key={key} data={data} lang={lang} titleOf={titleOf} nameOf={nameOf} anonymous={filter.anonymous} onPick={pick}/>}

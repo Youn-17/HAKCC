@@ -17,7 +17,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, Route, Routes, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -356,8 +356,11 @@ let root: Root | null = null;
 let host: HTMLDivElement | null = null;
 /** 路由里的 navigate，用来模拟浏览器后退 */
 let navigate: NavigateFunction | null = null;
+/** 路由里当前的地址 */
+let currentPath = '';
 function NavigateProbe() {
   navigate = useNavigate();
+  currentPath = useLocation().pathname;
   return null;
 }
 
@@ -395,13 +398,13 @@ async function typeInto(el: HTMLInputElement | HTMLTextAreaElement, value: strin
   });
 }
 
-async function mount() {
+async function mount(initialPath = `/workspace/${COURSE_ID}`) {
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
   await act(async () => {
     root!.render(
-      React.createElement(MemoryRouter, { initialEntries: [`/workspace/${COURSE_ID}`] },
+      React.createElement(MemoryRouter, { initialEntries: [initialPath] },
         React.createElement(NavigateProbe),
         React.createElement(Routes, null,
           React.createElement(Route, {
@@ -1961,5 +1964,36 @@ describe('画布：搜索笔记、收起 Build-on 分支、停住看标题（202
     await click(buttonWith('贡献')!);
     await waitFor(() => noteCard('我的追问'), '新写的 Build-on 在画布上');
     expect(noteCard('接着写的一条')).not.toBeNull();
+  });
+});
+
+describe('知识空间智能体整页（/agent，2026-10-11）', () => {
+  const agentPage = () => document.querySelector('[data-ws-agent-page]');
+
+  it('直接打开 /agent：整页盖在画布上，地址不被改回画布；「返回画布」回到画布地址，整页收起', async () => {
+    await mount(`/workspace/${COURSE_ID}/agent`);
+    await waitFor(agentPage, '智能体整页');
+    await settle(50);
+    expect(currentPath).toBe(`/workspace/${COURSE_ID}/agent`);
+    expect(backend.state.requests.some(r => r.path === `/workspace-agent/${COURSE_ID}/configs`)).toBe(true);
+
+    await click(buttonWith('返回画布')!);
+    await waitFor(() => currentPath === `/workspace/${COURSE_ID}` && !agentPage(), '回到画布地址、整页收起');
+    expect(document.querySelector('.assistant-panel')).toBeNull();
+  });
+
+  it('点顶栏的「知识空间智能体」直接进整页（不再先出侧栏）；「返回画布」退回画布，整页收起', async () => {
+    await mount();
+    await click(document.querySelector('button[title="知识空间智能体"]')!);
+    await waitFor(agentPage, '智能体整页');
+    expect(currentPath).toBe(`/workspace/${COURSE_ID}/agent`);
+    expect(document.querySelectorAll('.assistant-panel')).toHaveLength(1);
+
+    await click(buttonWith('返回画布')!);
+    await waitFor(() => currentPath === `/workspace/${COURSE_ID}` && !agentPage(), '退回画布');
+    expect(document.querySelector('.assistant-panel')).toBeNull();
+    // 浏览器前进还能回到整页，对话没丢
+    await act(async () => { navigate!(1); });
+    await waitFor(agentPage, '前进回到整页');
   });
 });

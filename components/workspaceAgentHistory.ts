@@ -2,6 +2,7 @@ import type { AgentConversation, AgentMessage, KbSourceCard } from '../services/
 import type { ToolCallInfo } from './AgentToolCallDisplay';
 import { stepsFromMetadata } from './agentProcessSteps';
 import { parseKbSources } from './KbSourceCards';
+import { extrasFromMetadata, hasExtras, type AgentExtras } from './agent/agentTurn';
 
 /**
  * 知识空间 AI 助手「历史对话」和面板宽度的纯逻辑：接着聊哪一段、列表怎么排、
@@ -19,6 +20,10 @@ export interface RestoredMessage {
   elapsedMs?: number;
   /** 课程资料的来源卡片（10-07 起存在 ai_metadata.kb_sources） */
   kbSources?: KbSourceCard[];
+  /** 智能体的计划清单、选项卡、做好的网页（10-11 起存在 ai_metadata.plan / question / artifacts） */
+  agent?: AgentExtras;
+  /** 学生这句话是点了选项卡上的哪一个（ai_metadata.choice.label） */
+  choice?: string;
 }
 
 /** 新的在前，同一条只留一次 */
@@ -89,10 +94,14 @@ export function messagesFromApi(list: readonly AgentMessage[]): RestoredMessage[
   return list
     .filter(m => (m.role === 'user' || m.role === 'assistant') && (m.content ?? '').trim() !== '')
     .map(m => {
-      if (m.role !== 'assistant') return { id: m.id, role: m.role, content: m.content };
+      if (m.role !== 'assistant') {
+        const choice = (m.ai_metadata?.choice as { label?: unknown } | undefined)?.label;
+        return { id: m.id, role: m.role, content: m.content, ...(typeof choice === 'string' && choice ? { choice } : {}) };
+      }
       const tools = stepsFromMetadata({ ...(m.ai_metadata ?? {}), tools_used: m.ai_metadata?.tool_steps ? undefined : m.tools_used });
       const elapsed = Number(m.ai_metadata?.elapsed_ms);
       const kbSources = parseKbSources(m.ai_metadata?.kb_sources);
+      const agent = extrasFromMetadata(m.ai_metadata);
       return {
         id: m.id,
         role: m.role,
@@ -100,6 +109,7 @@ export function messagesFromApi(list: readonly AgentMessage[]): RestoredMessage[
         ...(tools.length > 0 ? { tools } : {}),
         ...(Number.isFinite(elapsed) && elapsed > 0 ? { elapsedMs: elapsed } : {}),
         ...(kbSources.length > 0 ? { kbSources } : {}),
+        ...(hasExtras(agent) ? { agent } : {}),
       };
     });
 }

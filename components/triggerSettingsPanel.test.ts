@@ -25,7 +25,7 @@ vi.mock('../services/apiClient', async (importOriginal) => {
   return { ...actual, ai: { ...actual.ai, getTriggerSettings: api.get, updateTriggerSettings: api.update } };
 });
 
-import { TriggerSettingsPanel } from './Dashboard';
+import { TriggerSettingsPanel } from './dashboard/aiSettings/TriggerSettingsPanel';
 import { ApiClientError } from '../services/apiClient';
 
 const SETTINGS = {
@@ -97,7 +97,7 @@ describe('AI 触发设置面板', () => {
   it('读取失败不再一直转圈', async () => {
     api.get.mockRejectedValue(new ApiClientError(500, 'boom'));
     const el = await mount();
-    expect(el.textContent).toContain('触发设置没有加载成功：boom');
+    expect(el.textContent).toContain('自动反馈设置没有加载成功：boom');
   });
 
   it('反馈代码不读的两项已从界面撤掉', async () => {
@@ -105,6 +105,6 @@ describe('AI 触发设置面板', () => {
     const el = await mount();
     expect(el.textContent).not.toContain('响应风格');
     expect(el.textContent).not.toContain('AI 角色设定');
-    expect(el.textContent).toContain('AI 响应语言');
+    expect(el.textContent).toContain('反馈用的语言');
   });
 });

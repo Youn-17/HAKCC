@@ -40,6 +40,17 @@ export type AgentLoopMessage = {
 };
 
 /** 把可能是数组的 content 压成纯文本。给只认字符串的地方用（日志、Anthropic 的 tool_result）。 */
+/**
+ * 模型在调工具的同一步里写的话不推给学生（只有 ask_choice 的引导语会推）。原样留在对话里，模型以为学生看到了，
+ * 最后会说「上面那段可以照着写」，学生却什么也没看到（2026-10-11 评测 n29）。思路留着，标明没给学生看。
+ */
+export const NOT_SHOWN_NOTE = '[Not shown to the student. Anything they should read must go in your final reply.]';
+
+export function toolStepContent(content: string | null): string | null {
+  if (typeof content !== 'string' || !content.trim()) return content;
+  return `${NOT_SHOWN_NOTE}\n${content}`;
+}
+
 export function flattenContent(content: AgentLoopMessage['content']): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -80,14 +91,25 @@ export type AgentLoopParams = {
   executeToolFn: (
     name: string,
     args: Record<string, unknown>,
-  ) => Promise<{ success: boolean; data: unknown; error?: string }>;
+  ) => Promise<{ success: boolean; data: unknown; error?: string; endTurn?: boolean }>;
   maxIterations?: number;
+  /** 整轮上限（毫秒）。默认 210 秒；要写网页的轮次放宽（agentMaker） */
+  totalTimeoutMs?: number;
   maxTokens?: number;
   temperature?: number;
   onToolCall?: (toolCall: AgentToolCall) => void;
   onToolResult?: (toolCallId: string, toolName: string, result: unknown) => void;
   onThinking?: (content: string) => void;
+  /**
+   * 回答给学生看之前过一道（harness 的 onStop，2026-10-11）：可以改写，比如删掉套话、把替学生写好的那段换成提问。
+   * 只在整段回答已经在手里的那两条路上用：规划轮直接给出答案（最常见），以及 ask_choice 停下来时的引导语。
+   * 边写边推的那几条路改不了，由调用方事后记录检查结果。抛错或返回空串时用原文。
+   */
+  reviseFinal?: (text: string) => Promise<string>;
 };
+
+/** 这一轮各次非流式调用厂商报回来的 token 数（流式那几次厂商不报，不算在里面） */
+export type AgentTokenUsage = { prompt: number; completion: number; calls: number };
 
 export type AgentLoopResult = {
   content: string;
@@ -104,6 +126,13 @@ export type AgentLoopResult = {
   continuations?: number;
   /** 接着写到上限次数仍没写完 */
   truncated?: boolean;
+  /** 哪个工具把这一轮停下来等学生（ask_choice） */
+  endedByTool?: string;
+  usage?: AgentTokenUsage;
+  /** reviseFinal 改过回答 */
+  revised?: boolean;
+  /** 最后一次厂商报的结束原因，不是 stop 时才带（排查回答断在半句话用） */
+  providerFinish?: string;
 };
 
 export type AgentStreamEvent =
@@ -137,6 +166,9 @@ const TOOL_EXECUTION_TIMEOUT_MS = 15_000;
  */
 const SLOW_TOOL_TIMEOUT_MS: Record<string, number> = {
   generate_image: 150_000,
+  // 写网页：一次长输出，写代码强的模型 30–120 秒（agentMaker 自己限 200 秒）
+  create_artifact: 240_000,
+  revise_artifact: 240_000,
   generate_summary_doc: 60_000,
   export_notes: 60_000,
   build_embeddings: 120_000,
@@ -315,7 +347,7 @@ function toolCallKey(name: string, args: Record<string, unknown>): string {
   return `${name}:${JSON.stringify(sorted)}`;
 }
 
-type ToolOutcome = { success: boolean; data: unknown; error?: string };
+type ToolOutcome = { success: boolean; data: unknown; error?: string; endTurn?: boolean };
 
 async function executeToolOnce(
   cache: Map<string, ToolOutcome>,
@@ -542,7 +574,27 @@ type ProviderCallResult = {
   reasoning?: string;
   /** 厂商说写到 max_tokens 停的（finish_reason=length 之类） */
   truncated?: boolean;
+  usage?: { prompt: number; completion: number };
+  /** 厂商报的结束原因原文（stop、length、insufficient_system_resource……），运行记录用 */
+  finishReason?: string;
 };
+
+/**
+ * 哪些结束原因说明回答没写完。DeepSeek 推理资源不够时报 insufficient_system_resource，
+ * 正文停在半句话（2026-10-11 评测里两题这样断掉），和写到长度上限一样接着写。
+ */
+export function cutOffFinish(reason: unknown): boolean {
+  return reason === 'length' || reason === 'insufficient_system_resource';
+}
+
+/** 各家报 token 数的写法不一样，读不到就不报 */
+function readUsage(data: any): { prompt: number; completion: number } | undefined {
+  const u = data?.usage;
+  const prompt = Number(u?.prompt_tokens ?? u?.input_tokens ?? data?.usageMetadata?.promptTokenCount);
+  const completion = Number(u?.completion_tokens ?? u?.output_tokens ?? data?.usageMetadata?.candidatesTokenCount);
+  if (!Number.isFinite(prompt) && !Number.isFinite(completion)) return undefined;
+  return { prompt: Number.isFinite(prompt) ? prompt : 0, completion: Number.isFinite(completion) ? completion : 0 };
+}
 
 /**
  * Kimi 原厂 key 只接受 temperature=1，传别的直接 400「invalid temperature: only 1 is allowed」。
@@ -624,7 +676,7 @@ async function callAnthropicWithTools(
   }
 
   const data = await response.json() as any;
-  return { ...parseAnthropicResponse(data), reasoning: undefined };
+  return { ...parseAnthropicResponse(data), reasoning: undefined, usage: readUsage(data) };
 }
 
 async function callGoogleWithTools(
@@ -663,7 +715,7 @@ async function callGoogleWithTools(
   }
 
   const data = await response.json() as any;
-  return { ...parseGoogleResponse(data), reasoning: undefined };
+  return { ...parseGoogleResponse(data), reasoning: undefined, usage: readUsage(data) };
 }
 
 async function callOpenAICompatibleWithTools(
@@ -743,11 +795,16 @@ async function callOpenAICompatibleWithTools(
   // Extract reasoning_content for DeepSeek reasoning models
   const reasoning = msg?.reasoning_content ?? msg?.reasoning ?? undefined;
 
+  if (choice?.finish_reason && !['stop', 'tool_calls', 'length'].includes(choice.finish_reason)) {
+    console.warn(`[agentLoop] ${providerId}/${resolvedModel} finished with "${choice.finish_reason}"`);
+  }
   return {
     content: msg?.content ?? null,
     toolCalls,
     reasoning,
-    truncated: choice?.finish_reason === 'length',
+    truncated: cutOffFinish(choice?.finish_reason),
+    usage: readUsage(data),
+    ...(typeof choice?.finish_reason === 'string' ? { finishReason: choice.finish_reason } : {}),
   };
 }
 
@@ -789,10 +846,13 @@ async function callOpenAICompatibleNoTools(
   }
 
   const data = await response.json() as any;
+  const finish = data.choices?.[0]?.finish_reason;
   return {
     content: data.choices?.[0]?.message?.content ?? null,
     toolCalls: [],
-    truncated: data.choices?.[0]?.finish_reason === 'length',
+    truncated: cutOffFinish(finish),
+    usage: readUsage(data),
+    ...(typeof finish === 'string' ? { finishReason: finish } : {}),
   };
 }
 
@@ -800,7 +860,7 @@ async function callOpenAICompatibleNoTools(
 // Provider call — streaming (final answer only)
 // ---------------------------------------------------------------------------
 
-async function* streamProviderFinalAnswer(params: {
+export async function* streamProviderFinalAnswer(params: {
   providerId: string;
   model: string;
   apiKey: string;
@@ -1110,7 +1170,7 @@ export async function runAgentLoop(params: AgentLoopParams): Promise<AgentLoopRe
       // Append assistant message (with tool_calls) to conversation
       conversation.push({
         role: 'assistant',
-        content: result.content,
+        content: toolStepContent(result.content),
         tool_calls: result.toolCalls,
         reasoning_content: result.reasoning,
       });
@@ -1190,11 +1250,31 @@ export async function* runAgentLoopStream(
     maxIterations = DEFAULT_MAX_ITERATIONS,
     maxTokens = DEFAULT_MAX_TOKENS,
     temperature = DEFAULT_TEMPERATURE,
+    totalTimeoutMs = TOTAL_LOOP_TIMEOUT_MS,
   } = params;
 
   const allToolCalls: AgentLoopResult['toolCalls'] = [];
   const toolResultCache = new Map<string, ToolOutcome>();
   let iterations = 0;
+  // token 数：每次非流式调用厂商报回来的加起来，跟着 done 一起交出去（运行记录用）
+  const usage: AgentTokenUsage = { prompt: 0, completion: 0, calls: 0 };
+  const tally = (r: ProviderCallResult | null | undefined) => {
+    if (!r?.usage) return;
+    usage.prompt += r.usage.prompt;
+    usage.completion += r.usage.completion;
+    usage.calls += 1;
+  };
+  const withUsage = (result: AgentLoopResult): AgentLoopResult => (usage.calls > 0 ? { ...result, usage: { ...usage } } : result);
+  /** 回答过 reviseFinal：出错或给了空串就用原文 */
+  const revise = async (text: string): Promise<string> => {
+    if (!params.reviseFinal || !text) return text;
+    try {
+      const out = await params.reviseFinal(text);
+      return out && out.trim() ? out : text;
+    } catch {
+      return text;
+    }
+  };
 
   const conversation: AgentLoopMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -1207,18 +1287,18 @@ export async function* runAgentLoopStream(
   try {
     while (iterations < maxIterations) {
       // Guard total loop timeout
-      if (Date.now() - loopStart > TOTAL_LOOP_TIMEOUT_MS) {
+      if (Date.now() - loopStart > totalTimeoutMs) {
         yield* streamFinalAnswer(
           providerId, model, apiKey, endpointUrl, conversation, maxTokens, temperature, false, effectiveTools,
         );
         yield {
           type: 'done',
-          result: {
+          result: withUsage({
             content: '',
             toolCalls: allToolCalls,
             iterations,
             finishReason: 'max_iterations' as const,
-          },
+          }),
         };
         return;
       }
@@ -1230,6 +1310,7 @@ export async function* runAgentLoopStream(
         tools: effectiveTools,
         maxTokens, temperature,
       });
+      tally(result);
 
       // Emit reasoning (DeepSeek thinking)
       if (result.reasoning) {
@@ -1252,13 +1333,18 @@ export async function* runAgentLoopStream(
           // 2026-09-10 六次里三次第二次生成变成了工具调用文字。
           const direct = stripToolMarkup(flattenContent(result.content ?? ''));
           if (direct) {
-            for (let i = 0; i < direct.length; i += 48) {
-              yield { type: 'token', content: direct.slice(i, i + 48) };
+            // 要过 reviseFinal 的：先把回答拿全（含接着写的几段）、过完再推；不过的照旧边拿边推
+            const holdForReview = Boolean(params.reviseFinal);
+            if (!holdForReview) {
+              for (let i = 0; i < direct.length; i += 48) {
+                yield { type: 'token', content: direct.slice(i, i + 48) };
+              }
             }
             // 写到 max_tokens 被截住：接着写，学生看到的是一段完整的回答
             let full = direct;
             let truncated = result.truncated === true;
             let continuations = 0;
+            let lastFinish = result.finishReason;
             while (truncated && continuations < MAX_CONTINUATIONS) {
               continuations += 1;
               const more = await callProviderWithTools({
@@ -1267,21 +1353,36 @@ export async function* runAgentLoopStream(
                 tools: [],
                 maxTokens, temperature,
               }).catch(() => null);
+              tally(more);
               const extra = more ? stripToolMarkup(flattenContent(more.content ?? '')) : '';
               if (!extra) break;
-              for (let i = 0; i < extra.length; i += 48) {
-                yield { type: 'token', content: extra.slice(i, i + 48) };
+              if (!holdForReview) {
+                for (let i = 0; i < extra.length; i += 48) {
+                  yield { type: 'token', content: extra.slice(i, i + 48) };
+                }
               }
               full += extra;
               truncated = more?.truncated === true;
+              lastFinish = more?.finishReason ?? lastFinish;
+            }
+            let revised = false;
+            if (holdForReview) {
+              const checked = await revise(full);
+              revised = checked !== full;
+              full = checked;
+              for (let i = 0; i < full.length; i += 48) {
+                yield { type: 'token', content: full.slice(i, i + 48) };
+              }
             }
             yield {
               type: 'done',
-              result: {
+              result: withUsage({
                 content: full, toolCalls: allToolCalls, iterations, finishReason: 'completed',
                 ...(continuations > 0 ? { continuations } : {}),
                 ...(truncated ? { truncated: true } : {}),
-              },
+                ...(revised ? { revised: true } : {}),
+                ...(lastFinish && lastFinish !== 'stop' ? { providerFinish: lastFinish } : {}),
+              }),
             };
             return;
           }
@@ -1344,12 +1445,12 @@ export async function* runAgentLoopStream(
           if (result.toolCalls.length === 0) {
             yield {
               type: 'done',
-              result: {
+              result: withUsage({
                 content: finalContent,
                 toolCalls: allToolCalls,
                 iterations,
                 finishReason: 'completed',
-              },
+              }),
             };
             return;
           }
@@ -1358,10 +1459,11 @@ export async function* runAgentLoopStream(
 
       // Process tool calls
       iterations++;
+      let endedBy: { toolName: string; reply: string } | null = null;
 
       conversation.push({
         role: 'assistant',
-        content: result.content,
+        content: toolStepContent(result.content),
         tool_calls: result.toolCalls,
         reasoning_content: result.reasoning,
       });
@@ -1397,6 +1499,29 @@ export async function* runAgentLoopStream(
               : { error: toolResult.error ?? 'Tool execution failed' },
           ),
         });
+        if (toolResult.success && toolResult.endTurn && !endedBy) {
+          const reply = (toolResult.data as { reply?: unknown } | null)?.reply;
+          endedBy = { toolName, reply: typeof reply === 'string' ? reply : '' };
+        }
+      }
+
+      // 有工具要求停下等学生（ask_choice 给了选项）：这一轮到此为止，不再问模型。
+      // 回答正文用模型这一步顺手写的引导语，没写就用问题本身；选项由前端画成按钮
+      if (endedBy) {
+        const lead = stripToolMarkup(flattenContent(result.content ?? ''));
+        const raw = lead || endedBy.reply;
+        const text = await revise(raw);
+        for (let i = 0; i < text.length; i += 48) {
+          yield { type: 'token', content: text.slice(i, i + 48) };
+        }
+        yield {
+          type: 'done',
+          result: withUsage({
+            content: text, toolCalls: allToolCalls, iterations, finishReason: 'completed', endedByTool: endedBy.toolName,
+            ...(text !== raw ? { revised: true } : {}),
+          }),
+        };
+        return;
       }
     }
 
@@ -1407,25 +1532,25 @@ export async function* runAgentLoopStream(
 
     yield {
       type: 'done',
-      result: {
+      result: withUsage({
         content: '',
         toolCalls: allToolCalls,
         iterations,
         finishReason: 'max_iterations',
-      },
+      }),
     };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown agent loop error';
     yield { type: 'error', error: errorMsg };
     yield {
       type: 'done',
-      result: {
+      result: withUsage({
         content: '',
         toolCalls: allToolCalls,
         iterations,
         finishReason: 'error',
         error: errorMsg,
-      },
+      }),
     };
   }
 }

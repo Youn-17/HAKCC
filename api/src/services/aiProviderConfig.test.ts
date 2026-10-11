@@ -5,6 +5,22 @@ vi.mock('../config/supabase', () => ({
   supabase: {},
 }));
 
+describe('千问 3 系列的思考开关', () => {
+  it('预算小的调用关掉思考（max_tokens 限不住推理）；预算大的、别的型号、经 DMX 的都不动', () => {
+    const small = { model: 'qwen3.8-max', messages: [], max_tokens: 200 };
+    expect(withDeepSeekOptions('alibaba', 'qwen3.8-max', small)).toEqual({ ...small, enable_thinking: false });
+    const big = { model: 'qwen3.8-max', messages: [], max_tokens: 4000 };
+    expect(withDeepSeekOptions('alibaba', 'qwen3.8-max', big)).toEqual(big);
+    expect(withDeepSeekOptions('alibaba', 'qwen-max', small)).toEqual(small);
+    expect(withDeepSeekOptions('dmx', 'qwen3.8-max', small)).toEqual(small);
+  });
+
+  it('快速档不管预算都关思考', () => {
+    const body = { model: 'qwen3.7-plus', messages: [], max_tokens: 4000 };
+    expect(withFastChatOptions('alibaba', 'qwen3.7-plus', body)).toEqual({ ...body, enable_thinking: false });
+  });
+});
+
 describe('providerConfigToApi', () => {
   it('redacts custom endpoint URLs by default for member-visible config payloads', () => {
     const config = providerConfigToApi({

@@ -35,10 +35,10 @@ export const TOOL_META: Record<string, { icon: string; zh: string; en: string }>
   analyze_engagement: { icon: 'line-chart-line', zh: '分析学习参与度', en: 'Analyze engagement' },
   compare_periods: { icon: 'time-line', zh: '对比时间段数据', en: 'Compare time periods' },
   save_reflection: { icon: 'quill-pen-line', zh: '保存教学反思', en: 'Save reflection' },
-  detect_triggers: { icon: 'radar-line', zh: '检测触发信号', en: 'Detect triggers' },
+  detect_triggers: { icon: 'radar-line', zh: '检查反馈条件', en: 'Check feedback conditions' },
   build_embeddings: { icon: 'database-2-line', zh: '构建语义索引', en: 'Build embeddings' },
-  get_learner_insights: { icon: 'user-search-line', zh: '获取学生洞察', en: 'Get learner insights' },
-  save_teaching_insight: { icon: 'save-line', zh: '保存教学洞察', en: 'Save teaching insight' },
+  get_learner_insights: { icon: 'user-search-line', zh: '查看学生学习记录', en: 'Review student learning records' },
+  save_teaching_insight: { icon: 'save-line', zh: '保存教学观察', en: 'Save teaching observations' },
   generate_image: { icon: 'image-ai-line', zh: '生成配图', en: 'Generate image' },
   search_course_materials: { icon: 'book-2-line', zh: '检索课程资料', en: 'Search course materials' },
   // 笔记页「自由提问」那条路：联网搜索、回答前先找相关内容
@@ -46,17 +46,22 @@ export const TOOL_META: Record<string, { icon: string; zh: string; en: string }>
   prepare_context: { icon: 'search-eye-line', zh: '查找相关内容', en: 'Look for related material' },
   search_space_notes: { icon: 'search-line', zh: '搜索空间里的笔记', en: 'Search notes in this space' },
   list_related_notes: { icon: 'links-line', zh: '找相关的笔记', en: 'Find related notes' },
+  // 智能体动手做事（2026-10-11）
+  update_plan: { icon: 'list-check-3', zh: '列计划', en: 'Plan the steps' },
+  ask_choice: { icon: 'question-answer-line', zh: '请你选择方案', en: 'Ask you to choose' },
+  create_artifact: { icon: 'pages-line', zh: '做网页', en: 'Build a web page' },
+  revise_artifact: { icon: 'edit-box-line', zh: '改网页', en: 'Revise the web page' },
 };
 
 const PIPELINE_STEPS = {
   zh: [
-    { icon: 'search-eye-line', title: '解析请求', desc: '识别意图与参数' },
+    { icon: 'search-eye-line', title: '理解问题', desc: '查看问题内容' },
     { icon: 'settings-4-line', title: '调用工具', desc: '' },
     { icon: 'bar-chart-box-line', title: '处理结果', desc: '汇总分析结果' },
     { icon: 'send-plane-line', title: '返回结果', desc: '结果已生成' },
   ],
   en: [
-    { icon: 'search-eye-line', title: 'Parse request', desc: 'Identify intent & params' },
+    { icon: 'search-eye-line', title: 'Read the question', desc: 'Review the question' },
     { icon: 'settings-4-line', title: 'Call tools', desc: '' },
     { icon: 'bar-chart-box-line', title: 'Process results', desc: 'Aggregate analysis' },
     { icon: 'send-plane-line', title: 'Return results', desc: 'Results ready' },

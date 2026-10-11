@@ -212,16 +212,16 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({
     },
     {
       icon: 'chat-smile-3-line',
-      title: zh ? '提升反思深度' : 'Improve reflection depth',
-      desc: zh ? '设计反思性问题，鼓励学生进行深度思考与表达' : 'Design reflection prompts for deeper reasoning',
-      prompt: zh ? '基于当前学情，设计一组提升学生反思深度的问题和课堂活动' : 'Design prompts to improve reflection depth',
+      title: zh ? '设计反思问题' : 'Design reflection questions',
+      desc: zh ? '围绕学生的解释和证据，起草反思问题' : 'Draft questions about student explanations and evidence',
+      prompt: zh ? '围绕当前学生的解释和证据，起草一组反思问题和课堂活动' : 'Draft reflection questions and activities about student explanations and evidence',
       tone: 'teal',
     },
     {
       icon: 'team-line',
-      title: zh ? '优化协作互动' : 'Optimize collaboration',
-      desc: zh ? '组织小组讨论或互评活动，提升互动质量' : 'Plan peer discussion to improve interaction quality',
-      prompt: zh ? '根据当前学生分层，设计一次优化协作互动的小组活动' : 'Create a collaboration intervention by student segments',
+      title: zh ? '设计小组活动' : 'Plan group activities',
+      desc: zh ? '起草小组讨论或互评活动供你调整' : 'Draft peer discussion or review activities for you to adapt',
+      prompt: zh ? '根据当前学生的参与情况，起草一次小组讨论或互评活动' : 'Draft a group discussion or peer-review activity based on current participation',
       tone: 'blue',
     },
   ] as const;
@@ -263,7 +263,7 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({
             {zh ? '学情分析' : 'Learning Analytics'}
           </h1>
           <p className="mt-1 text-[0.8125rem] leading-relaxed text-gray-500 dark:text-gray-400">
-            {zh ? 'AI 支持的课程学习洞察与干预' : 'AI-supported learning insights'}
+            {zh ? '查看参与和回应记录，选择需要跟进的问题' : 'Review participation and replies, then choose what to follow up'}
           </p>
         </div>
         <img src="/assets/Learning situation analysis.png" alt="" className="hidden h-24 w-auto flex-shrink-0 object-contain lg:block" />

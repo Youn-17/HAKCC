@@ -1,5 +1,8 @@
 import { restoreConversationMemory, type MemoryModel } from '../services/conversationMemory';
 import { loadStudentLearningContext } from '../services/studentLearningContext';
+import { choiceEpisodeText, recordEpisode } from '../services/studentMemory';
+import { activeCards, cardsFor, practiceSection, taskKind, type PracticeCard } from '../services/agentPractices';
+import { BUILTIN_TEMPLATES, listTemplates, templatesSection, type PageTemplate } from '../services/pageTemplates';
 import { loadModelConversationHistory } from '../services/loadConversationHistory';
 import { modelContextBudget } from '../services/modelContextBudget';
 import { Router, Request, Response } from 'express';
@@ -39,11 +42,17 @@ import {
   type ConversationAgentMode,
 } from '../services/noteAgentCatalog';
 import { CONTINUE_PROMPT, MAX_CONTINUATIONS, runAgentLoopStream, type AgentStreamEvent } from '../services/agentLoop';
+import { analyzePrompt, answerCheckMetadata, enforceTurnQuota, runAgentTurn } from '../services/agentHarness';
+import { AgentTrace } from '../services/agentTrace';
 import { lengthInstruction, lengthPlanMetadata, parseAnswerLength, planAnswerLength, thinkingLikely } from '../services/answerLength';
 import { summarizeToolResult } from '../services/toolResultSummary';
 import { detectQuestionLanguage } from '../services/finalAnswer';
 import { buildAgentContext, updateProfileAfterInteraction } from '../services/agentContext';
 import { createDefaultRegistry } from '../services/agentTools';
+import {
+  MAKER_LOOP_TIMEOUT_MS, MAKER_MAX_ITERATIONS, MAKER_RULES, createTurnState, hasMakerTools, loadMakerMemory, makerMemorySection,
+  parseStudentChoice, settlePlan, turnMetadata,
+} from '../services/agentMaker';
 import { embedNote } from '../services/embeddingService';
 import { aiFetch } from '../services/aiGateway';
 import { CHAT_ENDPOINTS, MODELS_ENDPOINTS } from '../services/providerEndpoints';
@@ -647,17 +656,18 @@ router.post('/note-conversations/:threadId/image', verifyJWT, async (req: Reques
     .single();
   if (assistantError) throw new ApiError(500, assistantError.message);
 
-  await supabase.from('ai_interventions').insert({
+  const { error: interventionErr } = await supabase.from('ai_interventions').insert({
     space_id: thread.space_id,
     note_id: thread.note_id,
     user_id: req.user!.id,
     trigger_type: 'note_conversation_direct_image',
     provider_id: result.provider,
-    model_name: result.model,
+    model_full_name: result.model,
     input_context_summary: prompt.slice(0, 200),
     response_text: result.url.slice(0, 500),
     visibility_scope: 'private',
   });
+  if (interventionErr) console.error('[ai_interventions] note_conversation_direct_image insert failed:', interventionErr.message);
 
   res.status(201).json({
     userMessage: messageToApi(userMessage),
@@ -824,17 +834,18 @@ router.post('/note-conversations/:threadId/ai', verifyJWT, async (req: Request, 
   if (assistantError) throw new ApiError(500, assistantError.message);
 
   await supabase.from('note_conversation_threads').update({ provider_id: resolvedPid, model: resolvedMod }).eq('id', thread.id);
-  await supabase.from('ai_interventions').insert({
+  const { error: interventionErr } = await supabase.from('ai_interventions').insert({
     space_id: thread.space_id,
     note_id: thread.note_id,
     user_id: req.user!.id,
     trigger_type: 'note_conversation_chat',
     provider_id: resolvedPid,
-    model_name: resolvedMod,
+    model_full_name: resolvedMod,
     input_context_summary: content.slice(0, 200),
     response_text: replyText.slice(0, 500),
     visibility_scope: 'private',
   });
+  if (interventionErr) console.error('[ai_interventions] note_conversation_chat insert failed:', interventionErr.message);
   await logConversationEvent(req, 'ai_message_sent', assistantMessage.id, thread.space_id, {
     thread_id: thread.id,
     note_id: thread.note_id,
@@ -1137,17 +1148,18 @@ router.post('/note-conversations/:threadId/ai/stream', verifyJWT, async (req: Re
     if (assistantError) throw new ApiError(500, assistantError.message);
 
     await supabase.from('note_conversation_threads').update({ provider_id: resolvedProviderId, model: normalizedModel }).eq('id', thread.id);
-    await supabase.from('ai_interventions').insert({
+    const { error: interventionErr } = await supabase.from('ai_interventions').insert({
       space_id: thread.space_id,
       note_id: thread.note_id,
       user_id: req.user!.id,
       trigger_type: 'note_conversation_chat_stream',
       provider_id: resolvedProviderId,
-      model_name: normalizedModel,
+      model_full_name: normalizedModel,
       input_context_summary: content.slice(0, 200),
       response_text: fullReply.slice(0, 500),
       visibility_scope: 'private',
     });
+    if (interventionErr) console.error('[ai_interventions] note_conversation_chat_stream insert failed:', interventionErr.message);
     await logConversationEvent(req, 'ai_message_sent', assistantMessage.id, thread.space_id, {
       thread_id: thread.id,
       note_id: thread.note_id,
@@ -1183,7 +1195,7 @@ const agentRegistry = createDefaultRegistry();
 router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (req: Request, res: Response) => {
   const { thread, standing } = await requireThreadWrite(paramString(req.params.threadId, 'threadId'), req);
   const turnStartedAt = Date.now();
-  const { content, provider_id: requestedProviderId, model: requestedModel, scaffold_id, scaffold_step_id, attachments = [], agent_mode, answer_length } = req.body as {
+  const { content, provider_id: requestedProviderId, model: requestedModel, scaffold_id, scaffold_step_id, attachments = [], agent_mode, answer_length, choice } = req.body as {
     content?: string;
     provider_id?: string;
     model?: string;
@@ -1192,11 +1204,19 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
     attachments?: Attachment[];
     agent_mode?: unknown;
     answer_length?: unknown;
+    /** 学生点了上一轮选项卡上的哪一个 */
+    choice?: unknown;
   };
+  const studentChoice = parseStudentChoice(choice);
   if (!content?.trim()) throw new ApiError(400, 'content is required');
   if (!requestedProviderId || !requestedModel) throw new ApiError(400, 'provider_id and model are required');
   const freeAsk = isFreeAskMode(agent_mode);
   const normalizedAgentMode = normalizeConversationAgentMode(agent_mode);
+  // 工具按课内身份给：教师工具能读全班的数据，凭学生验证码入课的教师账号在这门课里是学生
+  const userRole = !isCourseStaff(standing) ? 'student' as const : req.user!.role === 'admin' ? 'admin' as const : 'teacher' as const;
+  const zhQuestion = detectQuestionLanguage(content) === 'zh';
+  // 学生提交问题时（harness）：每日配额在存下这句之前查，超了不留一条没回答的提问
+  await enforceTurnQuota(req.user!.id, userRole, zhQuestion);
   const partner = await resolvePartnerModel(thread.course_id, requestedProviderId, requestedModel);
   const provider_id = partner.providerId;
   const model = partner.model;
@@ -1215,6 +1235,7 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
       scaffold_id: scaffold_id ?? null,
       scaffold_step_id: scaffold_step_id ?? null,
       attachments: stripAttachmentText(attachments),
+      ...(studentChoice ? { ai_metadata: { choice: studentChoice } } : {}),
     })
     .select('*, profiles!sender_id(id, full_name, avatar_url)')
     .single();
@@ -1229,25 +1250,34 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   if (!config.api_key_encrypted) throw new ApiError(404, `Provider "${provider_id}" is not configured for this course`);
   const apiKey = decryptProviderApiKey(config.api_key_encrypted);
 
+  // 这一问是不是让 AI 代写、之前是不是接连代写（harness 的 onPromptSubmit）
+  const earlierQuestions = history.filter(m => m.role === 'user').map(m => m.content).slice(0, -1);
+  const promptCheck = analyzePrompt({ question: content, earlierQuestions, role: userRole });
+
   // 课程资料：和下面装上下文同时检索，见 kbSources.ts
-  const zhQuestion = detectQuestionLanguage(content) === 'zh';
   const kbRun = startNoteKbRetrieval({
     courseId: thread.course_id,
     viewer: req.user!,
     question: content,
-    earlierQuestions: history.filter(m => m.role === 'user').map(m => m.content).slice(0, -1),
+    earlierQuestions,
     noteTitle: note.title,
     zh: zhQuestion,
   });
 
-  // 工具按课内身份给：教师工具能读全班的数据，凭学生验证码入课的教师账号在这门课里是学生
-  const userRole = !isCourseStaff(standing) ? 'student' as const : req.user!.role === 'admin' ? 'admin' as const : 'teacher' as const;
   // 自由提问带了图或附件才会走到这条：不挂任何工具，也不用智能体的人设
   const modeToolNames = freeAsk ? [] : getAgentModeToolNames(normalizedAgentMode);
   const tools = agentRegistry.getToolsForRole(userRole).filter(
     (t) => modeToolNames.includes(t.function.name),
   );
   const toolNames = tools.map((t) => t.function.name);
+  // 列计划、给选项、做网页（agentMaker）：模式里带了这几个工具才开；这段对话之前做过的网页和计划一起读出来
+  const makerOn = hasMakerTools(toolNames);
+  const makerMemoryPromise = makerOn ? loadMakerMemory('note', thread.id).catch(() => null) : Promise.resolve(null);
+  // 第五步：老师同意过的做法卡（学生的这类任务才放）和网页模板（做网页时可选），和别的上下文一起读
+  const practicePromise: Promise<PracticeCard[]> = userRole === 'student'
+    ? activeCards(String(thread.course_id)).then(cards => cardsFor(cards, taskKind(content))).catch(() => [])
+    : Promise.resolve([]);
+  const templatesPromise: Promise<PageTemplate[]> = makerOn ? listTemplates(String(thread.course_id)).catch(() => BUILTIN_TEMPLATES) : Promise.resolve([]);
 
   const agentContext = freeAsk ? {
     systemPrompt: [buildFreeAskSystemPrompt({ title: note.title, text: stripHtml(note.content).slice(0, 6000) }), studentContext].filter(Boolean).join('\n\n'),
@@ -1278,16 +1308,12 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
   }
 
   const toolContext = agentContext.toolContext;
-  let fullReply = '';
-  const allToolCalls: Array<{ id: string; name: string }> = [];
   const allToolsUsed = new Set<string>();
-  let agentIterations = 0;
-  let continuations = 0;
-  let truncated = false;
   // 每一步的结果和用时，推给学生（AgentProcess），也存进回答里
   const toolSteps: ToolStep[] = [];
-  const toolStartedAt = new Map<string, number>();
   const summaryLang = detectQuestionLanguage(content);
+  // 这一轮的运行记录（agent_runs / agent_effects），回答发完再写库
+  const trace = new AgentTrace({ userId: req.user!.id, courseId: thread.course_id, surface: 'note', conversationId: thread.id, title: content.trim().slice(0, 80) });
 
   const keepaliveTimer2 = setInterval(() => {
     try { res.write(': keepalive\n\n'); } catch {}
@@ -1295,7 +1321,6 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
 
   try {
     const kb = await announceKbRetrieval(sseSender(res), kbRun, toolSteps, allToolsUsed, zhQuestion);
-    let sentSources = kb?.citations.sources.length ?? 0;
     const baseMessages = agentContext.messages.map((m) => ({
       role: m.role,
       content: m.content,
@@ -1319,72 +1344,62 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
     }
 
     const lengthPlan = await lengthPlanPromise;
-    const stream = runAgentLoopStream({
-      providerId: provider_id,
-      model: effectiveModel,
-      apiKey,
-      endpointUrl: config.endpoint_url ?? null,
+    const makerMemory = await makerMemoryPromise;
+    const [practiceCards, pageTemplates] = await Promise.all([practicePromise, templatesPromise]);
+    if (practiceCards.length) trace.record('practice_cards', { ids: practiceCards.map(c => c.id), kind: taskKind(content) });
+    // 学生在选项卡上选了一个：记成「关键时刻」（学生能在「AI 记得什么」里看、删；关了记忆就不记）
+    if (studentChoice && userRole === 'student' && thread.course_id) {
+      const asked = makerMemory?.pendingQuestion;
+      void recordEpisode({
+        userId: req.user!.id, courseId: String(thread.course_id), type: 'choice',
+        content: choiceEpisodeText(studentChoice, asked && asked.id === studentChoice.questionId ? asked.question : null, zhQuestion),
+        source: { surface: 'note', thread_id: thread.id, question_id: studentChoice.questionId, ...(thread.note_id ? { note_id: thread.note_id } : {}) },
+      });
+    }
+    const turn = createTurnState({ emit: sseSender(res), surface: 'note', conversationId: thread.id });
+    // 跑循环、推事件、五个钩子、运行记录都在 harness 里（agentHarness.ts）；
+    // 笔记 AI 助手的模型是学生自己选的，出错不换别家（只在超时、限流时原样再试一次）
+    const turnResult = await runAgentTurn({
+      surface: 'note',
+      emit: sseSender(res),
+      trace,
+      role: userRole,
+      promptCheck,
+      candidates: [{ providerId: provider_id, model: effectiveModel, apiKey, endpointUrl: config.endpoint_url ?? null }],
+      failover: false,
+      messagesFor: () => withImages,
       systemPrompt: [
         agentContext.systemPrompt,
+        makerOn ? MAKER_RULES : '',
+        makerOn ? templatesSection(pageTemplates) : '',
+        practiceSection(practiceCards),
+        makerMemory ? makerMemorySection(makerMemory) : '',
         kb?.section ?? '',
         carriesImage ? IMAGE_TURN_RULES : '',
         lengthInstruction(lengthPlan),
       ].filter(Boolean).join('\n\n'),
-      messages: withImages,
       tools,
       // 智能体这一轮再查课程资料：查到的段落接着自动检索的编号往下编，来源卡片一起列
-      executeToolFn: (name, args) => agentRegistry.executeTool(name, args, kb ? { ...toolContext, kbCitations: kb.citations } : toolContext),
-      maxTokens: lengthPlan.maxTokens,
+      executeTool: (name, args) => agentRegistry.executeTool(name, args, {
+        ...toolContext,
+        surface: 'note',
+        conversationId: thread.id,
+        ...(kb ? { kbCitations: kb.citations } : {}),
+        ...(makerOn ? { turn } : {}),
+      }),
+      maxTokensFor: () => lengthPlan.maxTokens,
+      ...(makerOn ? { maxIterations: MAKER_MAX_ITERATIONS, totalTimeoutMs: MAKER_LOOP_TIMEOUT_MS } : {}),
+      kb,
+      turn: makerOn ? turn : null,
+      toolSteps,
+      toolsUsed: allToolsUsed,
+      summaryLang,
     });
-
-    for await (const event of stream) {
-      switch (event.type) {
-        case 'thinking':
-          res.write(`data: ${JSON.stringify({ reasoningStatus: 'thinking', reasoningChunk: event.content })}\n\n`);
-          break;
-        case 'tool_call':
-          allToolCalls.push({ id: event.toolCall.id, name: event.toolCall.function.name });
-          allToolsUsed.add(event.toolCall.function.name);
-          toolStartedAt.set(event.toolCall.function.name, Date.now());
-          res.write(`data: ${JSON.stringify({ toolStatus: 'running', toolName: event.toolCall.function.name })}\n\n`);
-          break;
-        case 'tool_result': {
-          const startedAt = toolStartedAt.get(event.toolName);
-          const ms = startedAt ? Date.now() - startedAt : undefined;
-          // 只推统计性摘要（几条、成没成），不复述内容
-          const summary = summarizeToolResult(event.toolName, event.result, summaryLang);
-          toolSteps.push({ name: event.toolName, summary, ...(ms != null ? { ms } : {}) });
-          res.write(`data: ${JSON.stringify({
-            toolStatus: 'used',
-            toolName: event.toolName,
-            toolNames: Array.from(allToolsUsed),
-            toolSummary: summary,
-            toolDurationMs: ms,
-          })}\n\n`);
-          // 又查到新的课程资料：来源卡片整份重发（编号接着自动检索的往下）
-          if (event.toolName === KB_STEP_NAME && kb && kb.citations.sources.length > sentSources) {
-            sentSources = kb.citations.sources.length;
-            res.write(`data: ${JSON.stringify({ kbSources: kb.citations.sources })}\n\n`);
-          }
-          break;
-        }
-        case 'token':
-          fullReply += event.content;
-          res.write(`data: ${JSON.stringify({ token: event.content })}\n\n`);
-          break;
-        case 'done':
-          agentIterations = event.result.iterations;
-          continuations = event.result.continuations ?? 0;
-          truncated = event.result.truncated === true;
-          break;
-        case 'error':
-          res.write(`data: ${JSON.stringify({ error: event.error })}\n\n`);
-          break;
-      }
-    }
-
-    const kbChecked = kb && fullReply.trim() ? await checkKbAnswer(fullReply, kb.citations) : null;
-    if (kbChecked) res.write(`data: ${JSON.stringify({ kbSources: kbChecked.sources })}\n\n`);
+    const fullReply = turnResult.reply;
+    const allToolCalls = turnResult.toolCalls;
+    const agentIterations = turnResult.iterations;
+    const { continuations, truncated, endedByTool, kbChecked } = turnResult;
+    const answerCheck = answerCheckMetadata(turnResult.answerCheck);
 
     const { data: assistantMessage, error: assistantError } = await supabase
       .from('note_conversation_messages')
@@ -1410,6 +1425,14 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
           toolsUsed: Array.from(allToolsUsed),
           tools_used: Array.from(allToolsUsed),
           tool_calls: allToolCalls,
+          // 计划清单、选项卡、做好的网页（agentMaker）；回看历史时照样显示
+          ...(makerOn ? turnMetadata(turn) : {}),
+          ...(endedByTool ? { ended_by: endedByTool } : {}),
+          // 运行记录的 id、回答结束时检查出了什么（harness）
+          run_id: trace.runId,
+          ...(answerCheck ? { answer_check: answerCheck } : {}),
+          // 放进提示词的做法卡（第五步，试用时按这个算接住率）
+          ...(practiceCards.length ? { practice_cards: practiceCards.map(c => c.id) } : {}),
         },
       })
       .select('*')
@@ -1417,17 +1440,18 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
     if (assistantError) throw new ApiError(500, assistantError.message);
 
     await supabase.from('note_conversation_threads').update({ provider_id, model }).eq('id', thread.id);
-    await supabase.from('ai_interventions').insert({
+    const { error: interventionErr } = await supabase.from('ai_interventions').insert({
       space_id: thread.space_id,
       note_id: thread.note_id,
       user_id: req.user!.id,
       trigger_type: 'note_conversation_agent_loop',
       provider_id,
-      model_name: effectiveModel,
+      model_full_name: effectiveModel,
       input_context_summary: content.slice(0, 200),
       response_text: fullReply.slice(0, 500),
       visibility_scope: 'private',
     });
+    if (interventionErr) console.error('[ai_interventions] note_conversation_agent_loop insert failed:', interventionErr.message);
     await logConversationEvent(req, 'ai_agent_message_sent', assistantMessage.id, thread.space_id, {
       thread_id: thread.id,
       note_id: thread.note_id,
@@ -1438,6 +1462,16 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
       agent_mode: freeAsk ? 'free_ask' : normalizedAgentMode,
       agent_iterations: agentIterations,
       tools_used: Array.from(allToolsUsed),
+      // 研究编码用：这一轮列了几步计划、有没有停下来让学生选、学生上一轮选了什么、做了哪些网页
+      ...(makerOn ? {
+        plan_steps: turn.plan?.steps.length ?? 0,
+        asked_choice: Boolean(turn.question),
+        artifact_ids: turn.artifacts.map(a => a.id),
+      } : {}),
+      ...(studentChoice ? { student_choice: studentChoice } : {}),
+      run_id: trace.runId,
+      prompt_intent: promptCheck.intent,
+      ...(answerCheck ? { answer_check: answerCheck } : {}),
     });
 
     if (userRole === 'student') {
@@ -1457,11 +1491,18 @@ router.post('/note-conversations/:threadId/ai/agent-stream', verifyJWT, async (r
     res.write('data: [DONE]\n\n');
     clearInterval(keepaliveTimer2);
     res.end();
+    void trace.persist({
+      status: fullReply.trim() ? 'applied' : 'failed',
+      output: { message_id: assistantMessage.id, reply_chars: fullReply.length, ...(endedByTool ? { ended_by: endedByTool } : {}) },
+      metadata: { provider_id: turnResult.used.providerId, model: turnResult.used.model, message_id: assistantMessage.id, ...(turnResult.usage ? { usage: turnResult.usage } : {}) },
+    });
   } catch (err: any) {
+    trace.record('error', { message: String(err?.message ?? 'Agent stream error').slice(0, 300), stage: 'route' });
     res.write(`data: ${JSON.stringify({ error: err.message ?? 'Agent stream error' })}\n\n`);
     res.write('data: [DONE]\n\n');
     clearInterval(keepaliveTimer2);
     res.end();
+    void trace.persist({ status: 'failed' });
   }
 });
 

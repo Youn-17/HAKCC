@@ -46,6 +46,10 @@ const ZH: Record<string, (n: number | null, d: unknown) => string> = {
   generate_image: () => '生成了 1 张图',
   class_analytics: () => '统计完成',
   export_notes: n => (n ? `导出 ${n} 条` : '导出完成'),
+  update_plan: (_n, d) => (isRecord(d) && typeof d.steps === 'number' ? `${d.steps} 步` : '计划已更新'),
+  ask_choice: () => '等你选',
+  create_artifact: (_n, d) => (isRecord(d) && typeof d.title === 'string' ? `做好了《${d.title}》` : '网页做好了'),
+  revise_artifact: (_n, d) => (isRecord(d) && typeof d.version === 'number' ? `改好了，第 ${d.version} 版` : '改好了'),
 };
 
 const EN: Record<string, (n: number | null, d: unknown) => string> = {
@@ -61,6 +65,10 @@ const EN: Record<string, (n: number | null, d: unknown) => string> = {
   generate_image: () => '1 image',
   class_analytics: () => 'computed',
   export_notes: n => (n ? `${n} exported` : 'exported'),
+  update_plan: (_n, d) => (isRecord(d) && typeof d.steps === 'number' ? `${d.steps} steps` : 'plan updated'),
+  ask_choice: () => 'waiting for your choice',
+  create_artifact: (_n, d) => (isRecord(d) && typeof d.title === 'string' ? `built "${d.title}"` : 'page built'),
+  revise_artifact: (_n, d) => (isRecord(d) && typeof d.version === 'number' ? `revised, version ${d.version}` : 'revised'),
 };
 
 /**

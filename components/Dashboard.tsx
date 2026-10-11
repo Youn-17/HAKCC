@@ -3,13 +3,10 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspens
 import { useLocation, useNavigate } from 'react-router-dom';
 import { UserRole, Course, Language } from '../types';
 import {
-  Search, Bell, ChevronDown, BookOpen, Users, FileText, Plus, X,
-  ArrowLeft,
-  Filter, List, User, LogOut, Settings, LayoutGrid, Globe,
-  TrendingUp, Clock, AlertCircle, CheckCircle, CheckCircle2, BarChart3, Activity,
-  GraduationCap, Layers, Cpu, Key, ToggleLeft, ToggleRight, RefreshCw, Trash2, Eye,
-  Bot, BrainCircuit, Sparkles, Waves, MoonStar, Orbit, Binary, Waypoints,
-  MessageSquareCode, Atom, type LucideIcon
+  Search, Bell, ChevronDown, BookOpen, Users, FileText, Plus, X, ArrowLeft, Filter, List, User,
+  LogOut, Settings, LayoutGrid, Globe, TrendingUp, Clock, AlertCircle, CheckCircle, CheckCircle2,
+  BarChart3, Activity, GraduationCap, Layers, Cpu, RefreshCw, BrainCircuit, Sparkles,
+  type LucideIcon
 } from 'lucide-react';
 import {
   courses as coursesApi,
@@ -17,9 +14,6 @@ import {
   auth as authApi,
   AuthUser,
   ai as aiApi,
-  ApiAIConfig,
-  ApiClientError,
-  TriggerSettings,
   AttentionItem,
   FeedbackReviewStats,
   FeedbackReviewItem,
@@ -36,8 +30,6 @@ import {
   LearnerProfileSummary,
   MyLearningInsights,
   type StudentAnalytics,
-  aiModels,
-  type AiModelCatalog,
   courseSessions,
   type CourseType,
   type ScheduleSlot,
@@ -56,13 +48,12 @@ import RemixIcon from './RemixIcon';
 import { canManageCourse } from './courseStanding';
 import { buildStudentOverviewModel, buildTeacherOverviewModel } from './dashboard/overviewModel';
 import { buildTeacherKpiCards, getDashboardHeroMeta, getRoleDashboardTabs, getTeacherDashboardTabs, type DashboardTabId } from './dashboard/teacherDashboardConfig';
-import { gsap, prepareForMotion, shouldReduceMotion, useGSAP } from '../utils/gsapMotion';
+import { useEnterMotion } from '../hooks/useEnterMotion';
 import DashboardSidebar from './dashboard/DashboardSidebar';
 import NotificationBell from './dashboard/NotificationBell';
 import { SparklineKpiCard, WeeklyActivityChart, FeedbackDonutChart, EngagementHeatmap, DashboardTopBar, useActivityPulse } from './dashboard/LearningCharts';
 import { BentoGrid, HeroTile, KpiTile, StatusTile, CourseStrip, QuickAction } from './dashboard/BentoGrid';
 import StudentHelpDesk from './dashboard/StudentHelpDesk';
-import AiFeatureModelsPanel from './dashboard/AiFeatureModelsPanel';
 import UserAvatar from './UserAvatar';
 import CourseTitleEditor from './dashboard/CourseTitleEditor';
 import ProfileSettingsCard from './dashboard/ProfileSettingsCard';
@@ -77,6 +68,7 @@ const CodingDojo = lazy(() => import('./CodingDojo'));
 // Teacher-only research suite (~5.6k lines incl. ResearchViz/ResearchAdvanced) —
 // lazy so students never download it.
 const ResearchZone = lazy(() => import('./dashboard/ResearchZone'));
+const AiSettingsPage = lazy(() => import('./dashboard/aiSettings/AiSettingsPage'));
 const QualitativeCoding = lazy(() => import('./dashboard/QualitativeCoding'));
 
 interface DashboardProps {
@@ -249,6 +241,7 @@ const CourseCard: React.FC<{ course: Course; role: UserRole; onClick: () => void
       tabIndex={0}
       role="button"
       aria-label={`Enter course: ${course.title}`}
+      data-enter-item
       className="gsap-course-card group rounded-xl transition-[box-shadow,transform] duration-200 cursor-pointer border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col h-[178px] bg-white dark:bg-gray-950 hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[#000080]/30"
       style={{ width: '100%' }}
     >
@@ -328,683 +321,6 @@ const CourseCard: React.FC<{ course: Course; role: UserRole; onClick: () => void
         </div>
       </div>
     </div>
-  );
-};
-
-// --- New Component: Teacher AI Settings ---
-type ProviderMeta = {
-  id: string;
-  name: string;
-  nameZh: string;
-  icon: LucideIcon;
-  models: string[];
-  summaryEn: string;
-  summaryZh: string;
-};
-
-const ALL_PROVIDERS: ProviderMeta[] = [
-  { id: 'openai', name: 'OpenAI', nameZh: 'ChatGPT', icon: Bot, models: ['gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'], summaryEn: 'General-purpose reasoning and assistant workflows.', summaryZh: '通用推理与课程助手工作流。' },
-  { id: 'anthropic', name: 'Anthropic', nameZh: 'Claude', icon: BrainCircuit, models: ['claude-opus-4-6', 'claude-haiku-4-5-20251001'], summaryEn: 'Long-form explanation and careful instructional feedback.', summaryZh: '长文本解释与审慎教学反馈。' },
-  { id: 'google', name: 'Google', nameZh: 'Gemini', icon: Sparkles, models: ['gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'], summaryEn: 'Fast multimodal support for classroom exploration.', summaryZh: '适合课堂探索的快速多模态支持。' },
-  { id: 'deepseek', name: 'DeepSeek', nameZh: 'DeepSeek', icon: Waves, models: ['deepseek-flash', 'deepseek-v4-pro'], summaryEn: 'Reasoning-heavy workflows with concise outputs.', summaryZh: '偏推理型工作流，输出克制清晰。' },
-  { id: 'dmx', name: 'DMXAPI', nameZh: 'DMXAPI 聚合', icon: Waypoints, models: ['glm-5.3', 'glm-5.3-flash', 'kimi-k3', 'deepseek-v4-pro', 'deepseek-v4-flash', 'gpt-5.5', 'claude-opus-4-6', 'glm-4.6v'], summaryEn: 'One aggregator key for automatic routing across major model families.', summaryZh: '一个聚合 Key，支持课程 AI 根据任务自动选择不同模型。' },
-  { id: 'moonshot', name: 'Moonshot', nameZh: 'Kimi', icon: MoonStar, models: ['kimi-k3'], summaryEn: 'Long-context synthesis for reading-intensive courses.', summaryZh: '适合阅读密集课程的长上下文综合。' },
-  { id: 'doubao', name: 'Doubao', nameZh: '豆包', icon: MessageSquareCode, models: ['doubao-pro-4k', 'doubao-pro-32k'], summaryEn: 'Conversation-first support for lightweight teaching tasks.', summaryZh: '适合轻量教学任务的对话支持。' },
-  { id: 'xai', name: 'xAI', nameZh: 'Grok', icon: Orbit, models: ['grok-2', 'grok-beta'], summaryEn: 'Fast conversational ideation and alternative viewpoints.', summaryZh: '快速对话式发想与观点补充。' },
-  { id: 'baidu', name: 'Baidu', nameZh: '文心一言', icon: Binary, models: ['ernie-4.0-8k', 'ernie-3.5-8k', 'ernie-speed-8k'], summaryEn: 'Domestic-language support for CN-first classrooms.', summaryZh: '更适合中文优先课堂的本地化支持。' },
-  { id: 'alibaba', name: 'Alibaba', nameZh: '通义千问', icon: Atom, models: ['qwen3.8-max', 'qwen3.6-plus', 'qwen3.8-flash', 'qwen3-vl-plus'], summaryEn: 'Balanced generation quality with broad model options.', summaryZh: '质量与模型选择较均衡的方案。' },
-  { id: 'zhipu', name: 'ZhiPu', nameZh: '智谱清言', icon: Waypoints, models: ['glm-5.3', 'glm-5.2', 'glm-4.7', 'glm-4.6', 'glm-5.3-flash', 'glm-4.5-air', 'glm-4.6v', 'glm-4.5v'], summaryEn: 'GLM models with native function calling. GLM-5V-Turbo supports multimodal coding.', summaryZh: '智谱 GLM 系列，原生支持工具调用。GLM-5V-Turbo 支持多模态视觉编程。' },
-  { id: 'openrouter', name: 'OpenRouter', nameZh: 'OpenRouter', icon: Globe, models: ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'google/gemini-pro'], summaryEn: 'Centralized routing across multiple model families.', summaryZh: '统一路由多家模型服务。' },
-  { id: 'minimax', name: 'MiniMax', nameZh: 'MiniMax 海螺', icon: Waves, models: ['MiniMax-Text-01', 'MiniMax-M2.7', 'abab6.5s-chat'], summaryEn: 'Native key for fast image generation (image-01) and speech synthesis, without routing through an aggregator.', summaryZh: '自有 Key，直连生图（image-01）与语音合成，不经聚合商中转，比 DMX 快很多。' },
-  { id: 'tavily', name: 'Tavily', nameZh: 'Tavily 网页搜索', icon: Search, models: [], summaryEn: 'Course-level web evidence search for the AI partner. The key stays server-side.', summaryZh: '为课程 AI 助手提供网页证据检索能力，密钥只保存在后端。' },
-];
-
-const TeacherAISettings: React.FC<{ lang: Language; courseId: string; courses?: Course[] }> = ({ lang, courseId: initialCourseId, courses = [] }) => {
-  const [activeCourseId, setActiveCourseId] = useState(initialCourseId);
-  const courseId = activeCourseId || initialCourseId;
-  const [configuredIds, setConfiguredIds] = useState<Set<string>>(new Set());
-  const [editingProvider, setEditingProvider] = useState<typeof ALL_PROVIDERS[0] | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [endpointUrlInput, setEndpointUrlInput] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [loadingConfigs, setLoadingConfigs] = useState(true);
-  const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  /**
-   * 可选模型从后端 /ai/model-catalog 取，不再在前端写死一份。
-   * 写死的那份和后端漂移过：默认启用列表里躺着 DMX 早就下线的 claude-sonnet-4-5，
-   * 学生点一次失败一次，表现出来就是「AI 时好时坏」。
-   */
-  const [catalog, setCatalog] = useState<AiModelCatalog | null>(null);
-  useEffect(() => { aiModels.catalog().then(setCatalog).catch(() => setCatalog(null)); }, []);
-
-  const providerModels = useMemo(() => {
-    if (!editingProvider) return [] as { id: string; label: string; note?: string }[];
-    if (!catalog) return editingProvider.models.map(id => ({ id, label: id }));
-    if (editingProvider.id === 'dmx' || editingProvider.id === 'dmxapi') {
-      return [...catalog.dmx.text, ...catalog.dmx.vision];
-    }
-    const native = catalog.native[editingProvider.id];
-    return native?.length ? native : editingProvider.models.map(id => ({ id, label: id }));
-  }, [editingProvider, catalog]);
-  const [customModelInput, setCustomModelInput] = useState('');
-
-  // Load existing configs from backend
-  useEffect(() => {
-    if (!courseId) return;
-    setLoadingConfigs(true);
-    aiApi.listConfigs(courseId)
-      .then(({ configs }) => {
-        setConfiguredIds(new Set(configs.map(c => c.providerId)));
-      })
-      .catch(() => {})
-      .finally(() => setLoadingConfigs(false));
-  }, [courseId]);
-
-  // Labels
-  const lbl = lang === 'zh' ? {
-    title: 'AI 集成设置',
-    desc: '配置并管理您的 AI API 密钥。这些密钥仅用于您的课程，不会与其他教师共享。',
-    addKey: '添加 API 密钥',
-    configured: '已配置',
-    unconfigured: '未配置',
-    verify: '验证并保存',
-    verifying: '验证中...',
-    endpointUrl: 'Endpoint URL（可选）',
-    endpointHint: 'DMX 默认使用 https://www.dmxapi.cn/v1/chat/completions；COM/SSVIP 令牌请填写对应站点。',
-    cancel: '取消',
-    reconfig: '重新配置',
-    remove: '移除',
-    enterKey: '请输入 API Key…',
-    success: '配置成功！API Key 已验证。',
-    failed: '验证失败，请检查 API Key 是否正确。',
-    supportedModels: '支持模型: ',
-    selectModels: '选择启用的模型',
-    noCourse: '请先创建一个课程，然后再配置 AI 提供商。',
-  } : {
-    title: 'AI Integration Settings',
-    desc: 'Configure and manage your AI API keys. These are private to your courses.',
-    addKey: 'Add API Key',
-    configured: 'Configured',
-    unconfigured: 'Not Configured',
-    verify: 'Verify & Save',
-    verifying: 'Verifying...',
-    endpointUrl: 'Endpoint URL (optional)',
-    endpointHint: 'DMX defaults to https://www.dmxapi.cn/v1/chat/completions; use the matching COM/SSVIP endpoint when needed.',
-    cancel: 'Cancel',
-    reconfig: 'Reconfigure',
-    remove: 'Remove',
-    enterKey: 'Enter API Key…',
-    success: 'Configuration saved! API key verified.',
-    failed: 'Verification failed. Please check your API key.',
-    supportedModels: 'Supported Models: ',
-    selectModels: 'Select enabled models',
-    noCourse: 'Please create a course first before configuring AI providers.',
-  };
-
-  const handleSaveKey = async () => {
-    if (!editingProvider || !courseId) return;
-    setIsVerifying(true);
-
-    try {
-      const { verified } = await aiApi.saveConfig(courseId, {
-        provider_id: editingProvider.id,
-        api_key: apiKeyInput,
-        endpoint_url: endpointUrlInput.trim() || undefined,
-        enabled_models: selectedModels.length > 0 ? selectedModels : providerModels.map(m => m.id),
-      });
-
-      if (verified) {
-        setConfiguredIds(prev => new Set([...prev, editingProvider.id]));
-        setEditingProvider(null);
-        setApiKeyInput('');
-        setEndpointUrlInput('');
-        setSelectedModels([]);
-        setCustomModelInput('');
-        alert(lbl.success);
-      } else {
-        // Saved but not verified — still mark as configured
-        setConfiguredIds(prev => new Set([...prev, editingProvider.id]));
-        setEditingProvider(null);
-        setApiKeyInput('');
-        setEndpointUrlInput('');
-        setSelectedModels([]);
-        setCustomModelInput('');
-        alert(lang === 'zh' ? '已保存，但连通性验证未通过。请检查 API Key。' : 'Saved, but connectivity check failed. Please verify your API key.');
-      }
-    } catch (e: any) {
-      alert(lbl.failed + (e?.message ? `\n${e.message}` : ''));
-    } finally {
-      setIsVerifying(false);
-    }
-  };
-
-  const handleRemove = async (providerId: string) => {
-    if (!courseId) return;
-    const confirmed = confirm(lang === 'zh' ? '确定要移除此 AI 配置吗？' : 'Remove this AI configuration?');
-    if (!confirmed) return;
-    try {
-      await aiApi.deleteConfig(courseId, providerId);
-      setConfiguredIds(prev => { const n = new Set(prev); n.delete(providerId); return n; });
-    } catch { /* ignore */ }
-  };
-
-  if (!courseId) {
-    return (
-      <section className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <div className="rounded-[20px] border border-stone-200 dark:border-stone-800 bg-stone-50/90 dark:bg-stone-950 p-4 flex items-start gap-3">
-          <div className="rounded-full bg-amber-100 dark:bg-amber-500/10 p-2 text-amber-700 dark:text-amber-300">
-            <AlertCircle size={18} className="mt-0.5" />
-          </div>
-          <p className="text-sm leading-6 text-stone-700 dark:text-stone-200">{lbl.noCourse}</p>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Cpu size={15} className="text-[#000080] dark:text-[#93AAFD]" />
-              <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{lbl.title}</h3>
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xl">{lbl.desc}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3.5 py-2 text-center">
-            <div className="text-[0.6875rem] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-              {lang === 'zh' ? '已配置' : 'Configured'}
-            </div>
-            <div className="text-xl font-semibold text-gray-900 dark:text-gray-100">{configuredIds.size}</div>
-          </div>
-       </div>
-
-       {/* Course selector (when teacher has multiple courses) */}
-       {courses.length > 1 && (
-	     <div className="mb-5">
-           <label className="mb-2 block text-[0.6875rem] font-semibold uppercase tracking-[0.24em] text-stone-500 dark:text-stone-400">
-             {lang === 'zh' ? '选择课程' : 'Select Course'}
-           </label>
-           <select
-             className="w-full max-w-md rounded-xl border border-stone-200 dark:border-stone-700 bg-white/90 dark:bg-stone-950 px-4 py-2.5 text-sm text-stone-800 dark:text-stone-100 outline-none transition-colors focus:border-stone-400 focus:ring-2 focus:ring-stone-300/70 dark:focus:border-stone-500 dark:focus:ring-stone-700"
-             value={courseId}
-             onChange={e => { setActiveCourseId(e.target.value); setConfiguredIds(new Set()); setLoadingConfigs(true); }}
-           >
-             {courses.map(c => (
-               <option key={c.id} value={c.id}>{c.title}</option>
-             ))}
-           </select>
-         </div>
-       )}
-
-       {loadingConfigs ? (
-         <div className="rounded-[20px] border border-stone-200 dark:border-stone-800 bg-white/80 dark:bg-stone-950 px-5 py-8 text-center text-stone-500 dark:text-stone-400">
-           <RefreshCw size={20} className="animate-spin inline mr-2" />{lang === 'zh' ? '加载中…' : 'Loading…'}
-         </div>
-       ) : (
-       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-          {ALL_PROVIDERS.map(p => {
-            const isConfigured = configuredIds.has(p.id);
-            const ProviderIcon = p.icon;
-            return (
-            <div key={p.id} className={`rounded-xl border p-4 flex flex-col justify-between transition-colors ${isConfigured ? 'border-[#000080]/20 dark:border-[#4169E1]/20 bg-white dark:bg-gray-950' : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 hover:border-gray-300 dark:hover:border-gray-700'}`}>
-               <div>
-	                 <div className="mb-3 flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-	                       <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 text-stone-700 dark:text-stone-200">
-	                         <ProviderIcon size={18} />
-                       </div>
-                       <div>
-                         <div className="font-semibold text-stone-900 dark:text-stone-100">{lang === 'zh' ? p.nameZh : p.name}</div>
-                         <div className="mt-1 text-[0.6875rem] uppercase tracking-[0.2em] text-stone-400 dark:text-stone-500">{p.id}</div>
-                       </div>
-                    </div>
-                    {isConfigured ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 text-[0.6875rem] font-semibold text-emerald-700 dark:text-emerald-400"><CheckCircle size={10}/> {lbl.configured}</span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 px-2 py-0.5 text-[0.6875rem] font-semibold text-gray-500 dark:text-gray-400">{lbl.unconfigured}</span>
-                    )}
-                 </div>
-	                 <p className="mb-3 text-sm leading-6 text-stone-600 dark:text-stone-300">
-                   {lang === 'zh' ? p.summaryZh : p.summaryEn}
-                 </p>
-	                 <div className="mb-4 text-xs text-stone-500 dark:text-stone-400">
-                    {p.models.length > 0 ? (
-                      <>
-                        <span className="font-semibold">{lbl.supportedModels}</span>
-                        {p.models.slice(0, 2).join(', ')}{p.models.length > 2 && '…'}
-                      </>
-                    ) : (
-                      <span className="font-semibold">
-                        {lang === 'zh' ? '能力：课程级网页证据检索' : 'Capability: course-level web evidence search'}
-                      </span>
-                    )}
-                 </div>
-               </div>
-
-               <div className="mt-2 flex gap-2">
-                 {isConfigured ? (
-                   <>
-	                     <button onClick={() => { setEditingProvider(p); setApiKeyInput(''); setEndpointUrlInput(''); setSelectedModels([]); }} className="min-h-[40px] flex-1 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-900 px-3.5 py-2 text-xs font-semibold text-stone-700 dark:text-stone-200 transition-colors hover:bg-stone-200 dark:hover:bg-stone-800">{lbl.reconfig}</button>
-	                     <button onClick={() => handleRemove(p.id)} aria-label={lang === 'zh' ? '移除配置' : 'Remove configuration'} className="min-h-[40px] rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-950 px-3 py-2 text-stone-500 dark:text-stone-300 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-500/30 dark:hover:bg-red-500/10"><Trash2 size={14}/></button>
-                   </>
-                 ) : (
-                   <button
-                     onClick={() => { setEditingProvider(p); setApiKeyInput(''); setEndpointUrlInput(''); setSelectedModels([]); }}
-	                     className="min-h-[40px] w-full rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-50 transition-colors hover:bg-stone-700 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-stone-300 flex items-center justify-center gap-2"
-                   >
-                     <Plus size={14}/> {lbl.addKey}
-                   </button>
-                 )}
-               </div>
-            </div>
-          );})}
-       </div>
-       )}
-
-       {/* API Key Modal */}
-       {editingProvider && (
-         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4">
-            <div className="w-full max-w-md rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-6 shadow-lg animate-in zoom-in-95 duration-200">
-               <h3 className="mb-5 flex items-center gap-3 text-base font-semibold text-gray-900 dark:text-gray-100">
-                 <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-200">
-                   <editingProvider.icon size={16} />
-                 </div>
-                 {lang === 'zh' ? '配置 ' + editingProvider.nameZh : 'Configure ' + editingProvider.name}
-               </h3>
-               <div className="mb-4">
-                 <label className="mb-2 block text-[0.6875rem] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">API Key</label>
-                 <input
-                   type="password"
-                   value={apiKeyInput}
-                   onChange={(e) => setApiKeyInput(e.target.value)}
-                   placeholder={lbl.enterKey}
-                   className="w-full rounded-2xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-900 p-3 font-mono text-sm text-stone-900 dark:text-stone-100 outline-none transition-colors focus:border-stone-400 focus:ring-2 focus:ring-stone-300/70 dark:focus:border-stone-500 dark:focus:ring-stone-700"
-                 />
-               </div>
-               <div className="mb-4">
-                 <label className="mb-2 block text-[0.6875rem] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">{lbl.endpointUrl}</label>
-                 <input
-                   type="url"
-                   value={endpointUrlInput}
-                   onChange={(e) => setEndpointUrlInput(e.target.value)}
-                   placeholder={editingProvider.id === 'dmx' || editingProvider.id === 'dmxapi' ? 'https://www.dmxapi.cn/v1/chat/completions' : editingProvider.id === 'zhipu' ? 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions' : 'https://.../v1/chat/completions'}
-                   className="w-full rounded-2xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-900 p-3 font-mono text-xs text-stone-900 dark:text-stone-100 outline-none transition-colors focus:border-stone-400 focus:ring-2 focus:ring-stone-300/70 dark:focus:border-stone-500 dark:focus:ring-stone-700"
-                 />
-                 <p className="mt-2 text-[0.6875rem] leading-5 text-stone-400 dark:text-stone-500">
-                   {editingProvider.id === 'zhipu'
-                     ? (lang === 'zh'
-                       ? 'Coding Plan 订阅请填写 https://open.bigmodel.cn/api/coding/paas/v4/chat/completions，走订阅额度而非 token 余额。留空则使用普通 API。'
-                       : 'For Coding Plan subscriptions, use https://open.bigmodel.cn/api/coding/paas/v4/chat/completions to consume plan quota instead of token balance. Leave empty for standard API.')
-                     : lbl.endpointHint}
-                 </p>
-               </div>
-               {providerModels.length > 0 ? (
-                 <div className="mb-4">
-                   <label className="mb-2 block text-[0.6875rem] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">{lbl.selectModels}</label>
-                   <div className="flex flex-wrap gap-2">
-                     {editingProvider.models.map(m => (
-                       <button
-                         key={m}
-                         onClick={() => setSelectedModels(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])}
-                         className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                           selectedModels.includes(m) || selectedModels.length === 0
-                             ? 'bg-stone-900 text-stone-50 border-stone-900 dark:bg-stone-100 dark:text-stone-950 dark:border-stone-100'
-                             : 'bg-stone-50 dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-stone-200 dark:border-stone-700'
-                         }`}
-                       >
-                         {m}
-                       </button>
-                     ))}
-                   </div>
-                   <p className="mt-2 text-[0.6875rem] text-stone-400 dark:text-stone-500">{lang === 'zh' ? '不选择则启用全部模型' : 'Leave empty to enable all models'}</p>
-                   <div className="mt-3 flex gap-2">
-                     <input
-                       type="text"
-                       value={customModelInput}
-                       onChange={(e) => setCustomModelInput(e.target.value)}
-                       aria-label={lang === 'zh' ? '自定义模型 ID' : 'Custom model ID'}
-                       placeholder={lang === 'zh' ? '输入自定义模型 ID，如 glm-5.2' : 'Custom model ID, e.g. glm-5.2'}
-                       className="flex-1 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-900 px-3 py-1.5 font-mono text-xs text-stone-900 dark:text-stone-100 outline-none focus:border-stone-400 dark:focus:border-stone-500"
-                       onKeyDown={(e) => {
-                         if (e.key === 'Enter' && customModelInput.trim()) {
-                           const m = customModelInput.trim();
-                           if (!selectedModels.includes(m)) setSelectedModels(prev => [...prev, m]);
-                           setCustomModelInput('');
-                         }
-                       }}
-                     />
-                     <button
-                       type="button"
-                       disabled={!customModelInput.trim()}
-                       onClick={() => {
-                         const m = customModelInput.trim();
-                         if (m && !selectedModels.includes(m)) setSelectedModels(prev => [...prev, m]);
-                         setCustomModelInput('');
-                       }}
-                       className="rounded-xl bg-stone-200 dark:bg-stone-700 px-3 py-1.5 text-xs font-medium text-stone-700 dark:text-stone-200 transition-colors hover:bg-stone-300 dark:hover:bg-stone-600 disabled:opacity-40"
-                     >
-                       {lang === 'zh' ? '添加' : 'Add'}
-                     </button>
-                   </div>
-                 </div>
-               ) : (
-                 <div className="mb-4 rounded-2xl border border-sky-100 bg-sky-50/80 p-3 text-xs leading-5 text-slate-600 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-slate-300">
-                   {lang === 'zh'
-                     ? '保存后，这门课程的 AI 助手会出现“网页证据”能力。学生不会看到 API Key，也不能单独调用 Tavily。'
-                     : 'After saving, this course AI partner gains a web evidence capability. Students never see the API key or call Tavily directly.'}
-                 </div>
-               )}
-               <div className="flex gap-3">
-                 <button onClick={() => { setEditingProvider(null); setEndpointUrlInput(''); }} className="min-h-[44px] flex-1 rounded-2xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-900 py-2.5 text-sm font-semibold text-stone-700 dark:text-stone-200 transition-colors hover:bg-stone-200 dark:hover:bg-stone-800">{lbl.cancel}</button>
-                 <button
-                   onClick={handleSaveKey}
-                   disabled={isVerifying || !apiKeyInput}
-                   className="min-h-[44px] flex-1 rounded-2xl bg-stone-900 py-2.5 text-sm font-semibold text-stone-50 disabled:opacity-50 transition-colors hover:bg-stone-700 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-stone-300 flex items-center justify-center gap-2"
-                 >
-                   {isVerifying ? <RefreshCw size={16} className="animate-spin"/> : <Key size={16}/>}
-                   {isVerifying ? lbl.verifying : lbl.verify}
-                 </button>
-               </div>
-            </div>
-         </div>
-       )}
-    </section>
-  );
-};
-
-// --- Teacher Trigger Settings Panel ---
-const TRIGGER_TYPE_META: { id: string; labelEn: string; labelZh: string; descEn: string; descZh: string }[] = [
-  { id: 'undigested_ai', labelEn: 'Undigested AI (T1)', labelZh: '未消化的 AI 内容 (T1)', descEn: 'Detects pasted AI output without student voice', descZh: '检测学生未加工的 AI 粘贴内容' },
-  { id: 'no_reasoning', labelEn: 'No Reasoning (T2)', labelZh: '缺少推理 (T2)', descEn: 'Opinion stated without explanation', descZh: '有观点但无推理过程' },
-  { id: 'no_evidence', labelEn: 'No Evidence (T3)', labelZh: '缺少证据 (T3)', descEn: 'Claim without supporting evidence', descZh: '知识主张缺少证据支撑' },
-  { id: 'no_connection', labelEn: 'No Connection (T4)', labelZh: '缺少关联 (T4)', descEn: 'Ideas listed without connections', descZh: '要点罗列但未建立联系' },
-  { id: 'promising_seed', labelEn: 'Promising Seed (T5)', labelZh: '有潜力的想法 (T5)', descEn: 'Good idea that could go deeper (positive)', descZh: '有潜力但可进一步深化（正面触发）' },
-  { id: 'unclear', labelEn: 'Unclear (T6)', labelZh: '表意不清 (T6)', descEn: 'Meaning unclear or genuine question', descZh: '含义不清或存在真实疑问' },
-];
-
-export const TriggerSettingsPanel: React.FC<{ lang: Language; courseId: string; courses?: Course[] }> = ({ lang, courseId: initialCourseId, courses = [] }) => {
-  const [activeCourseId, setActiveCourseId] = useState(initialCourseId);
-  const courseId = activeCourseId || initialCourseId;
-  const [settings, setSettings] = useState<TriggerSettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  // 保存结果要让教师看到。以前失败被吞掉，界面照样闪一下「已保存」
-  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // 触发设置存在服务商配置行上，一行都没有时保存必然 404
-  const [providerConfigured, setProviderConfigured] = useState(true);
-
-  useEffect(() => {
-    if (!courseId) return;
-    let alive = true;
-    setLoading(true);
-    setLoadError(null);
-    setSaveState('idle');
-    setSaveError(null);
-    aiApi.getTriggerSettings(courseId)
-      .then(({ settings: s, providerConfigured: configured }) => {
-        if (!alive) return;
-        setSettings(s);
-        setProviderConfigured(configured !== false);
-      })
-      .catch((err) => { if (alive) setLoadError(err instanceof Error ? err.message : String(err)); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [courseId]);
-
-  const save = async (patch: Partial<TriggerSettings>) => {
-    if (!courseId) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const { settings: updated } = await aiApi.updateTriggerSettings(courseId, patch);
-      setSettings(updated);
-      setProviderConfigured(true);
-      setSaveState('saved');
-    } catch (err) {
-      setSaveState('error');
-      if (err instanceof ApiClientError && err.status === 404) {
-        setProviderConfigured(false);
-        setSaveError(lang === 'zh'
-          ? '没有保存：这门课还没有配置 AI 服务商。请先在上方「AI 集成设置」里为这门课添加一个。'
-          : 'Not saved: this course has no AI provider yet. Add one for this course in "AI Integration Settings" above first.');
-      } else {
-        setSaveError(`${lang === 'zh' ? '没有保存：' : 'Not saved: '}${err instanceof Error ? err.message : String(err)}`);
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const lbl = lang === 'zh' ? {
-    title: 'AI 触发设置',
-    desc: '控制学生写笔记时 AI 自动反馈的行为。',
-    autoFeedback: '自动反馈（编辑时）',
-    viewTopics: '画布顶上滚动显示讨论主题',
-    viewTopicsHint: '问题后面滚动显示这个视图在讨论哪几个主题，由 AI 按笔记总结，笔记有变化时最快 3 分钟更新一次。实验的对照组看不到。',
-    enabledTriggers: '启用的触发类型',
-    cooldown: '冷却时间（秒）',
-    sensitivity: '灵敏度',
-    sensitivityOptions: { conservative: '保守', balanced: '平衡', aggressive: '积极' } as Record<string, string>,
-    customContext: '课程上下文提示',
-    customContextHint: '可选：为 AI 提供课程背景（如"本课程讨论计算思维"），帮助 AI 更好理解学生笔记。',
-    saved: '已保存',
-    noCourse: '请先创建课程。',
-    responseLang: 'AI 响应语言',
-    responseLangOptions: { auto: '自动', zh: '中文', en: 'English' } as Record<string, string>,
-    responseLangHint: '自动：跟学生笔记用的语言。选了中文或 English，反馈和随反馈给出的话头都用这种语言。',
-    maxLength: '最大反馈字数',
-    saving: '保存中…',
-    loadFailed: '触发设置没有加载成功：',
-    noProvider: '这门课还没有配置 AI 服务商：AI 反馈不会运行，这里的设置也保存不了。请先在上方「AI 集成设置」里为这门课添加一个服务商。',
-  } : {
-    title: 'AI Trigger Settings',
-    desc: 'Control how the AI gives automatic feedback while students write.',
-    autoFeedback: 'Auto-feedback (while editing)',
-    viewTopics: 'Rolling discussion topics above the canvas',
-    viewTopicsHint: 'After the question, the topics being discussed in the view roll past, summarised by the AI from the notes and refreshed at most every 3 minutes as notes change. The control group does not see them.',
-    enabledTriggers: 'Enabled trigger types',
-    cooldown: 'Cooldown (seconds)',
-    sensitivity: 'Sensitivity',
-    sensitivityOptions: { conservative: 'Conservative', balanced: 'Balanced', aggressive: 'Aggressive' } as Record<string, string>,
-    customContext: 'Course context hint',
-    customContextHint: 'Optional: provide course context for AI (e.g. "This course discusses computational thinking").',
-    saved: 'Saved',
-    noCourse: 'Please create a course first.',
-    responseLang: 'AI Response Language',
-    responseLangOptions: { auto: 'Auto-detect', zh: '中文', en: 'English' } as Record<string, string>,
-    responseLangHint: 'Auto-detect follows the language of the student\'s note. With 中文 or English, the feedback and the sentence starter that comes with it use that language.',
-    maxLength: 'Max Feedback Length',
-    saving: 'Saving…',
-    loadFailed: 'Trigger settings failed to load: ',
-    noProvider: 'This course has no AI provider yet: AI feedback will not run, and these settings cannot be saved. Add a provider for this course in "AI Integration Settings" above first.',
-  };
-
-  if (!courseId) return <p className="text-sm text-stone-500 dark:text-stone-400">{lbl.noCourse}</p>;
-
-  return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-5">
-      {courses.length > 1 && (
-        <select
-          value={courseId}
-          onChange={(e) => setActiveCourseId(e.target.value)}
-          className="mb-4 w-full max-w-md rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
-        >
-          {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
-        </select>
-      )}
-      <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{lbl.title}</h3>
-      <p className="mb-5 text-xs text-gray-500 dark:text-gray-400">{lbl.desc}</p>
-
-      {!loading && !loadError && !providerConfigured && (
-        <p className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-          {lbl.noProvider}
-        </p>
-      )}
-
-      {loadError ? (
-        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
-          {lbl.loadFailed}{loadError}
-        </p>
-      ) : loading || !settings ? (
-        <div className="flex items-center gap-2 text-sm text-stone-400"><RefreshCw size={14} className="animate-spin"/> Loading…</div>
-      ) : (
-        <div className="space-y-5">
-          {/* Toggle: auto-feedback */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.autoFeedback}</span>
-            <button
-              onClick={() => save({ auto_feedback_enabled: !settings.auto_feedback_enabled })}
-              className="text-stone-600 transition-colors hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
-            >
-              {settings.auto_feedback_enabled ? <ToggleRight size={28} className="text-emerald-500"/> : <ToggleLeft size={28}/>}
-            </button>
-          </div>
-
-          {/* Toggle: rolling discussion topics above the canvas */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <span className="text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.viewTopics}</span>
-              <p className="mt-0.5 text-xs leading-relaxed text-stone-500 dark:text-stone-400">{lbl.viewTopicsHint}</p>
-            </div>
-            <button
-              onClick={() => save({ view_topics_enabled: settings.view_topics_enabled === false })}
-              aria-pressed={settings.view_topics_enabled !== false}
-              aria-label={lbl.viewTopics}
-              className="shrink-0 text-stone-600 transition-colors hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
-            >
-              {settings.view_topics_enabled !== false ? <ToggleRight size={28} className="text-emerald-500"/> : <ToggleLeft size={28}/>}
-            </button>
-          </div>
-
-          {/* Enabled trigger types */}
-          <div>
-            <p className="mb-2 text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.enabledTriggers}</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {TRIGGER_TYPE_META.map(t => {
-                const enabled = settings.enabled_triggers.includes(t.id);
-                return (
-                  <label key={t.id} className="flex cursor-pointer items-start gap-2 rounded-lg border border-stone-200 p-2.5 transition-colors hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-stone-700/50">
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={() => {
-                        const next = enabled
-                          ? settings.enabled_triggers.filter(x => x !== t.id)
-                          : [...settings.enabled_triggers, t.id];
-                        save({ enabled_triggers: next });
-                      }}
-                      className="mt-0.5 accent-[#3457D5]"
-                    />
-                    <div>
-                      <div className="text-sm font-medium text-stone-800 dark:text-stone-200">{lang === 'zh' ? t.labelZh : t.labelEn}</div>
-                      <div className="text-xs text-stone-500 dark:text-stone-400">{lang === 'zh' ? t.descZh : t.descEn}</div>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Sensitivity */}
-          <div>
-            <p className="mb-2 text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.sensitivity}</p>
-            <div className="flex gap-2">
-              {(['conservative', 'balanced', 'aggressive'] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => save({ sensitivity: s })}
-                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                    settings.sensitivity === s
-                      ? 'border-[#3457D5] bg-[#3457D5]/10 text-[#3457D5] dark:border-[#8EA4FF] dark:bg-[#8EA4FF]/10 dark:text-[#8EA4FF]'
-                      : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-400 dark:hover:bg-stone-700'
-                  }`}
-                >
-                  {lbl.sensitivityOptions[s]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Cooldown */}
-          <div>
-            <p className="mb-2 text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.cooldown}</p>
-            <input
-              type="range"
-              min={30} max={600} step={30}
-              value={settings.cooldown_seconds}
-              onChange={(e) => setSettings({ ...settings, cooldown_seconds: Number(e.target.value) })}
-              onMouseUp={() => save({ cooldown_seconds: settings.cooldown_seconds })}
-              onTouchEnd={() => save({ cooldown_seconds: settings.cooldown_seconds })}
-              className="w-full accent-[#3457D5]"
-            />
-            <div className="text-xs text-stone-500 dark:text-stone-400">{settings.cooldown_seconds}s ({Math.round(settings.cooldown_seconds / 60)} min)</div>
-          </div>
-
-          {/* Response language */}
-          <div>
-            <p className="mb-2 text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.responseLang}</p>
-            <div className="flex gap-2">
-              {(['auto', 'zh', 'en'] as const).map(l => (
-                <button
-                  key={l}
-                  onClick={() => save({ response_language: l })}
-                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                    settings.response_language === l
-                      ? 'border-[#3457D5] bg-[#3457D5]/10 text-[#3457D5] dark:border-[#8EA4FF] dark:bg-[#8EA4FF]/10 dark:text-[#8EA4FF]'
-                      : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-400 dark:hover:bg-stone-700'
-                  }`}
-                >
-                  {lbl.responseLangOptions[l]}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 max-w-[65ch] text-xs leading-relaxed text-stone-400 dark:text-stone-500">{lbl.responseLangHint}</p>
-          </div>
-
-          {/* Max feedback length */}
-          <div>
-            <p className="mb-2 text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.maxLength}</p>
-            <input
-              type="range"
-              min={50} max={1000} step={50}
-              value={settings.max_feedback_length}
-              onChange={(e) => setSettings({ ...settings, max_feedback_length: Number(e.target.value) })}
-              onMouseUp={() => save({ max_feedback_length: settings.max_feedback_length })}
-              onTouchEnd={() => save({ max_feedback_length: settings.max_feedback_length })}
-              className="w-full accent-[#3457D5]"
-            />
-            <div className="text-xs text-stone-500 dark:text-stone-400">{settings.max_feedback_length} {lang === 'zh' ? '字' : 'chars'}</div>
-          </div>
-
-          {/* Custom context */}
-          <div>
-            <p className="mb-1 text-sm font-medium text-stone-700 dark:text-stone-300">{lbl.customContext}</p>
-            <p className="mb-2 text-xs text-stone-400 dark:text-stone-500">{lbl.customContextHint}</p>
-            <textarea
-              value={settings.custom_context}
-              onChange={(e) => setSettings({ ...settings, custom_context: e.target.value })}
-              onBlur={() => save({ custom_context: settings.custom_context })}
-              rows={2}
-              maxLength={500}
-              className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm dark:border-stone-600 dark:bg-stone-700 dark:text-stone-200"
-            />
-          </div>
-
-          <div aria-live="polite" className="min-h-[1.25rem] text-xs leading-relaxed">
-            {saving ? (
-              <span className="text-stone-400 dark:text-stone-500">{lbl.saving}</span>
-            ) : saveState === 'error' && saveError ? (
-              <span className="text-rose-600 dark:text-rose-400">{saveError}</span>
-            ) : saveState === 'saved' ? (
-              <span className="text-emerald-600 dark:text-emerald-400">{lbl.saved}</span>
-            ) : null}
-          </div>
-        </div>
-      )}
-    </section>
   );
 };
 
@@ -1447,7 +763,7 @@ const NeedsAttentionPanel: React.FC<{ lang: Language; courseId: string; onNoteCl
   };
 
   return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-5">
+    <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-5">
       <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{lbl.title}</h3>
       <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">{lbl.desc}</p>
       {loading ? (
@@ -1496,7 +812,7 @@ const AdminAIAnalysis: React.FC<{
   const totals = stats?.platformTotals ?? { totalCourses: 0, totalTeachers: 0, totalStudents: 0, totalMessages: 0 };
 
   return (
-    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-5">
       {loading && (
         <div className="rounded-[24px] border border-stone-200 bg-white p-4 text-sm text-stone-500 dark:border-stone-800 dark:bg-stone-950 dark:text-stone-400">
           <RefreshCw size={16} className="inline mr-2 animate-spin" />
@@ -1687,6 +1003,19 @@ export const TeacherAgentEntry: React.FC<{ tab: string; lang: Language }> = ({ t
     </div>
   );
 };
+
+/** 面板入场的单位：主区每块内容依次出现；块里标了 data-enter-item 的（课程卡片）一张张错开 */
+function dashboardPanelParts(main: HTMLElement): Element[] {
+  const parts: Element[] = [];
+  for (const block of Array.from(main.children)) {
+    for (const part of block.children.length > 1 ? Array.from(block.children) : [block]) {
+      const items = part.querySelectorAll('[data-enter-item]');
+      if (items.length > 0) parts.push(...Array.from(items));
+      else parts.push(part);
+    }
+  }
+  return parts;
+}
 
 const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCourseSelect, lang, setLang }) => {
   const { user, logout } = useAuth();
@@ -2115,29 +1444,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
     (c.verification_code ?? '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  useGSAP(() => {
-    if (shouldReduceMotion()) return;
-    prepareForMotion('.gsap-dashboard-nav, .gsap-dashboard-hero, .gsap-role-tab, .gsap-course-card, .gsap-student-metric, .gsap-student-next');
-    const tl = gsap.timeline({ defaults: { ease: 'power3.out', clearProps: 'transform,opacity,visibility,willChange' } });
-    tl.from('.gsap-dashboard-nav', { autoAlpha: 0, y: -12, duration: 0.36 })
-      .from('.gsap-dashboard-hero', { autoAlpha: 0, y: 18, scale: 0.985, duration: 0.5 }, '-=0.18')
-      .from('.gsap-role-tab', { autoAlpha: 0, y: 8, duration: 0.3, stagger: 0.035 }, '-=0.24')
-      .from('.gsap-student-metric, .gsap-course-card, .gsap-student-next', { autoAlpha: 0, y: 14, scale: 0.985, duration: 0.36, stagger: 0.035 }, '-=0.16');
-  }, {
-    scope: dashboardRef,
-    dependencies: [
-      currentRole,
-      activeTab,
-      studentCourses.length,
-      discoverCourses.length,
-      teacherManagedCourses.length,
-      adminCourses.length,
-      coursesLoading,
-      studentLoading,
-      teacherLoading,
-      adminLoading,
-    ],
-    revertOnUpdate: true,
+  // 切换面板时，主区里的内容一块块出现（anime.js，2026-10-10）。原来这里是一段 GSAP，六个目标类只剩课程卡片还在。
+  // 数据还在加载时不播，内容到了再播；智能体几页有自己的动效，不叠加
+  const mainRef = useRef<HTMLElement>(null);
+  const panelLoading = coursesLoading || (currentRole === 'student' ? studentLoading : currentRole === 'teacher' ? teacherLoading : adminLoading);
+  const panelHasOwnMotion = activeTab === 'ai-agent' || activeTab.startsWith('agent-');
+  useEnterMotion(mainRef, panelLoading || panelHasOwnMotion ? null : `${currentRole}:${activeTab}`, {
+    targets: dashboardPanelParts, step: 40, maxStagger: 6,
   });
 
   // --- Role Based Content Renderers ---
@@ -2179,11 +1492,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
           </button>
         </div>
 
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <section>
           <ProfileSettingsCard lang={lang} roleLabel={t.roles[currentRole]} />
         </section>
 
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <section>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
             <div className="rounded-[24px] border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-950 p-5">
               <div className="text-[0.6875rem] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">
@@ -2275,7 +1588,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
       return (
         <div className="space-y-4">
           {/* Learning Journey Section */}
-          <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <section>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">
                 <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 p-2 text-stone-700 dark:text-stone-200"><TrendingUp size={18} /></div>
@@ -2370,7 +1683,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
           </section>
 
           {/* Teacher Feedback Section */}
-          <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <section>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">
                 <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 p-2 text-stone-700 dark:text-stone-200"><Bell size={18} /></div>
@@ -2420,7 +1733,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'note-activity') {
       return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-4">
           <h2 className="text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{lang === 'zh' ? '笔记动态' : 'Note Activity'}</h2>
           <NoteActivityPanel a={studentAnalytics} loading={studentAnalyticsLoading} zh={lang === 'zh'} />
         </div>
@@ -2429,7 +1742,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'knowledge-graph') {
       return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-4">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{lang === 'zh' ? '知识图谱' : 'Knowledge Graph'}</h2>
             <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
@@ -2445,7 +1758,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'promising-ideas') {
       return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-4">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{lang === 'zh' ? '潜力想法' : 'Promising Ideas'}</h2>
             <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
@@ -2459,7 +1772,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'thinking-dev') {
       return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-4">
           <h2 className="text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{lang === 'zh' ? '思维发展' : 'Thinking Development'}</h2>
           <ThinkingDevPanel a={studentAnalytics} loading={studentAnalyticsLoading} zh={lang === 'zh'} />
         </div>
@@ -2468,7 +1781,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'collab-network') {
       return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-4">
           <h2 className="text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{lang === 'zh' ? '协作网络' : 'Collaboration Network'}</h2>
           <CollabNetworkPanel a={studentAnalytics} loading={studentAnalyticsLoading} zh={lang === 'zh'} />
         </div>
@@ -2477,7 +1790,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'thinking-trainer') {
       return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 px-3 sm:px-5 lg:px-7 py-4 sm:py-5 pb-14">
+        <div className="space-y-4 px-3 sm:px-5 lg:px-7 py-4 sm:py-5 pb-14">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{lang === 'zh' ? '思维练习助手' : 'Thinking Coach'}</h2>
             <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
@@ -2493,7 +1806,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'coding-trainer') {
       return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 px-3 sm:px-5 lg:px-7 py-4 sm:py-5 pb-14">
+        <div className="space-y-4 px-3 sm:px-5 lg:px-7 py-4 sm:py-5 pb-14">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{lang === 'zh' ? '编程练习助手' : 'Coding Coach'}</h2>
             <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
@@ -2531,7 +1844,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
     if (activeTab === 'discover') {
       return (
         <div className="space-y-4">
-          <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <section>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">
                 <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 p-2 text-stone-700 dark:text-stone-200"><Globe size={18} /></div>
@@ -2561,6 +1874,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
                 {discoverCourses.map(course => (
                   <div
                     key={course.id}
+                    data-enter-item
                     className="group overflow-hidden rounded-[24px] border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-950 transition-colors hover:bg-stone-50 dark:hover:bg-stone-900/80"
                   >
                     <div className="relative h-28 bg-cover bg-center" style={{ backgroundImage: course.coverImage }}>
@@ -2717,13 +2031,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
       return <StudentHelpDesk lang={lang} courseId={teacherCourses[0]?.id ?? ''} courses={teacherCourses} />;
     }
     if (activeTab === 'ai-settings') {
-      const teacherCourses = courseList;
       return (
-        <div className="space-y-6">
-          <TeacherAISettings lang={lang} courseId={teacherCourses[0]?.id ?? ''} courses={teacherCourses} />
-          <AiFeatureModelsPanel lang={lang} courseId={teacherCourses[0]?.id ?? ''} courses={teacherCourses} />
-          <TriggerSettingsPanel lang={lang} courseId={teacherCourses[0]?.id ?? ''} courses={teacherCourses} />
-        </div>
+        <Suspense fallback={<div className="mx-auto h-64 max-w-5xl animate-pulse rounded-2xl bg-zinc-100 dark:bg-gray-900" />}>
+          <AiSettingsPage lang={lang} courses={courseList} />
+        </Suspense>
       );
     }
     if (activeTab === 'ai-analysis') {
@@ -2755,7 +2066,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     const coursesPanel = (
       <div className="space-y-5">
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <section>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="text-[0.6875rem] font-semibold uppercase tracking-[0.24em] text-stone-500 dark:text-stone-400">
@@ -2781,6 +2092,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
               ) : teacherManagedCourses.map(course => (
                 <div
                   key={course.id}
+                  data-enter-item
                   onClick={() => onCourseSelect(course.id, course.title)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onCourseSelect(course.id, course.title); }}
                   tabIndex={0}
@@ -2837,7 +2149,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
           </div>
         </section>
 
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100">
+        <section>
           <div className="mb-4 flex items-center gap-2.5">
             <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 p-2 text-stone-700 dark:text-stone-200"><Globe size={17} /></div>
             <h2 className="text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{t.teacher.allPlatformCourses}</h2>
@@ -2950,7 +2262,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
         {/* Learner Profiles Panel */}
         {teacherManagedCourses.length > 0 && (
-          <section className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <section>
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 p-2 text-stone-700 dark:text-stone-200"><BrainCircuit size={17} /></div>
@@ -3047,7 +2359,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'approvals') {
       return (
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <section>
           <h2 className="mb-4 flex items-center gap-2.5 text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">
             <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 p-2 text-stone-700 dark:text-stone-200"><Bell size={18} /></div>
             {t.admin.pending}
@@ -3104,7 +2416,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     if (activeTab === 'courses') {
       return (
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <section>
           <h2 className="mb-4 flex items-center gap-2.5 text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">
             <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 p-2 text-stone-700 dark:text-stone-200"><List size={18} /></div>
             {t.admin.allCourses}
@@ -3182,7 +2494,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
 
     return (
       <div className="space-y-5">
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <section>
           <h2 className="mb-4 flex items-center gap-2.5 text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">
             <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-900 p-2 text-stone-700 dark:text-stone-200"><Activity size={18} /></div>
             {t.admin.overview}
@@ -3331,7 +2643,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentRole, onRoleChange, onCour
         {/* Desktop Top Bar — removed; controls moved to sidebar */}
 
         {/* Main Content Area */}
-        <main className={`gsap-dashboard-main flex-1 overflow-y-auto ${activeTab === 'ai-agent' || activeTab.startsWith('agent-') || activeTab === 'thinking-trainer' || activeTab === 'coding-trainer' || activeTab === 'manual' || activeTab === 'philosophy' ? '' : 'px-3 sm:px-5 lg:px-7 py-4 sm:py-5 pb-14'}`}>
+        <main ref={mainRef} className={`gsap-dashboard-main flex-1 overflow-y-auto ${activeTab === 'ai-agent' || activeTab.startsWith('agent-') || activeTab === 'thinking-trainer' || activeTab === 'coding-trainer' || activeTab === 'manual' || activeTab === 'philosophy' ? '' : 'px-3 sm:px-5 lg:px-7 py-4 sm:py-5 pb-14'}`}>
           {/* Top greeting bar on overview */}
           {activeTab === 'overview' && (
             <DashboardTopBar

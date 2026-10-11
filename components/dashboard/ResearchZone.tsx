@@ -207,7 +207,7 @@ const OverviewModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId,
             </div>
             <div className="min-w-0 flex-1">
               <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {zh ? '课程洞察（AI 总结）' : 'Course Insights (AI Summary)'}
+                {zh ? '课程数据提示' : 'Course data notes'}
               </h4>
               <div className="mt-1.5 space-y-1">
                 {insights.map((ins, i) => (
@@ -245,7 +245,7 @@ const OverviewModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId,
         ))}
       </div>
 
-      {/* Charts Row: Activity Trend | Intervention Donut | Network Stats | AI Insights */}
+      {/* Charts Row: Activity Trend | Intervention Donut | Network Stats | Data notes */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr_1fr_1fr]">
         {/* Activity Trend */}
         <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 overflow-hidden">
@@ -306,10 +306,10 @@ const OverviewModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId,
           </div>
         </div>
 
-        {/* AI Insights */}
+        {/* Data notes */}
         <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 overflow-hidden">
           <div className="border-b border-gray-100 dark:border-gray-800 px-4 py-3">
-            <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{zh ? 'AI 洞察' : 'AI Insights'}</h4>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{zh ? '数据提示' : 'Data notes'}</h4>
           </div>
           <div className="space-y-2.5 p-4">
             {insights.map((ins, i) => (
@@ -318,7 +318,7 @@ const OverviewModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId,
                 <span className="text-xs leading-relaxed text-gray-600 dark:text-gray-400">{ins.text}</span>
               </div>
             ))}
-            {insights.length === 0 && <p className="text-xs text-gray-400">{zh ? '暂无洞察' : 'No insights'}</p>}
+            {insights.length === 0 && <p className="text-xs text-gray-400">{zh ? '暂无数据提示' : 'No data notes'}</p>}
           </div>
         </div>
       </div>
@@ -1521,7 +1521,7 @@ const EquityModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId, z
 };
 
 // ════════════════════════════════════════════════════════════════
-// MODULE 7: AI Insights (AI 智能建议)
+// MODULE 7: Data notes (教学建议)
 // ════════════════════════════════════════════════════════════════
 
 const AiInsightsModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseId, zh }) => {
@@ -1554,7 +1554,7 @@ const AiInsightsModule: React.FC<{ courseId: string; zh: boolean }> = ({ courseI
 
   return (
     <div className="space-y-4">
-      <ModuleHeader title={zh ? 'AI 智能建议' : 'AI-Powered Insights'} description={zh ? '基于数据模式自动生成教师干预建议' : 'Data-driven suggestions for teacher interventions'} />
+      <ModuleHeader title={zh ? '教学建议' : 'Teaching suggestions'} description={zh ? '按数据规则整理建议，供教师判断' : 'Suggestions based on data rules for teachers to review'} />
       <RunButton onClick={run} loading={loading} label={zh ? '生成建议' : 'Generate Insights'} zh={zh} />
       {error && <ErrorBanner message={error} />}
 

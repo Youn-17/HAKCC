@@ -39,8 +39,8 @@ const ProfileSettingsCard: React.FC<Props> = ({ lang, roleLabel }) => {
   };
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // 学生改名会让历史署名和研究编号对不上，所以只开给教师和管理员。
-  const canEditName = user?.role === 'teacher' || user?.role === 'admin';
+  // 2026-10-10 起学生也能改自己的名字（原来只开给教师和管理员）；后端同步署名快照并留改名记录。
+  const canEditName = Boolean(user);
   const [name, setName] = useState(user?.name ?? '');
   const [school, setSchool] = useState(user?.school ?? '');
   const [age, setAge] = useState(user?.age != null ? String(user.age) : '');

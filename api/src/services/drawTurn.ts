@@ -380,16 +380,17 @@ export async function streamDrawTurn(res: Response, opts: {
         ai_metadata: drawingMetadata(result),
       }).select('id').single();
       send({ assistantMessage: { id: saved?.id ?? null, content: result.markdown, tools_used: ['generate_image'] } });
-      await supabase.from('ai_interventions').insert({
+      const { error: interventionErr } = await supabase.from('ai_interventions').insert({
         space_id: opts.spaceId,
         user_id: opts.userId,
         trigger_type: opts.triggerType,
         provider_id: result.provider,
-        model_name: result.model,
+        model_full_name: result.model,
         input_context_summary: opts.prompt.slice(0, 200),
         response_text: result.url.slice(0, 500),
         visibility_scope: 'private',
       });
+      if (interventionErr) console.error(`[ai_interventions] ${opts.triggerType} insert failed:`, interventionErr.message);
     }
 
     await supabase

@@ -1044,7 +1044,7 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
                 <RemixIcon name="chat-3-line" size={26} className="text-zinc-400 dark:text-zinc-500" />
               </div>
-              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t.isZh ? '点击左侧洞察按钮' : 'Click insight buttons on the left'}</p>
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t.isZh ? '选择左侧的分析项目' : 'Choose an analysis option on the left'}</p>
               <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">{t.isZh ? 'AI 分析结果将在此显示' : 'AI analysis results will appear here'}</p>
             </div>
           )}
@@ -1078,11 +1078,11 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
                     <p className="mt-2 max-w-lg text-[0.8125rem] leading-relaxed text-zinc-500 dark:text-zinc-400">
                       {isTeacher
                         ? (t.isZh
-                            ? '专注于课前备课、课堂教学与课后评估全流程，助力教学设计、学情分析与评价反馈。'
-                            : 'End-to-end support for lesson prep, classroom teaching, and post-class evaluation.')
+                            ? '讨论教学设计、查看课程数据，并起草反馈供你修改。'
+                            : 'Discuss lesson plans, review course data, and draft feedback for you to revise.')
                         : (t.isZh
-                            ? '帮助你探索想法、发现知识关联、寻找证据，助力知识建构。'
-                            : 'Explore ideas, discover connections, find evidence, and build knowledge.')}
+                            ? '梳理想法、寻找证据，讨论还需要解释的问题。'
+                            : 'Develop ideas, find evidence, and discuss questions that still need explaining.')}
                     </p>
                   </div>
                   <img src="/assets/Smart AI Assistant.png" alt="" className="hidden h-32 w-auto flex-shrink-0 object-contain lg:block" />
@@ -1130,10 +1130,10 @@ const PersonalAgentPage: React.FC<PersonalAgentPageProps> = ({ embedded, userRol
 
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_240px]">
                 {([
-                  { icon: 'chat-3-line', bg: 'bg-blue-50 dark:bg-blue-900/20', color: 'text-blue-600 dark:text-blue-400', titleZh: '对话探究', titleEn: 'Inquiry Chat', descZh: '多轮对话，深度探究教学问题', descEn: 'Multi-turn chat, deep inquiry', action: () => textareaRef.current?.focus() },
-                  { icon: 'scissors-cut-line', bg: 'bg-orange-50 dark:bg-orange-900/20', color: 'text-orange-500 dark:text-orange-400', titleZh: '快捷工具', titleEn: 'Quick Tools', descZh: '总结、翻译、改写等效率工具', descEn: 'Summarize, translate, rewrite', action: () => textareaRef.current?.focus() },
-                  { icon: 'file-text-line', bg: 'bg-emerald-50 dark:bg-emerald-900/20', color: 'text-emerald-600 dark:text-emerald-400', titleZh: '文档生成', titleEn: 'Doc Generation', descZh: '生成教案、报告、笔记等文档', descEn: 'Generate lesson plans, reports', action: () => { setInput(t.isZh ? '帮我生成课程笔记总结报告' : 'Generate a summary report of course notes'); setTimeout(() => textareaRef.current?.focus(), 50); } },
-                  { icon: 'bar-chart-grouped-line', bg: 'bg-violet-50 dark:bg-violet-900/20', color: 'text-violet-600 dark:text-violet-400', titleZh: '数据分析', titleEn: 'Data Analysis', descZh: '多维数据分析，洞察教学趋势', descEn: 'Engagement charts, trend reports', action: () => { setInput(t.isZh ? '分析一下最近两周的学生参与度' : 'Analyze student engagement for the last 2 weeks'); setTimeout(() => textareaRef.current?.focus(), 50); } },
+                  { icon: 'chat-3-line', bg: 'bg-blue-50 dark:bg-blue-900/20', color: 'text-blue-600 dark:text-blue-400', titleZh: '对话探究', titleEn: 'Inquiry Chat', descZh: '讨论教学问题，继续追问', descEn: 'Discuss teaching questions and follow up', action: () => textareaRef.current?.focus() },
+                  { icon: 'scissors-cut-line', bg: 'bg-orange-50 dark:bg-orange-900/20', color: 'text-orange-500 dark:text-orange-400', titleZh: '快捷工具', titleEn: 'Quick Tools', descZh: '总结、翻译或修改文字', descEn: 'Summarize, translate, rewrite', action: () => textareaRef.current?.focus() },
+                  { icon: 'file-text-line', bg: 'bg-emerald-50 dark:bg-emerald-900/20', color: 'text-emerald-600 dark:text-emerald-400', titleZh: '起草文档', titleEn: 'Draft documents', descZh: '起草教案、报告和笔记', descEn: 'Draft lesson plans, reports, and Notes', action: () => { setInput(t.isZh ? '帮我生成课程笔记总结报告' : 'Generate a summary report of course notes'); setTimeout(() => textareaRef.current?.focus(), 50); } },
+                  { icon: 'bar-chart-grouped-line', bg: 'bg-violet-50 dark:bg-violet-900/20', color: 'text-violet-600 dark:text-violet-400', titleZh: '数据分析', titleEn: 'Data Analysis', descZh: '查看学生参与和回应记录', descEn: 'Review student participation and replies', action: () => { setInput(t.isZh ? '分析一下最近两周的学生参与度' : 'Analyze student engagement for the last 2 weeks'); setTimeout(() => textareaRef.current?.focus(), 50); } },
                 ] as const).map((card, i) => (
                   <button
                     key={i}

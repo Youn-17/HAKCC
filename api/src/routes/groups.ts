@@ -2,10 +2,15 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { verifyJWT, requireRole } from '../middleware/auth';
 import { ApiError } from '../middleware/errorHandler';
-import { ensureCourseMember, ensureCourseInstructor, ensureGroupAccess, invalidateMembershipCache, isCourseStaff } from '../services/accessControl';
+import { ensureCourseMember, ensureCourseInstructor, ensureGroupAccess, ensureSpaceAccess, invalidateMembershipCache, isCourseStaff } from '../services/accessControl';
+import { logEvent } from '../services/eventService';
+import { validateUpload } from '../services/attachmentValidation';
+import {
+  canChangeLeader, courseGroups, loadAssignments, memberGroupIds, parseAssignmentInput, placementColumns, validatePlacement,
+} from '../services/groupAssignments';
 import { invalidateConditionCache } from '../services/experimentCondition';
 import {
-  buildGroupIdeaGraph, fetchLatestIdeaGraph, shouldRegenerate,
+  buildGroupIdeaGraph, computeIdeaGraph, fetchLatestIdeaGraph, loadIdeaGraphSource, weeklyWindowsDue,
   IDEA_GRAPH_PERIOD_DAYS, MIN_NOTES_FOR_GRAPH,
   type IdeaGraphPayload,
 } from '../services/groupIdeaGraph';
@@ -87,50 +92,127 @@ async function generateIdeaGraph(
   return data;
 }
 
+const IDEA_GRAPH_SUMMARY = 'id, generated_at, window_start, window_end, note_count, trigger';
+
+/** 历次快照的摘要（不带图），新的在前；一个学期十几周，留 26 期够看半年 */
+async function ideaGraphHistory(groupId: string) {
+  const { data, error } = await supabase
+    .from('group_idea_graphs')
+    .select(IDEA_GRAPH_SUMMARY)
+    .eq('group_id', groupId)
+    .order('window_end', { ascending: false })
+    .limit(26);
+  if (error) throw new ApiError(500, error.message);
+  return data ?? [];
+}
+
 /**
- * GET /api/groups/:id/idea-graph — 取本组最新一期观点图谱。
+ * 把该补的周补上（2026-10-11 用户：每周更新一次，能看历史），见 weeklyWindowsDue。
+ * 只取一次数据，每一期按那一周结束时的笔记算；笔记还不到 MIN_NOTES_FOR_GRAPH 条的周不单出一期，并进下一期。
+ * 同一个组同时只跑一份：两个人同时打开，不会把同一周生成两遍。
+ */
+const ideaGraphRuns = new Map<string, Promise<number>>();
+
+/** 返回这次新补了几期 */
+function ensureWeeklyIdeaGraphs(group: { id: string; course_id: string; created_at: string }, userId: string): Promise<number> {
+  const running = ideaGraphRuns.get(group.id);
+  if (running) return running;
+  const run = generateDueWeeks(group, userId).finally(() => ideaGraphRuns.delete(group.id));
+  ideaGraphRuns.set(group.id, run);
+  return run;
+}
+
+async function generateDueWeeks(group: { id: string; course_id: string; created_at: string }, userId: string): Promise<number> {
+  const [lastAutoRes, firstRes] = await Promise.all([
+    supabase.from('group_idea_graphs').select('window_end, payload')
+      .eq('group_id', group.id).eq('trigger', 'auto')
+      .order('window_end', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('group_idea_graphs').select('window_start')
+      .eq('group_id', group.id)
+      .order('window_start', { ascending: true }).limit(1).maybeSingle(),
+  ]);
+  if (lastAutoRes.error) throw new ApiError(500, lastAutoRes.error.message);
+  if (firstRes.error) throw new ApiError(500, firstRes.error.message);
+
+  const anchor = new Date((firstRes.data?.window_start as string | undefined) ?? group.created_at);
+  const lastAutoEnd = lastAutoRes.data ? new Date(lastAutoRes.data.window_end as string) : null;
+  const ends = weeklyWindowsDue({ anchor, lastAutoEnd, hasAny: Boolean(firstRes.data), now: new Date() });
+  if (ends.length === 0) return 0;
+
+  const source = await loadIdeaGraphSource(group.id, group.course_id);
+  let windowStart = lastAutoEnd ?? anchor;
+  let previous = (lastAutoRes.data?.payload as IdeaGraphPayload | undefined) ?? null;
+  const rows: Array<Record<string, unknown>> = [];
+  for (const windowEnd of ends) {
+    const { payload, noteCount } = computeIdeaGraph(source, { windowStart, windowEnd, previous });
+    if (noteCount < MIN_NOTES_FOR_GRAPH) continue;
+    rows.push({
+      group_id: group.id,
+      course_id: group.course_id,
+      window_start: windowStart.toISOString(),
+      window_end: windowEnd.toISOString(),
+      note_count: noteCount,
+      payload,
+      trigger: 'auto',
+      created_by: userId,
+    });
+    windowStart = windowEnd;
+    previous = payload;
+  }
+  if (rows.length === 0) return 0;
+  const { error } = await supabase.from('group_idea_graphs').insert(rows);
+  if (error) throw new ApiError(500, `Failed to store idea graph: ${error.message}`);
+  return rows.length;
+}
+
+/**
+ * GET /api/groups/:id/idea-graph — 本组最新一期观点图谱，连同历次快照的摘要（用来切换看往期）。
  *
- * 满 7 天会在这里顺带生成新的一期（懒生成，不需要定时任务）。第一次访问时若
- * 组里笔记还不足 MIN_NOTES_FOR_GRAPH 条，返回 pending 而不是一张空图 ——
- * 三条笔记的图谱没有信息量，只会让学生觉得这功能没用。
+ * 该补的周在这里顺带补上（懒生成，不需要定时任务）。一期都还没有、组里笔记又不足
+ * MIN_NOTES_FOR_GRAPH 条时，返回 pending 而不是一张空图 —— 三条笔记的图谱没有信息量，
+ * 只会让学生觉得这功能没用。
  */
 router.get('/groups/:id/idea-graph', verifyJWT, async (req: Request, res: Response) => {
   const groupId = String(req.params.id);
   const group = await ensureGroupAccess(groupId, req.user!);
 
-  const latest = await fetchLatestIdeaGraph(groupId);
-  const stale = shouldRegenerate(latest?.window_end ?? null);
+  const added = await ensureWeeklyIdeaGraphs(group as { id: string; course_id: string; created_at: string }, req.user!.id);
+  const [latest, history] = await Promise.all([fetchLatestIdeaGraph(groupId), ideaGraphHistory(groupId)]);
+  const regenerated = added > 0;
 
-  if (!stale && latest) {
-    return res.json({ graph: latest, periodDays: IDEA_GRAPH_PERIOD_DAYS, regenerated: false });
-  }
-
-  const probe = await buildGroupIdeaGraph({
-    groupId,
-    courseId: group.course_id as string,
-    windowStart: latest ? new Date(latest.window_end) : new Date(group.created_at as string),
-    windowEnd: new Date(),
-    previous: (latest?.payload as IdeaGraphPayload) ?? null,
-  });
-
-  if (probe.noteCount < MIN_NOTES_FOR_GRAPH) {
+  if (!latest) {
+    const probe = await buildGroupIdeaGraph({
+      groupId,
+      courseId: group.course_id as string,
+      windowStart: new Date(group.created_at as string),
+      windowEnd: new Date(),
+    });
     return res.json({
-      graph: latest ?? null,
+      graph: null,
       pending: true,
       needNotes: MIN_NOTES_FOR_GRAPH,
       haveNotes: probe.noteCount,
       periodDays: IDEA_GRAPH_PERIOD_DAYS,
       regenerated: false,
+      history,
     });
   }
+  res.json({ graph: latest, periodDays: IDEA_GRAPH_PERIOD_DAYS, regenerated, history });
+});
 
-  const created = await generateIdeaGraph(
-    group as any,
-    latest ? { window_end: latest.window_end as string, payload: latest.payload as IdeaGraphPayload } : null,
-    'auto',
-    req.user!.id,
-  );
-  res.json({ graph: created, periodDays: IDEA_GRAPH_PERIOD_DAYS, regenerated: true });
+/** GET /api/groups/:id/idea-graph/snapshots/:snapshotId — 某一期的完整图谱（看往期用） */
+router.get('/groups/:id/idea-graph/snapshots/:snapshotId', verifyJWT, async (req: Request, res: Response) => {
+  const groupId = String(req.params.id);
+  await ensureGroupAccess(groupId, req.user!);
+  const { data, error } = await supabase
+    .from('group_idea_graphs')
+    .select('id, generated_at, window_start, window_end, note_count, payload, trigger')
+    .eq('id', String(req.params.snapshotId))
+    .eq('group_id', groupId)
+    .maybeSingle();
+  if (error) throw new ApiError(500, error.message);
+  if (!data) throw new ApiError(404, 'Snapshot not found');
+  res.json({ graph: data });
 });
 
 /** POST /api/groups/:id/idea-graph/refresh — 教师手动重算一期，不等满 7 天。 */
@@ -151,21 +233,14 @@ router.post('/groups/:id/idea-graph/refresh', verifyJWT, requireRole('teacher', 
     'manual',
     req.user!.id,
   );
-  res.json({ graph: created, periodDays: IDEA_GRAPH_PERIOD_DAYS, regenerated: true });
+  res.json({ graph: created, periodDays: IDEA_GRAPH_PERIOD_DAYS, regenerated: true, history: await ideaGraphHistory(groupId) });
 });
 
 /** GET /api/groups/:id/idea-graph/history — 历次快照的摘要，用来看趋势。 */
 router.get('/groups/:id/idea-graph/history', verifyJWT, async (req: Request, res: Response) => {
   const groupId = String(req.params.id);
   await ensureGroupAccess(groupId, req.user!);
-  const { data, error } = await supabase
-    .from('group_idea_graphs')
-    .select('id, generated_at, window_start, window_end, note_count, trigger')
-    .eq('group_id', groupId)
-    .order('generated_at', { ascending: false })
-    .limit(20);
-  if (error) throw new ApiError(500, error.message);
-  res.json({ history: data ?? [] });
+  res.json({ history: await ideaGraphHistory(groupId) });
 });
 
 // ── Groups ────────────────────────────────────────────────────
@@ -197,6 +272,7 @@ router.get('/courses/:courseId/groups', verifyJWT, async (req: Request, res: Res
     courseId: g.course_id,
     leaderId: g.leader_id,
     color: g.color,
+    logoUrl: g.logo_url ?? null,
     aiFeedbackCondition: listIsStaff ? (g.ai_feedback_condition ?? null) : null,
     createdAt: g.created_at,
     memberIds: (g.group_members ?? []).map((m: any) => m.user_id),
@@ -270,6 +346,7 @@ router.get('/groups/:id', verifyJWT, async (req: Request, res: Response) => {
     courseId: data.course_id,
     leaderId: data.leader_id,
     color: data.color,
+    logoUrl: data.logo_url ?? null,
     // Blinded: revealing the arm to a student defeats the trial's design.
     aiFeedbackCondition: isStaff ? (data.ai_feedback_condition ?? null) : null,
     createdAt: data.created_at,
@@ -357,9 +434,77 @@ router.delete('/groups/:id/members/:userId', verifyJWT, requireRole('teacher', '
     .eq('user_id', userId);
 
   if (error) throw new ApiError(500, error.message);
+  // 移出的是组长，组长一并取消。没清掉也不报错：读组长的地方都把不在组里的组长当作没有
+  const { data: cleared, error: leaderError } = await supabase
+    .from('groups')
+    .update({ leader_id: null })
+    .eq('id', id)
+    .eq('leader_id', userId)
+    .select('id');
+  if (leaderError) console.warn('[groups] leader not cleared after removal', leaderError.message);
   invalidateMembershipCache();
   invalidateConditionCache();
+  logEvent({
+    actor_id: req.user!.id,
+    actor_role: req.user!.role,
+    event_type: 'group_member_removed',
+    object_type: 'group',
+    object_id: String(id),
+    metadata_json: { user_id: userId, was_leader: (cleared ?? []).length > 0 },
+  });
   res.json({ message: 'Member removed' });
+});
+
+// ── 小组 logo（迁移 089） ──────────────────────────────────────
+
+/** logo 前端已缩到 512 像素以内的 PNG，正常几十到几百 KB；2MB 是上限 */
+const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * POST /api/groups/:id/logo {file_name, mime_type, data_url} — 上传小组 logo（2026-10-11 用户：各组设计了 logo，
+ * 教师给他们放进去，小组的视图卡片上显示）。只有课程教职能改；只收真图片（按字节判定，SVG 不收）。
+ */
+router.post('/groups/:id/logo', verifyJWT, requireRole('teacher', 'admin'), async (req: Request, res: Response) => {
+  const groupId = String(req.params.id);
+  await requireGroupInstructor(groupId, req.user!);
+  const { file_name, mime_type = 'image/png', data_url } = (req.body ?? {}) as { file_name?: string; mime_type?: string; data_url?: string };
+  if (!file_name || !data_url) throw new ApiError(400, 'file_name and data_url are required');
+  const { buffer, safeName } = validateUpload(data_url, file_name, mime_type, { imagesOnly: true, maxBytes: LOGO_MAX_BYTES });
+
+  const path = `group-logos/${groupId}-${Date.now()}-${safeName}`;
+  const bucket = supabase.storage.from('note-chat-attachments');
+  const { error: uploadError } = await bucket.upload(path, buffer, { contentType: mime_type, upsert: false });
+  if (uploadError) throw new ApiError(500, uploadError.message);
+  const logoUrl = bucket.getPublicUrl(path).data.publicUrl;
+
+  const { error } = await supabase.from('groups').update({ logo_url: logoUrl }).eq('id', groupId);
+  if (error) throw new ApiError(500, error.message);
+  logEvent({
+    actor_id: req.user!.id,
+    actor_role: req.user!.role,
+    event_type: 'group_logo_set',
+    object_type: 'group',
+    object_id: groupId,
+    metadata_json: { cleared: false },
+  });
+  res.json({ group: { id: groupId, logoUrl } });
+});
+
+// DELETE /api/groups/:id/logo — 去掉小组 logo
+router.delete('/groups/:id/logo', verifyJWT, requireRole('teacher', 'admin'), async (req: Request, res: Response) => {
+  const groupId = String(req.params.id);
+  await requireGroupInstructor(groupId, req.user!);
+  const { error } = await supabase.from('groups').update({ logo_url: null }).eq('id', groupId);
+  if (error) throw new ApiError(500, error.message);
+  logEvent({
+    actor_id: req.user!.id,
+    actor_role: req.user!.role,
+    event_type: 'group_logo_set',
+    object_type: 'group',
+    object_id: groupId,
+    metadata_json: { cleared: true },
+  });
+  res.json({ group: { id: groupId, logoUrl: null } });
 });
 
 // ── Group Tasks (SSRL) ────────────────────────────────────────
@@ -573,6 +718,216 @@ router.delete('/groups/:id/tasks/:taskId', verifyJWT, async (req: Request, res: 
   const { error } = await supabase.from('group_tasks').delete().eq('id', taskId).eq('group_id', id);
   if (error) throw new ApiError(500, error.message);
   res.json({ message: 'Task deleted' });
+});
+
+// ── 组长 ─────────────────────────────────────────────────────
+
+/**
+ * PUT /api/groups/:id/leader {leader_id | null} — 指定或取消组长（2026-10-10 用户：教师可以指定，学生也可以自己定）。
+ * 教职随时可以改；组员在还没有组长时可以指定任何组员（包括自己），有了组长以后只有组长本人能移交或卸任。
+ */
+router.put('/groups/:id/leader', verifyJWT, async (req: Request, res: Response) => {
+  const groupId = String(req.params.id);
+  const { standing } = await ensureGroupAccess(groupId, req.user!);
+  const raw = (req.body ?? {}).leader_id;
+  const leaderId = raw === null || raw === undefined || raw === '' ? null : String(raw);
+
+  const [groupRes, membersRes] = await Promise.all([
+    supabase.from('groups').select('id, leader_id').eq('id', groupId).single(),
+    supabase.from('group_members').select('user_id').eq('group_id', groupId),
+  ]);
+  if (groupRes.error || !groupRes.data) throw new ApiError(404, 'Group not found');
+  if (membersRes.error) throw new ApiError(500, membersRes.error.message);
+  const memberIds = new Set((membersRes.data ?? []).map((m: any) => m.user_id as string));
+  if (leaderId && !memberIds.has(leaderId)) throw new ApiError(400, 'The leader must be a member of this group');
+
+  const previous = (groupRes.data.leader_id as string | null) ?? null;
+  const isStaff = isCourseStaff(standing);
+  const decision = canChangeLeader({ isStaff, userId: req.user!.id, currentLeaderId: previous && memberIds.has(previous) ? previous : null });
+  if (!decision.ok) throw new ApiError(403, decision.reason);
+
+  const { error } = await supabase.from('groups').update({ leader_id: leaderId }).eq('id', groupId);
+  if (error) throw new ApiError(500, error.message);
+  logEvent({
+    actor_id: req.user!.id,
+    actor_role: req.user!.role,
+    event_type: 'group_leader_set',
+    object_type: 'group',
+    object_id: groupId,
+    metadata_json: { leader_id: leaderId, previous_leader_id: previous, by_staff: isStaff },
+  });
+  res.json({ group: { id: groupId, leaderId } });
+});
+
+// ── 教师给各组发布的任务（迁移 088，规则见 services/groupAssignments.ts） ──────
+
+async function ensureCourseStaffStanding(courseId: string, user: Request['user']) {
+  const standing = await ensureCourseMember(courseId, user!);
+  if (!isCourseStaff(standing)) throw new ApiError(403, 'Only the course instructor can manage group tasks');
+  return standing;
+}
+
+function notifyGroupMembers(
+  assignment: { id: string; title: string },
+  groups: Array<{ id: string; name: string }>,
+  actorId: string,
+  lang: 'zh' | 'en',
+) {
+  void (async () => {
+    const { data: rows } = await supabase.from('group_members').select('group_id, user_id').in('group_id', groups.map(g => g.id));
+    const name = new Map(groups.map(g => [g.id, g.name]));
+    const seen = new Set<string>();
+    const notices = [];
+    for (const r of (rows ?? []) as Array<{ group_id: string; user_id: string }>) {
+      if (r.user_id === actorId || seen.has(r.user_id)) continue;
+      seen.add(r.user_id);
+      notices.push({
+        user_id: r.user_id,
+        type: 'group_assignment',
+        title: lang === 'zh' ? '新的小组任务' : 'New group task',
+        message: lang === 'zh'
+          ? `老师给${name.get(r.group_id) ?? '你们组'}发布了任务「${assignment.title}」`
+          : `Your teacher assigned "${assignment.title}" to ${name.get(r.group_id) ?? 'your group'}`,
+        link_type: 'group',
+        link_id: r.group_id,
+      });
+    }
+    if (notices.length) await supabase.from('notifications').insert(notices);
+  })().catch(err => console.warn('[group-assignments] notify failed:', err instanceof Error ? err.message : err));
+}
+
+// GET /api/courses/:courseId/group-assignments — 教职看全部；学生只看发给自己组的
+router.get('/courses/:courseId/group-assignments', verifyJWT, async (req: Request, res: Response) => {
+  const courseId = String(req.params.courseId);
+  const standing = await ensureCourseMember(courseId, req.user!);
+  const visibleGroups = isCourseStaff(standing) ? null : await memberGroupIds(courseId, req.user!.id);
+  res.json({ assignments: await loadAssignments(courseId, { visibleGroups }) });
+});
+
+// POST /api/courses/:courseId/group-assignments — 发布（默认发给这门课的全部小组）
+router.post('/courses/:courseId/group-assignments', verifyJWT, async (req: Request, res: Response) => {
+  const courseId = String(req.params.courseId);
+  await ensureCourseStaffStanding(courseId, req.user);
+  const input = parseAssignmentInput(req.body);
+  const groups = await courseGroups(courseId);
+  if (groups.length === 0) throw new ApiError(400, 'This course has no groups yet');
+  const known = new Set(groups.map(g => g.id));
+  const targetIds = input.groupIds ?? groups.map(g => g.id);
+  if (targetIds.length === 0) throw new ApiError(400, 'Choose at least one group');
+  if (targetIds.some(id => !known.has(id))) throw new ApiError(400, 'group_ids must be groups in this course');
+  const placement = placementColumns(input);
+  await validatePlacement(courseId, placement.placement, placement.space_id, placement.view_id);
+
+  const { data: row, error } = await supabase
+    .from('group_assignments')
+    .insert({
+      course_id: courseId,
+      title: input.title,
+      content: input.content ?? '',
+      requirements: input.requirements ?? '',
+      due_at: input.dueAt ?? null,
+      ...placement,
+      created_by: req.user!.id,
+    })
+    .select('id, title')
+    .single();
+  if (error || !row) throw new ApiError(500, error?.message ?? 'Failed to publish');
+  const { error: targetError } = await supabase
+    .from('group_assignment_targets')
+    .insert(targetIds.map(group_id => ({ assignment_id: row.id, group_id })));
+  if (targetError) {
+    await supabase.from('group_assignments').delete().eq('id', row.id);
+    throw new ApiError(500, targetError.message);
+  }
+
+  const targets = groups.filter(g => targetIds.includes(g.id));
+  notifyGroupMembers({ id: row.id as string, title: row.title as string }, targets, req.user!.id, req.body?.lang === 'en' ? 'en' : 'zh');
+  logEvent({
+    actor_id: req.user!.id,
+    actor_role: req.user!.role,
+    event_type: 'group_assignment_published',
+    object_type: 'group_assignment',
+    object_id: row.id as string,
+    space_id: placement.space_id,
+    metadata_json: { course_id: courseId, group_ids: targetIds, placement: placement.placement, view_id: placement.view_id, due_at: input.dueAt ?? null },
+  });
+  const [assignment] = await loadAssignments(courseId, { ids: [row.id as string] });
+  res.status(201).json({ assignment });
+});
+
+async function staffAssignment(id: string, user: Request['user']) {
+  const { data, error } = await supabase.from('group_assignments').select('id, course_id').eq('id', id).is('deleted_at', null).maybeSingle();
+  if (error || !data) throw new ApiError(404, 'Group task not found');
+  await ensureCourseStaffStanding(data.course_id as string, user);
+  return { id: data.id as string, courseId: data.course_id as string };
+}
+
+// PATCH /api/group-assignments/:id — 改内容、截止时间、位置、发给哪些组（不重复通知）
+router.patch('/group-assignments/:id', verifyJWT, async (req: Request, res: Response) => {
+  const { id, courseId } = await staffAssignment(String(req.params.id), req.user);
+  const input = parseAssignmentInput(req.body, { partial: true });
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.title !== undefined) updates.title = input.title;
+  if (input.content !== undefined) updates.content = input.content;
+  if (input.requirements !== undefined) updates.requirements = input.requirements;
+  if (input.dueAt !== undefined) updates.due_at = input.dueAt;
+  if (input.placement !== undefined) {
+    const placement = placementColumns(input);
+    await validatePlacement(courseId, placement.placement, placement.space_id, placement.view_id);
+    Object.assign(updates, placement);
+  }
+  if (input.groupIds) {
+    const groups = await courseGroups(courseId);
+    const known = new Set(groups.map(g => g.id));
+    if (input.groupIds.length === 0) throw new ApiError(400, 'Choose at least one group');
+    if (input.groupIds.some(g => !known.has(g))) throw new ApiError(400, 'group_ids must be groups in this course');
+  }
+  const { error } = await supabase.from('group_assignments').update(updates).eq('id', id);
+  if (error) throw new ApiError(500, error.message);
+  if (input.groupIds) {
+    const { error: delError } = await supabase.from('group_assignment_targets').delete().eq('assignment_id', id);
+    if (delError) throw new ApiError(500, delError.message);
+    const { error: insError } = await supabase.from('group_assignment_targets').insert(input.groupIds.map(group_id => ({ assignment_id: id, group_id })));
+    if (insError) throw new ApiError(500, insError.message);
+  }
+  logEvent({
+    actor_id: req.user!.id,
+    actor_role: req.user!.role,
+    event_type: 'group_assignment_updated',
+    object_type: 'group_assignment',
+    object_id: id,
+    metadata_json: { course_id: courseId, fields: Object.keys(updates).filter(k => k !== 'updated_at'), group_ids: input.groupIds ?? null },
+  });
+  const [assignment] = await loadAssignments(courseId, { ids: [id] });
+  res.json({ assignment });
+});
+
+// DELETE /api/group-assignments/:id — 撤回（软删，研究数据里还在）
+router.delete('/group-assignments/:id', verifyJWT, async (req: Request, res: Response) => {
+  const { id, courseId } = await staffAssignment(String(req.params.id), req.user);
+  const { error } = await supabase.from('group_assignments').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+  if (error) throw new ApiError(500, error.message);
+  logEvent({
+    actor_id: req.user!.id,
+    actor_role: req.user!.role,
+    event_type: 'group_assignment_withdrawn',
+    object_type: 'group_assignment',
+    object_id: id,
+    metadata_json: { course_id: courseId },
+  });
+  res.json({ ok: true });
+});
+
+// GET /api/spaces/:spaceId/group-assignments — 工作区任务面板：这个空间里该看到的任务（按视图筛在前端）
+router.get('/spaces/:spaceId/group-assignments', verifyJWT, async (req: Request, res: Response) => {
+  const spaceId = String(req.params.spaceId);
+  const space = await ensureSpaceAccess(spaceId, req.user!);
+  const isStaff = isCourseStaff(space.standing);
+  let visibleGroups: Set<string> | null;
+  if (space.group_id) visibleGroups = new Set([space.group_id]);
+  else visibleGroups = isStaff ? null : await memberGroupIds(space.course_id, req.user!.id);
+  const all = visibleGroups && visibleGroups.size === 0 ? [] : await loadAssignments(space.course_id, { visibleGroups });
+  res.json({ assignments: all.filter(a => !a.spaceId || a.spaceId === spaceId) });
 });
 
 export default router;

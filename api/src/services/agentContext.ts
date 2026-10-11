@@ -1,6 +1,8 @@
 import { loadStudentLearningContext } from './studentLearningContext';
 import { selectModelHistory, type ModelContextBudget } from './modelContextBudget';
 import { selectConversationHistory, CONVERSATION_HISTORY_LIMIT } from './conversationHistory';
+import { FRICTION_MARKER, GHOSTWRITE_GUIDANCE } from './answerChecks';
+import { buildMemoryContext, memoriesForPrompt } from './studentMemory';
 import {
   getConversationAgentSpec,
   normalizeConversationAgentMode,
@@ -8,8 +10,6 @@ import {
 import {
   getOrCreateProfile,
   getScaffoldingPrompt,
-  loadReflections,
-  buildReflectionContext,
   detectOverrelianceSignals,
   updateProfileAfterInteraction,
   type LearnerProfile,
@@ -191,17 +191,20 @@ export async function buildAgentContext(
   let frictionMessage: string | null = null;
   let scaffoldingSection = '';
   let reflectionSection = '';
+  // 学生关掉了「让 AI 记住我」：不放记忆，也不翻以前的对话和提问（studentLearningContext）
+  let memoryEnabled = true;
 
   if (userRole === 'student') {
     try {
-      const [profile, reflections] = await Promise.all([
+      const [profile, memories] = await Promise.all([
         getOrCreateProfile(userId, courseId),
-        loadReflections(userId, courseId),
+        memoriesForPrompt(userId, courseId, userMessage ?? history.at(-1)?.content ?? ''),
       ]);
       learnerProfile = profile;
+      memoryEnabled = memories.enabled;
 
       scaffoldingSection = getScaffoldingPrompt(profile.scaffoldingLevel);
-      reflectionSection = buildReflectionContext(reflections);
+      reflectionSection = buildMemoryContext(memories);
 
       if (userMessage) {
         const signals = detectOverrelianceSignals(userMessage);
@@ -241,16 +244,14 @@ export async function buildAgentContext(
     sections.push(reflectionSection);
   }
 
-  const studentContext = userRole === 'student' ? (params.studentLearningContext ?? await loadStudentLearningContext({ userId, courseId, question: userMessage ?? history.at(-1)?.content ?? '' }).catch(() => '')) : '';
+  const studentContext = userRole === 'student' && memoryEnabled
+    ? (params.studentLearningContext ?? await loadStudentLearningContext({ userId, courseId, question: userMessage ?? history.at(-1)?.content ?? '' }).catch(() => ''))
+    : '';
   if (studentContext) sections.push(studentContext);
 
   // 7. Active cognitive friction warning
   if (overrelianceDetected) {
-    sections.push(
-      'COGNITIVE FRICTION ALERT: The student\'s latest message shows signs of cognitive offloading (asking for direct answers or copy-paste content). ' +
-      'You MUST redirect them toward their own thinking. Do NOT comply with the request directly. ' +
-      'Instead, ask a guiding question or offer a thinking framework.',
-    );
+    sections.push(`${FRICTION_MARKER}: ${GHOSTWRITE_GUIDANCE}`);
   }
 
   // 8. Tool instructions (only if tools are available)

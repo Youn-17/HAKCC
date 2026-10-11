@@ -595,7 +595,9 @@ describe('防回归：检索函数和删除接口都认 deleted_at', () => {
     const apiSrc = resolve(__dirname, '..');
     // 这几处也写 deleted_at，但删的不是笔记，不进知识库，不受这条约束：
     //   routes/noteConversations.ts —— 学生删自己的 AI 对话（071，DELETE /note-conversations/:id，行和消息留给研究导出）
-    const NOT_NOTES = ['routes/noteConversations.ts'];
+    //   routes/groups.ts —— 教师撤回发给小组的任务（088，DELETE /group-assignments/:id，任务不是笔记）
+    //   routes/workspaceAgent.ts —— 学生删自己的知识空间智能体对话（093，DELETE /workspace-agent/:courseId/conversations/:convId）
+    const NOT_NOTES = ['routes/noteConversations.ts', 'routes/groups.ts', 'routes/workspaceAgent.ts'];
     const writers = (readdirSync(apiSrc, { recursive: true }) as string[])
       .filter(file => file.endsWith('.ts') && !file.endsWith('.test.ts') && !NOT_NOTES.includes(file))
       .filter(file => /deleted_at:\s*new Date/.test(readFileSync(resolve(apiSrc, file), 'utf-8')));

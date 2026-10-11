@@ -26,6 +26,8 @@ const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
   baidu: { zh: '文心一言', en: 'ERNIE' },
   openrouter: { zh: 'OpenRouter', en: 'OpenRouter' },
   tavily: { zh: 'Tavily', en: 'Tavily' },
+  apikeyfan: { zh: 'APIKEY.FAN', en: 'APIKEY.FAN' },
+  'apikeyfan-grok': { zh: 'APIKEY.FAN · Grok', en: 'APIKEY.FAN · Grok' },
   mineru: { zh: 'MinerU', en: 'MinerU' },
   local: { zh: '本平台服务器', en: 'This server' },
 };
@@ -50,22 +52,51 @@ const MODEL_NAMES: Record<string, string | { zh: string; en: string }> = {
   'kimi-k2.7-code': 'Kimi K2.7 Code',
   'kimi-k2.7-code-highspeed': { zh: 'Kimi K2.7 Code 高速', en: 'Kimi K2.7 Code Highspeed' },
   'kimi-k2.5-thinking': 'Kimi K2.5 Thinking',
+  'gpt-6.1-sol': 'GPT-6.1 Sol',
+  'gpt-6-sol': 'GPT-6 Sol',
+  'gpt-6-astra': 'GPT-6 Astra',
+  'gpt-5.6-sol': 'GPT-5.6 Sol',
+  'gpt-5.6-terra': 'GPT-5.6 Terra',
   'gpt-5.5': 'GPT-5.5',
   'gpt-5-mini': 'GPT-5 mini',
+  'grok-4.7': 'Grok 4.7',
+  'grok-4.7-build-fast': 'Grok 4.7 Build Fast',
+  'grok-4.6': 'Grok 4.6',
+  'grok-4.5': 'Grok 4.5',
+  'grok-4.3': 'Grok 4.3',
+  'grok-4.20-0309-reasoning': { zh: 'Grok 4.20（推理）', en: 'Grok 4.20 Reasoning' },
+  'grok-4.20-0309-non-reasoning': { zh: 'Grok 4.20（不推理）', en: 'Grok 4.20 Non-reasoning' },
+  'grok-4.20-multi-agent-0309': 'Grok 4.20 Multi-Agent',
+  'grok-build-0.1': 'Grok Build 0.1',
   'gpt-image-2': 'GPT Image 2',
+  'gpt-image-2.5-sunburst': 'GPT Image 2.5 Sunburst',
+  'gpt-image-2.5-flare': 'GPT Image 2.5 Flare',
+  'grok-imagine-image': 'Grok Imagine Image',
+  'grok-imagine-image-quality': { zh: 'Grok Imagine Image（高质量）', en: 'Grok Imagine Image (quality)' },
   'claude-opus-4-6': 'Claude Opus 4.6',
   'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'qwen3.8-max': 'Qwen 3.8 Max',
+  'qwen3.7-plus': 'Qwen 3.7 Plus',
   'qwen3.6-plus': 'Qwen 3.6 Plus',
+  'qwen3.8-omni-flash': 'Qwen 3.8 Omni Flash',
   'qwen3.8-flash': 'Qwen 3.8 Flash',
   'qwen3-8b': 'Qwen3 8B',
   'qwen3-vl-plus': 'Qwen3-VL Plus',
   'qwen3-vl-8b-thinking': 'Qwen3-VL 8B Thinking',
   'qwen-image-plus': { zh: '通义万相 Plus', en: 'Qwen Image Plus' },
+  'qwen-image-2.0': { zh: '千问图像 2.0', en: 'Qwen Image 2.0' },
+  'qwen-image-2.0-pro': { zh: '千问图像 2.0 Pro', en: 'Qwen Image 2.0 Pro' },
   'doubao-seedream-4-5-251128': { zh: '豆包 Seedream 4.5', en: 'Seedream 4.5' },
   'MiniMax-M3': 'MiniMax M3',
+  'MiniMax-M3.1-Flash-Preview': { zh: 'MiniMax M3.1 Flash（预览）', en: 'MiniMax M3.1 Flash (preview)' },
   'MiniMax-M2.7': 'MiniMax M2.7',
+  'MiniMax-M2.7-highspeed': { zh: 'MiniMax M2.7 极速版', en: 'MiniMax M2.7 Highspeed' },
+  'MiniMax-M2.5': 'MiniMax M2.5',
+  'MiniMax-M2.5-highspeed': { zh: 'MiniMax M2.5 极速版', en: 'MiniMax M2.5 Highspeed' },
+  'MiniMax-M2.1': 'MiniMax M2.1',
+  'MiniMax-M2.1-highspeed': { zh: 'MiniMax M2.1 极速版', en: 'MiniMax M2.1 Highspeed' },
+  'MiniMax-M2': 'MiniMax M2',
   'MiniMax-Text-01': 'MiniMax Text 01',
   'abab6.5s-chat': 'abab6.5s',
   'image-01': 'MiniMax image-01',
@@ -123,6 +154,34 @@ const hint = (tone: SpeedTone, text: [string, string], detail: [string, string],
 /** 不是对话/生图模型的（向量、检索、解析）：上面那些速度数字说的都不是它们 */
 const NOT_GENERATION = new Set(['text-embedding-3-small', 'tavily-search', 'mineru', 'pdf-parse']);
 
+/** 2026-10-11 用课程里的 key 单次实测（一句中文问答）的用时（秒）：APIKEY.FAN 的两个分组、千问（默认开思考时） */
+const MEASURED_TEXT_SECONDS: Record<string, Record<string, number>> = {
+  apikeyfan: { 'gpt-6.1-sol': 2.9, 'gpt-6-sol': 2.1, 'gpt-5.6-terra': 2.7, 'gpt-5.6-sol': 2.1, 'gpt-5.5': 1.7, 'gpt-6-astra': 4.9 },
+  'apikeyfan-grok': {
+    'grok-4.7': 3.8, 'grok-4.20-0309-non-reasoning': 0.9, 'grok-4.5': 3.7, 'grok-4.6': 10.1, 'grok-4.3': 2.7,
+    'grok-4.20-0309-reasoning': 2.5, 'grok-4.20-multi-agent-0309': 3, 'grok-4.7-build-fast': 1.8, 'grok-build-0.1': 4.3,
+  },
+  alibaba: { 'qwen3.8-max': 3.1, 'qwen3.7-plus': 6.8, 'qwen3.8-flash': 2.2, 'qwen3.8-omni-flash': 1.5, 'qwen3-vl-plus': 0.9 },
+};
+const MEASURED_TEXT_DETAIL: Record<string, [string, string]> = {
+  apikeyfan: ['2026-10-11 用课程里的 key 单次实测（一句中文问答），不是并发压测', 'single-call measurement on 2026-10-11 with the course key, not a concurrency test'],
+  'apikeyfan-grok': ['2026-10-11 用课程里的 key 单次实测（一句中文问答），不是并发压测', 'single-call measurement on 2026-10-11 with the course key, not a concurrency test'],
+  alibaba: ['2026-10-11 用课程里的 key 单次实测（一句中文问答，开着思考）；自动反馈这类快速任务会关思考，关掉后 1–2 秒', 'single-call measurement on 2026-10-11 with thinking on; quick tasks such as auto-feedback turn thinking off and take 1–2 s'],
+};
+/** 同一天实测一张图的用时（秒） */
+const MEASURED_IMAGE_SECONDS: Record<string, Record<string, number>> = {
+  apikeyfan: { 'gpt-image-2': 21, 'gpt-image-2.5-sunburst': 24, 'gpt-image-2.5-flare': 21 },
+  'apikeyfan-grok': { 'grok-imagine-image': 6, 'grok-imagine-image-quality': 4 },
+  alibaba: { 'qwen-image-2.0': 8 },
+};
+
+/** MiniMax 对话模型 2026-10-11 的单次实测用时（秒） */
+const MINIMAX_TEXT_SECONDS: Record<string, number> = {
+  'MiniMax-M3': 1.3, 'MiniMax-M3.1-Flash-Preview': 1.3, 'MiniMax-M2.7': 4.2, 'MiniMax-M2.7-highspeed': 2.3,
+  'MiniMax-M2.5': 2.8, 'MiniMax-M2.5-highspeed': 2.3, 'MiniMax-M2.1': 1.4, 'MiniMax-M2.1-highspeed': 1.9,
+  'MiniMax-M2': 3.5, 'MiniMax-Text-01': 0.6, 'abab6.5s-chat': 0.6,
+};
+
 /** 速度与并发提示。没有实测依据的返回 null。 */
 export function modelSpeedHint(providerId: string, model: string, lang: Lang = 'zh'): SpeedHint | null {
   if (NOT_GENERATION.has(model)) return null;
@@ -160,12 +219,27 @@ export function modelSpeedHint(providerId: string, model: string, lang: Lang = '
       ['52 人压测中位 10–17 秒，偶有断连，适合作溢出', '52-student test median 10–17 s with occasional dropped connections; best as overflow'], lang);
   }
   if (providerId === 'minimax') {
+    const seconds = MINIMAX_TEXT_SECONDS[model];
+    if (seconds) {
+      return hint(seconds <= 1.5 ? 'fast' : seconds <= 3 ? 'medium' : 'slow', [`单次约 ${seconds} 秒`, `about ${seconds} s per call`],
+        ['2026-10-11 用课程里的 key 单次实测（一句中文问答），不是并发压测', 'single-call measurement on 2026-10-11 with the course key, not a concurrency test'], lang);
+    }
     if (model === 'image-01') {
       return hint('slow', ['约 35 秒一张', 'about 35 s per image'], ['2026-09-06 实测 35 秒', 'measured 35 s'], lang);
     }
     if (model === 'image-01-live') {
       return hint('slow', ['约 27 秒一张', 'about 27 s per image'], ['2026-09-06 实测 27 秒', 'measured 27 s'], lang);
     }
+  }
+  const seconds = MEASURED_TEXT_SECONDS[providerId]?.[model];
+  if (seconds) {
+    return hint(seconds <= 1.5 ? 'fast' : seconds <= 3 ? 'medium' : 'slow', [`单次约 ${seconds} 秒`, `about ${seconds} s per call`],
+      MEASURED_TEXT_DETAIL[providerId], lang);
+  }
+  const imageSeconds = MEASURED_IMAGE_SECONDS[providerId]?.[model];
+  if (imageSeconds) {
+    return hint(imageSeconds <= 10 ? 'fast' : imageSeconds <= 25 ? 'medium' : 'slow', [`约 ${imageSeconds} 秒一张`, `about ${imageSeconds} s per image`],
+      ['2026-10-11 用课程里的 key 实测一张', 'one image measured on 2026-10-11 with the course key'], lang);
   }
   return null;
 }

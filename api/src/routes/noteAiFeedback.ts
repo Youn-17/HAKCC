@@ -1319,12 +1319,17 @@ router.post('/notes/:noteId/ai-feedback/:feedbackId/respond', verifyJWT, async (
       const studentName = req.user!.name || 'A student';
       const triggerLabel = ((data as FeedbackRow).trigger_type ?? '').replace(/_/g, ' ');
       const actionLabel = status === 'accepted' ? 'accepted' : status === 'inserted' ? 'inserted' : 'disagreed with';
+      // notifications 没有 metadata 列，多带一个键整条都会被拒；supabase-js 不抛异常，错误只在返回值里。
+      // 点开通知定位到笔记靠 link_type / link_id（列名见 notificationWrites.test.ts）。
       void supabase.from('notifications').insert({
         user_id: course.instructor_id,
         type: 'ai_feedback_response',
         title: `${studentName} ${actionLabel} AI feedback`,
         message: `${studentName} ${actionLabel} a "${triggerLabel}" AI feedback on "${note.title}".`,
-        metadata: { note_id: note.id, feedback_id: feedbackId, status, trigger_type: (data as FeedbackRow).trigger_type },
+        link_type: 'note',
+        link_id: note.id,
+      }).then(({ error: notifyError }) => {
+        if (notifyError) console.error('[NoteAIFeedback] Failed to notify course instructor:', notifyError.message);
       });
     }
   }

@@ -15,6 +15,7 @@
 
 import { supabase } from '../config/supabase';
 import { TtlCache } from './ttlCache';
+import { classifyAgencyIntent } from './answerChecks';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -175,6 +176,10 @@ export function getScaffoldingPrompt(level: ScaffoldingLevel): string {
 /**
  * Analyze a user message for signs of cognitive offloading.
  * Returns detected patterns that should increase friction.
+ *
+ * 2026-10-11 起按 answerChecks.classifyAgencyIntent 判断：只有「替我写观点 / 作答 / 回复、给我能直接交的文字」才算。
+ * 以前十五个字以内的话一律算「偷懒」，「哪些观点有分歧？」这种正常的短问题也会让智能体不正面回答；
+ * 「帮我做一个网页」也被当成代写，和动手做（agentMaker）打架。
  */
 export function detectOverrelianceSignals(message: string): {
   isDirectAnswerRequest: boolean;
@@ -182,71 +187,22 @@ export function detectOverrelianceSignals(message: string): {
   isLazyDelegation: boolean;
   frictionResponse: string | null;
 } {
-  const lower = message.toLowerCase();
-  const patterns = {
-    isDirectAnswerRequest: false,
-    isCopyPasteRequest: false,
+  const ghostwrite = classifyAgencyIntent(message) === 'ghostwrite';
+  const copyPaste = ghostwrite && /复制|粘贴|拷贝|直接(用|交|提交)|现成|copy|paste|hand in|submit/i.test(message);
+  return {
+    isDirectAnswerRequest: ghostwrite && !copyPaste,
+    isCopyPasteRequest: copyPaste,
     isLazyDelegation: false,
-    frictionResponse: null as string | null,
-  };
-
-  const directAnswerPatterns = [
-    /(?:帮我|替我|给我)(?:写|编写|撰写|完成|做)/,
-    /(?:write|complete|finish|do)\s+(?:it|this|that)\s+for\s+me/i,
-    /直接(?:告诉|给)我(?:答案|结论)/,
-    /just\s+(?:tell|give)\s+me\s+the\s+answer/i,
-    /帮我写一段/,
-    /write\s+(?:a|the)\s+(?:paragraph|section|essay|response)/i,
-  ];
-
-  const copyPastePatterns = [
-    /(?:可以|能)(?:直接)?(?:复制|粘贴|拷贝)/,
-    /copy\s*(?:and|&)?\s*paste/i,
-    /给我一个(?:可以直接用|现成)的/,
-    /give\s+me\s+(?:something|text)\s+(?:I\s+can\s+)?(?:just\s+)?(?:copy|use)/i,
-  ];
-
-  const lazyPatterns = [
-    /^.{0,15}$/,
-    /^(?:帮我|help|yes|no|ok|好的|嗯|是的|对)$/i,
-  ];
-
-  for (const p of directAnswerPatterns) {
-    if (p.test(message)) {
-      patterns.isDirectAnswerRequest = true;
-      patterns.frictionResponse =
-        '我注意到你希望我直接提供答案。在知识建构中，你自己的想法才是最有价值的。' +
+    frictionResponse: !ghostwrite ? null : copyPaste
+      ? '我理解你想要一个现成的文本，但直接复制AI生成的内容不利于你的学习。' +
+        '让我们一起发展你自己的想法。你目前对这个问题有什么初步的思考？\n\n' +
+        'I understand you want ready-made text, but copying AI-generated content won\'t help you learn. ' +
+        'Let\'s develop your own ideas instead. What are your initial thoughts on this?'
+      : '我注意到你希望我直接提供答案。在知识建构中，你自己的想法才是最有价值的。' +
         '让我换个方式来帮助你思考这个问题——\n\n' +
         'I notice you\'re asking for a direct answer. In Knowledge Building, your own thinking is what matters most. ' +
-        'Let me help you think through this instead—';
-      break;
-    }
-  }
-
-  if (!patterns.isDirectAnswerRequest) {
-    for (const p of copyPastePatterns) {
-      if (p.test(message)) {
-        patterns.isCopyPasteRequest = true;
-        patterns.frictionResponse =
-          '我理解你想要一个现成的文本，但直接复制AI生成的内容不利于你的学习。' +
-          '让我们一起发展你自己的想法。你目前对这个问题有什么初步的思考？\n\n' +
-          'I understand you want ready-made text, but copying AI-generated content won\'t help you learn. ' +
-          'Let\'s develop your own ideas instead. What are your initial thoughts on this?';
-        break;
-      }
-    }
-  }
-
-  if (!patterns.isDirectAnswerRequest && !patterns.isCopyPasteRequest) {
-    for (const p of lazyPatterns) {
-      if (p.test(message.trim())) {
-        patterns.isLazyDelegation = true;
-        break;
-      }
-    }
-  }
-
-  return patterns;
+        'Let me help you think through this instead—',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -437,6 +393,7 @@ export async function loadReflections(
     .select('*')
     .eq('user_id', userId)
     .eq('course_id', courseId)
+    .eq('memory_kind', 'profile')
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order('relevance_score', { ascending: false })
     .order('created_at', { ascending: false })

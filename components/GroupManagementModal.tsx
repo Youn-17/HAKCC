@@ -22,7 +22,7 @@ const TASK_STATUS_TONE: Record<string, string> = {
   todo: MORANDI.stone,
 };
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Users, UserPlus, User, Crown, CheckCircle, Circle, 
   Clock, BarChart2, Move, ListTodo, Target, RefreshCw, 
@@ -33,6 +33,13 @@ import { ai as aiApi, courseSettings, courses as coursesApi, groups as groupsApi
 import type { ApiGroupTask } from '../services/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { taskBoardGroup } from './courseStanding';
+import GroupAssignmentPublisher from './GroupAssignmentPublisher';
+import { leaderPermissions, placeMember } from './groupAssignmentModel';
+import { nameInitial, sortByName } from './nameOrder';
+import { useLayoutMotion } from '../hooks/useLayoutMotion';
+import { useEnterMotion } from '../hooks/useEnterMotion';
+import GroupLogoSlot from './GroupLogoSlot';
+import { logoErrorText, prepareLogo } from './groupLogo';
 
 interface GroupManagementModalProps {
   isOpen: boolean;
@@ -46,7 +53,19 @@ interface GroupManagementModalProps {
   courseId?: string;
   onTaskCreate?: (task: GroupTask) => void; // Callback for notification generation
   spaceId?: string;
+  /** 当前空间的视图（含主画布 Welcome）：发布任务时可以选发到哪个视图 */
+  views?: Array<{ id: string; title: string }>;
+  /** 打开时直接到哪个页签（任务面板的「管理」会带上 assignments） */
+  initialTab?: GroupModalTab;
+  /** 发布、修改、撤回任务之后，工作区刷新任务面板 */
+  onAssignmentsChanged?: () => void;
+  /** 为每组建视图（工作区负责摆入口卡片、更新视图列表）；不是教职或不在空间里时没有 */
+  onCreateGroupViews?: () => Promise<{ created: string[]; existing: number }>;
+  /** 小组 logo 换了（工作区把这个组的视图卡片跟着换） */
+  onGroupLogoChanged?: (groupId: string, logoUrl: string | null) => void;
 }
+
+export type GroupModalTab = 'overview' | 'assignments' | 'tasks' | 'analytics' | 'experiment';
 
 const TASK_STATUS_ORDER: GroupTask['status'][] = ['todo', 'in_progress', 'done'];
 
@@ -64,9 +83,16 @@ function apiTaskToTask(t: ApiGroupTask): GroupTask {
   };
 }
 
-const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onClose, isStaff, lang, courseId, onTaskCreate, spaceId }) => {
+/** 页签内容的几块：每页最外层容器的直接子元素（概览是左边的小组和右边的待分配） */
+const tabParts = (content: HTMLElement): Element[] => Array.from(content.firstElementChild?.children ?? []);
+
+const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onClose, isStaff, lang, courseId, onTaskCreate, spaceId, views, initialTab, onAssignmentsChanged, onCreateGroupViews, onGroupLogoChanged }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'analytics' | 'experiment'>('overview');
+  const [activeTab, setActiveTab] = useState<GroupModalTab>('overview');
+  useEffect(() => { if (isOpen && initialTab) setActiveTab(initialTab); }, [isOpen, initialTab]);
+  const [leaderError, setLeaderError] = useState('');
+  const [memberError, setMemberError] = useState('');
+  const [logoError, setLogoError] = useState('');
   const [groups, setGroups] = useState<Group[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [tasks, setTasks] = useState<GroupTask[]>([]);
@@ -76,9 +102,14 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
   const [groupLayout, setGroupLayout] = useState<'grid' | 'list'>('grid');
   const [newGroupName, setNewGroupName] = useState('');
   const [draggedMemberId, setDraggedMemberId] = useState<string | null>(null);
-  const [isCreatingSpaces, setIsCreatingSpaces] = useState(false);
+  const [isCreatingViews, setIsCreatingViews] = useState(false);
+  const [groupNotice, setGroupNotice] = useState('');
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [groupError, setGroupError] = useState('');
+  // 分组、换组、移出、网格/列表切换时，名字和小组卡片滑到新位置；同一个人在「待分配」和组里用同一个
+  // data-layout-id，拖进组时是从右边那一栏飞过去的（anime.js Layout）
+  const rosterMotion = useLayoutMotion<HTMLDivElement>({ step: 20, maxStagger: 8 });
+  const tabContentRef = useRef<HTMLDivElement>(null);
 
   // 分析页：任务板的真实分布，进标签页时才拉
   const [taskStats, setTaskStats] = useState<GroupTaskStats | null>(null);
@@ -127,6 +158,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
             courseId: ag.courseId,
             leaderId: ag.leaderId,
             color: ag.color,
+            logoUrl: ag.logoUrl ?? null,
             aiFeedbackCondition: ag.aiFeedbackCondition ?? null,
             memberIds: ag.memberIds,
             members: ag.members,
@@ -203,6 +235,12 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     teacherTag: '教师',
     leader: '组长',
     setLeader: '设为组长',
+    clearLeader: '取消组长',
+    becomeLeader: '我来当组长',
+    stepDown: '卸任组长',
+    leaderHint: '还没有组长时，组员可以自己定；定了以后由组长移交，老师随时可以调整。',
+    leaderFailed: '组长没有改成功，请再试一次。',
+    tabAssignments: '发布任务',
     members: '成员',
     tasks: '任务板',
     phases: { planning: '计划 (Planning)', monitoring: '监控 (Monitoring)', evaluating: '评估 (Evaluating)' },
@@ -215,13 +253,22 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     byGroup: '各小组的阶段分布',
     noGroup: '您尚未加入任何小组',
     dragHint: '拖拽学生到小组',
+    removeMember: '移出',
+    removeMemberLabel: (name: string, group: string) => `把 ${name} 移出${group}`,
+    removeFailed: '没有移出成功，请再试一次。',
+    moveFailed: '没有移动成功，请再试一次。',
+    leftUnassigned: '已移出原来的小组，但没能加进新的小组，请再拖一次。',
+    dropToUnassign: '拖到这里，移出小组',
     delete: '删除',
     condition: 'AI反馈',
     conditionTreatment: '实验组',
     conditionControl: '对照组',
     conditionNone: '未分配',
-    createGroupSpaces: '为每组建空间',
-    groupSpacesHint: '为每个小组创建专属知识空间(组间隔离)',
+    createGroupViews: '为每组建视图',
+    groupViewsHint: '在当前空间里给每个小组建一个视图，名称用组名，主画布上放好入口卡片；已经有视图的组跳过',
+    groupViewsCreated: (names: string[]) => `已为 ${names.length} 个小组建好视图：${names.join('、')}。主画布上方有入口卡片，学生半分钟内就能看到。`,
+    groupViewsExisting: '每个小组都已经有自己的视图了。',
+    groupViewsFailed: '视图没有建成，请再试一次。',
     tabExperiment: '实验设置',
     expModeTitle: '实验模式',
     expModeDesc: '开启后:学生只能在小组专属空间发布笔记;未分配条件的学生默认不接收 AI 自动反馈(白名单制);共享空间不投递任何自动反馈。主动求助不受影响。',
@@ -258,6 +305,12 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     teacherTag: 'Teacher',
     leader: 'Leader',
     setLeader: 'Make Leader',
+    clearLeader: 'Remove leader',
+    becomeLeader: "I'll be the leader",
+    stepDown: 'Step down',
+    leaderHint: 'Until there is a leader, any member can choose one; after that the leader hands it over. Teachers can change it any time.',
+    leaderFailed: 'The leader was not changed. Please try again.',
+    tabAssignments: 'Publish tasks',
     members: 'Members',
     tasks: 'Task Board',
     phases: { planning: 'Planning', monitoring: 'Monitoring', evaluating: 'Evaluating' },
@@ -270,13 +323,22 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     byGroup: 'Phase distribution by group',
     noGroup: 'You are not in a group',
     dragHint: 'Drag students to groups',
+    removeMember: 'Remove',
+    removeMemberLabel: (name: string, group: string) => `Remove ${name} from ${group}`,
+    removeFailed: 'Could not remove the member. Please try again.',
+    moveFailed: 'Could not move the member. Please try again.',
+    leftUnassigned: 'Removed from the old group, but could not add to the new one. Please drag again.',
+    dropToUnassign: 'Drop here to remove from the group',
     delete: 'Delete',
     condition: 'AI Feedback',
     conditionTreatment: 'Treatment',
     conditionControl: 'Control',
     conditionNone: 'Unassigned',
-    createGroupSpaces: 'Create Group Spaces',
-    groupSpacesHint: 'Create one private knowledge space per group (isolated between groups)',
+    createGroupViews: 'Create Group Views',
+    groupViewsHint: 'Creates one view per group in this space, named after the group, with an entry card on the main canvas; groups that already have one are skipped',
+    groupViewsCreated: (names: string[]) => `Created views for ${names.length} group${names.length === 1 ? '' : 's'}: ${names.join(', ')}. Entry cards are above the main canvas; students see them within half a minute.`,
+    groupViewsExisting: 'Every group already has its own view.',
+    groupViewsFailed: 'The views were not created. Please try again.',
     tabExperiment: 'Experiment',
     expModeTitle: 'Experiment Mode',
     expModeDesc: 'When on: students can only post in group-bound spaces; unassigned students receive no proactive AI feedback (allowlist); shared spaces get no proactive delivery. On-demand help is unaffected.',
@@ -317,6 +379,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     setGroupError('');
     try {
       const { group } = await groupsApi.create(courseId, { name });
+      rosterMotion.capture();
       setGroups(prev => [...prev, {
         id: group.id,
         name: group.name,
@@ -343,41 +406,85 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     if (!window.confirm(lang === 'zh' ? '确定删除该小组?' : 'Delete this group?')) return;
     try {
       await groupsApi.delete(groupId);
+      rosterMotion.capture();
       setGroups(prev => prev.filter(g => g.id !== groupId));
     } catch (err) {
       console.error('Failed to delete group', err);
     }
   };
 
-  const handleDropMember = async (groupId: string) => {
-    if (!draggedMemberId) return;
-    const memberId = draggedMemberId;
-    setDraggedMemberId(null);
-
-    const oldGroup = groups.find(g => g.memberIds.includes(memberId));
-    if (oldGroup?.id === groupId) return;
-
+  /** 把一个人放进某个组、移到别的组，或移出小组（targetId = null）。界面先变，服务器没改成就按服务器上的实际情况改回去 */
+  const moveMember = async (memberId: string, targetId: string | null) => {
+    const from = groups.find(g => g.memberIds.includes(memberId));
+    if ((from?.id ?? null) === targetId) return;
+    setMemberError('');
+    rosterMotion.capture();
+    setGroups(prev => placeMember(prev, memberId, targetId));
+    if (from) {
+      try {
+        await groupsApi.removeMember(from.id, memberId);
+      } catch (err) {
+        console.error('Failed to remove member', err);
+        rosterMotion.capture();
+        setGroups(prev => placeMember(prev, memberId, from.id, from.leaderId === memberId ? from.id : undefined));
+        setMemberError(targetId ? t.moveFailed : t.removeFailed);
+        return;
+      }
+    }
+    if (!targetId) return;
     try {
-      if (oldGroup) await groupsApi.removeMember(oldGroup.id, memberId);
-      await groupsApi.addMembers(groupId, [memberId]);
-      setGroups(prev => prev.map(g => {
-        const without = g.memberIds.filter(id => id !== memberId);
-        return g.id === groupId
-          ? { ...g, memberIds: [...without, memberId] }
-          : { ...g, memberIds: without };
-      }));
+      await groupsApi.addMembers(targetId, [memberId]);
     } catch (err) {
-      console.error('Failed to move member', err);
-      alert(lang === 'zh' ? '移动成员失败,请重试' : 'Failed to move member');
+      console.error('Failed to add member', err);
+      rosterMotion.capture();
+      setGroups(prev => placeMember(prev, memberId, null));
+      setMemberError(from ? t.leftUnassigned : t.moveFailed);
     }
   };
 
-  const handleSetLeader = async (groupId: string, memberId: string) => {
-    setGroups(prev => prev.map(g => g.id === groupId ? { ...g, leaderId: memberId } : g));
+  const handleDropMember = (targetId: string | null) => {
+    const memberId = draggedMemberId;
+    setDraggedMemberId(null);
+    if (memberId) void moveMember(memberId, targetId);
+  };
+
+  /** 小组 logo（2026-10-11 用户：各组设计了 logo，教师给他们放进去）：浏览器里先缩成 512 像素以内的 PNG 再传 */
+  const handleLogoUpload = async (groupId: string, file: File) => {
+    setLogoError('');
     try {
-      await groupsApi.update(groupId, { leader_id: memberId });
+      const logo = await prepareLogo(file);
+      const { group } = await groupsApi.setLogo(groupId, { file_name: logo.fileName, mime_type: logo.mimeType, data_url: logo.dataUrl });
+      setGroups(prev => prev.map(g => g.id === groupId ? { ...g, logoUrl: group.logoUrl } : g));
+      onGroupLogoChanged?.(groupId, group.logoUrl);
+    } catch (err) {
+      console.error('Failed to upload group logo', err);
+      setLogoError(logoErrorText(err, lang === 'zh'));
+    }
+  };
+
+  const handleLogoClear = async (groupId: string) => {
+    setLogoError('');
+    try {
+      await groupsApi.clearLogo(groupId);
+      setGroups(prev => prev.map(g => g.id === groupId ? { ...g, logoUrl: null } : g));
+      onGroupLogoChanged?.(groupId, null);
+    } catch (err) {
+      console.error('Failed to remove group logo', err);
+      setLogoError(lang === 'zh' ? 'logo 没有去掉，请再试一次。' : 'The logo was not removed. Please try again.');
+    }
+  };
+
+  /** 指定或取消组长：先改界面，服务器拒绝（权限、网络）就改回去并提示 */
+  const handleSetLeader = async (groupId: string, memberId: string | null) => {
+    const previous = groups.find(g => g.id === groupId)?.leaderId ?? null;
+    setLeaderError('');
+    setGroups(prev => prev.map(g => g.id === groupId ? { ...g, leaderId: memberId ?? undefined } : g));
+    try {
+      await groupsApi.setLeader(groupId, memberId);
     } catch (err) {
       console.error('Failed to set leader', err);
+      setGroups(prev => prev.map(g => g.id === groupId ? { ...g, leaderId: previous ?? undefined } : g));
+      setLeaderError(t.leaderFailed);
     }
   };
 
@@ -419,19 +526,23 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     }
   };
 
-  const handleCreateGroupSpaces = async () => {
-    if (!courseId || isCreatingSpaces) return;
-    setIsCreatingSpaces(true);
+  /**
+   * 为每组建视图（2026-10-10 用户：「为每组建空间」没实现，实际要的就是为每组建视图）。
+   * 原来建的是绑组的空间：只有课程创建者能建（课程管理员点了报错），建了工作区也没有入口进去。
+   */
+  const handleCreateGroupViews = async () => {
+    if (!onCreateGroupViews || isCreatingViews) return;
+    setIsCreatingViews(true);
+    setGroupError('');
+    setGroupNotice('');
     try {
-      const { created, message } = await coursesApi.createGroupSpaces(courseId);
-      alert(lang === 'zh'
-        ? (created.length > 0 ? `已为 ${created.length} 个小组创建专属空间` : '每个小组都已有专属空间')
-        : (created.length > 0 ? `Created ${created.length} group spaces` : (message ?? 'All groups already have spaces')));
+      const { created } = await onCreateGroupViews();
+      setGroupNotice(created.length > 0 ? t.groupViewsCreated(created) : t.groupViewsExisting);
     } catch (err) {
-      console.error('Failed to create group spaces', err);
-      alert(lang === 'zh' ? '创建小组空间失败' : 'Failed to create group spaces');
+      console.error('Failed to create group views', err);
+      setGroupError(t.groupViewsFailed);
     } finally {
-      setIsCreatingSpaces(false);
+      setIsCreatingViews(false);
     }
   };
 
@@ -521,16 +632,23 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
 
   // --- Renderers ---
 
+  const nameOfMember = (id: string) => members.find(m => m.id === id)?.name ?? '';
+
   const renderTeacherOverview = () => {
-    const unassigned = members.filter(m => !groups.some(g => g.memberIds.includes(m.id)));
+    // 按姓名首字母排（2026-10-10 用户：好分组），待分配名单再按首字母分段
+    const unassigned = sortByName(members.filter(m => !groups.some(g => g.memberIds.includes(m.id))), m => m.name);
     const unassignedStudents = unassigned.filter(m => m.role === 'student');
     // 教师也可以进小组（和学生一起讨论、带组）。单列在学生下面，拖不拖由老师定
     const unassignedTeachers = unassigned.filter(m => m.role === 'teacher');
+    const draggingFromGroup = draggedMemberId !== null && groups.some(g => g.memberIds.includes(draggedMemberId));
     const candidate = (m: Member) => (
       <div
         key={m.id}
+        data-layout-item
+        data-layout-id={`gm-${m.id}`}
         draggable
         onDragStart={() => setDraggedMemberId(m.id)}
+        onDragEnd={() => setDraggedMemberId(null)}
         className="flex cursor-grab items-center gap-2.5 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 transition-colors duration-200 hover:border-[#000080]/30 hover:bg-zinc-50 active:cursor-grabbing"
       >
         <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[0.6875rem] font-semibold text-zinc-600">
@@ -541,7 +659,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     );
 
     return (
-      <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto lg:flex-row">
+      <div ref={rosterMotion.ref} className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto lg:flex-row">
         {/* Left: Groups */}
         <div className="min-h-0 flex-1 space-y-4 lg:overflow-y-auto">
            <div className="mb-5 flex flex-wrap items-center gap-2">
@@ -564,24 +682,31 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
                 <Plus size={15} />
                 {isCreatingGroup ? (lang === 'zh' ? '创建中…' : 'Creating…') : t.create}
               </button>
-              <button
-                onClick={handleCreateGroupSpaces}
-                disabled={isCreatingSpaces || groups.length === 0}
-                className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-all duration-200 hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:text-zinc-300"
-                title={t.groupSpacesHint}
-              >
-                <Target size={15} />
-                {isCreatingSpaces ? (lang === 'zh' ? '创建中…' : 'Creating…') : t.createGroupSpaces}
-              </button>
+              {onCreateGroupViews && (
+                <button
+                  onClick={handleCreateGroupViews}
+                  disabled={isCreatingViews || groups.length === 0}
+                  className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-all duration-200 hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:text-zinc-300"
+                  title={t.groupViewsHint}
+                >
+                  <Target size={15} />
+                  {isCreatingViews ? (lang === 'zh' ? '创建中…' : 'Creating…') : t.createGroupViews}
+                </button>
+              )}
            </div>
 
            <div className="view-toolbar mb-3 flex gap-1" role="group" aria-label={lang === 'zh' ? '小组布局' : 'Group layout'}>
-             <button type="button" aria-pressed={groupLayout === 'grid'} onClick={() => setGroupLayout('grid')}>{lang === 'zh' ? '网格' : 'Grid'}</button>
-             <button type="button" aria-pressed={groupLayout === 'list'} onClick={() => setGroupLayout('list')}>{lang === 'zh' ? '列表' : 'List'}</button>
+             <button type="button" aria-pressed={groupLayout === 'grid'} onClick={() => { rosterMotion.capture(); setGroupLayout('grid'); }}>{lang === 'zh' ? '网格' : 'Grid'}</button>
+             <button type="button" aria-pressed={groupLayout === 'list'} onClick={() => { rosterMotion.capture(); setGroupLayout('list'); }}>{lang === 'zh' ? '列表' : 'List'}</button>
            </div>
-           {groupError && (
+           {(groupError || leaderError || memberError || logoError) && (
              <div className="mb-4 rounded-xl border px-3.5 py-2.5 text-xs" style={noticeStyle(MORANDI.rose)}>
-               {groupError}
+               {groupError || leaderError || memberError || logoError}
+             </div>
+           )}
+           {groupNotice && !groupError && (
+             <div className="mb-4 rounded-xl border px-3.5 py-2.5 text-xs" style={noticeStyle(MORANDI.sage)}>
+               {groupNotice}
              </div>
            )}
 
@@ -589,16 +714,27 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
               {groups.map(group => (
                 <div
                   key={group.id}
+                  data-layout-item
                   className="view-content-card group/card rounded-2xl border border-zinc-200 bg-white p-5 transition-colors duration-200 hover:border-zinc-300"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => handleDropMember(group.id)}
                 >
                    <div className="mb-4 flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-[0.9375rem] font-semibold tracking-tight text-zinc-950">{group.name}</h3>
-                        <p className="mt-0.5 text-xs text-zinc-500">
-                          {group.memberIds.length} {lang === 'zh' ? '名成员' : (group.memberIds.length === 1 ? 'member' : 'members')}
-                        </p>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <GroupLogoSlot
+                          name={group.name}
+                          logoUrl={group.logoUrl}
+                          lang={lang === 'zh' ? 'zh' : 'en'}
+                          editable
+                          onUpload={file => handleLogoUpload(group.id, file)}
+                          onClear={() => handleLogoClear(group.id)}
+                        />
+                        <div className="min-w-0">
+                          <h3 className="truncate text-[0.9375rem] font-semibold tracking-tight text-zinc-950">{group.name}</h3>
+                          <p className="mt-0.5 text-xs text-zinc-500">
+                            {group.memberIds.length} {lang === 'zh' ? '名成员' : (group.memberIds.length === 1 ? 'member' : 'members')}
+                          </p>
+                        </div>
                       </div>
                       <button
                         onClick={() => handleDeleteGroup(group.id)}
@@ -637,10 +773,18 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
 
                    <div className="min-h-[104px] space-y-1.5 rounded-xl border border-dashed border-zinc-200 bg-zinc-50/60 p-2.5">
                       {group.memberIds.length === 0 && <div className="py-6 text-center text-xs text-zinc-400">{t.dragHint}</div>}
-                      {group.memberIds.map(mid => {
+                      {sortByName(group.memberIds, nameOfMember).map(mid => {
                         const mem = members.find(m => m.id === mid);
                         return (
-                          <div key={mid} className="group/row flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-2.5 py-2 text-[0.8125rem] text-zinc-700">
+                          <div
+                            key={mid}
+                            data-layout-item
+                            data-layout-id={`gm-${mid}`}
+                            draggable
+                            onDragStart={() => setDraggedMemberId(mid)}
+                            onDragEnd={() => setDraggedMemberId(null)}
+                            className="group/row flex cursor-grab items-center justify-between gap-2 rounded-lg border border-zinc-100 bg-white px-2.5 py-2 text-[0.8125rem] text-zinc-700 active:cursor-grabbing"
+                          >
                              <div className="flex min-w-0 items-center gap-2">
                                 {group.leaderId === mid && <Crown size={13} className="flex-shrink-0" style={{ color: MORANDI.ochre }}/>}
                                 <span className="truncate">{mem?.name}</span>
@@ -648,9 +792,23 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
                                   <span className="flex-shrink-0 rounded-full border px-1.5 text-[0.625rem] font-semibold leading-4" style={chipStyle(MORANDI.lilac)}>{t.teacherTag}</span>
                                 )}
                              </div>
-                             {group.leaderId !== mid && (
-                               <button onClick={() => handleSetLeader(group.id, mid)} className="text-xs text-[#000080] hover:underline opacity-0 group-hover:opacity-100 transition-opacity">{t.setLeader}</button>
-                             )}
+                             {/* 触屏上一直显示；有鼠标的设备悬停这一行时才出现 */}
+                             <div className="flex shrink-0 items-center gap-0.5">
+                               <button
+                                 onClick={() => handleSetLeader(group.id, group.leaderId === mid ? null : mid)}
+                                 className={`rounded-md px-1.5 py-0.5 text-[0.6875rem] font-medium transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000080]/40 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100 ${group.leaderId === mid ? 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700' : 'text-[#000080] hover:bg-[#000080]/[0.06]'}`}
+                               >
+                                 {group.leaderId === mid ? t.clearLeader : t.setLeader}
+                               </button>
+                               <button
+                                 onClick={() => moveMember(mid, null)}
+                                 aria-label={t.removeMemberLabel(mem?.name ?? '', group.name)}
+                                 title={t.removeMemberLabel(mem?.name ?? '', group.name)}
+                                 className="rounded-md px-1.5 py-0.5 text-[0.6875rem] font-medium text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-700 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000080]/40 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100"
+                               >
+                                 {t.removeMember}
+                               </button>
+                             </div>
                           </div>
                         );
                       })}
@@ -660,21 +818,39 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
            </div>
         </div>
 
-        {/* Right: Unassigned */}
-        <div className="flex w-full shrink-0 flex-col border-t border-zinc-200 pt-4 lg:w-64 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+        {/* Right: Unassigned。组里的人拖回这里就是移出小组 */}
+        <div
+          className="flex w-full shrink-0 flex-col border-t border-zinc-200 pt-4 lg:w-64 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0"
+          onDragOver={(e) => { if (draggingFromGroup) e.preventDefault(); }}
+          onDrop={() => { if (draggingFromGroup) handleDropMember(null); }}
+        >
            <div className="mb-3">
              <h3 className="text-[0.8125rem] font-semibold tracking-tight text-zinc-900">{t.unassigned}</h3>
              <p className="mt-0.5 text-xs text-zinc-500">
                {unassignedStudents.length + unassignedTeachers.length} {lang === 'zh' ? '人 · 拖到左侧小组' : 'left · drag into a group'}
              </p>
            </div>
+           {draggingFromGroup && (
+             <div className="mb-3 rounded-xl border border-dashed border-[#000080]/30 bg-[#000080]/[0.03] px-3 py-5 text-center text-xs font-medium text-[#000080]/70">
+               {t.dropToUnassign}
+             </div>
+           )}
            <div className="flex-1 space-y-4 overflow-y-auto pr-1">
               <div>
                 <div className="mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-zinc-400">
                   {t.unassignedStudents} · {unassignedStudents.length}
                 </div>
                 <div className="space-y-1.5">
-                  {unassignedStudents.map(candidate)}
+                  {unassignedStudents.map((m, i) => {
+                    const letter = nameInitial(m.name);
+                    const first = i === 0 || nameInitial(unassignedStudents[i - 1].name) !== letter;
+                    return (
+                      <React.Fragment key={m.id}>
+                        {first && <div className={`px-1 text-[0.6875rem] font-semibold tabular-nums text-[#000080]/55 ${i === 0 ? '' : 'pt-2'}`}>{letter}</div>}
+                        {candidate(m)}
+                      </React.Fragment>
+                    );
+                  })}
                   {unassignedStudents.length === 0 && (
                     <div className="py-3 text-center text-xs text-zinc-400">
                       {lang === 'zh' ? '所有学生都已分组' : 'Every student has a group'}
@@ -698,6 +874,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
 
   const renderTaskBoard = () => {
     if (!boardGroup) return <div className="flex flex-col items-center justify-center h-full text-gray-400"><AlertCircle size={48} className="mb-2"/><p>{isStaff ? t.noGroups : t.noGroup}</p></div>;
+    const leader = leaderPermissions({ isStaff, userId: currentUserId, leaderId: boardGroup.leaderId, memberIds: boardGroup.memberIds });
 
     return (
       <div className="flex h-full gap-6">
@@ -716,19 +893,49 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
               </label>
             )}
             <div className="mb-6 rounded-xl border border-[#000080]/15 bg-[#000080]/[0.05] p-4">
-               <h3 className="mb-1 text-lg font-bold text-[#000080]">{boardGroup.name}</h3>
-               <div className="flex items-center gap-1 text-xs text-[#000080]/70"><Crown size={12}/> {t.leader}: {members.find(m => m.id === boardGroup.leaderId)?.name || t.noLeader}</div>
+               <div className="mb-1 flex items-center gap-2.5">
+                 <GroupLogoSlot name={boardGroup.name} logoUrl={boardGroup.logoUrl} lang={lang === 'zh' ? 'zh' : 'en'} sizeClass="h-10 w-10" />
+                 <h3 className="min-w-0 truncate text-lg font-bold text-[#000080]">{boardGroup.name}</h3>
+               </div>
+               <div className="flex items-center gap-1 text-xs text-[#000080]/70"><Crown size={12}/> {t.leader}: {(leader.current && members.find(m => m.id === leader.current)?.name) || t.noLeader}</div>
+               {!leader.current && leader.canAssign && boardGroup.memberIds.includes(currentUserId) && (
+                 <button onClick={() => handleSetLeader(boardGroup.id, currentUserId)}
+                   className="mt-3 inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[#000080] px-3 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#000066] active:scale-[0.98]">
+                   <Crown size={12}/> {t.becomeLeader}
+                 </button>
+               )}
+               {leader.current === currentUserId && !isStaff && (
+                 <button onClick={() => handleSetLeader(boardGroup.id, null)}
+                   className="mt-3 inline-flex min-h-8 items-center rounded-lg border border-[#000080]/20 bg-white/70 px-3 text-xs font-medium text-[#000080] transition-colors hover:bg-white">
+                   {t.stepDown}
+                 </button>
+               )}
+               <p className="mt-2.5 text-[0.6875rem] leading-relaxed text-[#000080]/60">{t.leaderHint}</p>
             </div>
+            {leaderError && <div className="mb-4 rounded-xl border px-3 py-2 text-xs" style={noticeStyle(MORANDI.rose)}>{leaderError}</div>}
 
             <h4 className="font-bold text-gray-700 mb-3 text-sm uppercase tracking-wide">{t.members}</h4>
             <div className="space-y-2 flex-1 overflow-y-auto">
-               {boardGroup.memberIds.map(mid => {
+               {sortByName(boardGroup.memberIds, nameOfMember).map(mid => {
                  const mem = members.find(m => m.id === mid);
+                 const isLeader = leader.current === mid;
                  return (
-                   <div key={mid} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
+                   <div key={mid} className="group/row flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
                       <UserAvatar name={mem?.name} avatar={mem?.avatar} size={32} />
-                      <span className="text-sm font-medium text-gray-700">{mem?.name} {mid === currentUserId && '(You)'}</span>
-                      {boardGroup.leaderId === mid && <Crown size={14} className="ml-auto" style={{ color: MORANDI.ochre }}/>}
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700">{mem?.name} {mid === currentUserId && (lang === 'zh' ? '（我）' : '(You)')}</span>
+                      {isLeader && <Crown size={14} className="shrink-0" style={{ color: MORANDI.ochre }}/>}
+                      {!isLeader && leader.canAssign && (
+                        <button onClick={() => handleSetLeader(boardGroup.id, mid)}
+                          className="shrink-0 rounded-md px-1.5 py-0.5 text-[0.6875rem] font-medium text-[#000080] transition-all hover:bg-[#000080]/[0.06] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000080]/40 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100">
+                          {t.setLeader}
+                        </button>
+                      )}
+                      {isLeader && isStaff && (
+                        <button onClick={() => handleSetLeader(boardGroup.id, null)}
+                          className="shrink-0 rounded-md px-1.5 py-0.5 text-[0.6875rem] font-medium text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-700 focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100">
+                          {t.clearLeader}
+                        </button>
+                      )}
                    </div>
                  );
                })}
@@ -778,7 +985,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
                               onChange={(e) => setNewTaskAssignee(e.target.value)}
                               className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 bg-gray-50"
                            >
-                              {boardGroup.memberIds.map(mid => {
+                              {sortByName(boardGroup.memberIds, nameOfMember).map(mid => {
                                  const m = members.find(mem => mem.id === mid);
                                  return <option key={mid} value={mid}>{m?.name}</option>
                               })}
@@ -1029,16 +1236,21 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
     );
   };
 
+  // 换页签时，这一页的几块依次出现
+  const motionTab = !isOpen ? null : (activeTab === 'experiment' || activeTab === 'assignments') && !isStaff ? 'overview' : activeTab;
+  useEnterMotion(tabContentRef, motionTab, { targets: tabParts, step: 40, maxStagger: 4 });
+
   if (!isOpen) return null;
 
   const tabs: { key: typeof activeTab; label: string }[] = [
     { key: 'overview', label: t.tabs.overview },
+    ...(isStaff ? [{ key: 'assignments' as const, label: t.tabAssignments }] : []),
     { key: 'tasks', label: t.tabs.tasks },
     { key: 'analytics', label: t.tabs.analytics },
     ...(isStaff ? [{ key: 'experiment' as const, label: t.tabExperiment }] : []),
   ];
-  // 课内身份晚于弹窗到达、判定不是教职时，「实验设置」页签已经不在了，退回概览
-  const currentTab = activeTab === 'experiment' && !isStaff ? 'overview' : activeTab;
+  // 课内身份晚于弹窗到达、判定不是教职时，「实验设置」「发布任务」页签已经不在了，退回概览
+  const currentTab = (activeTab === 'experiment' || activeTab === 'assignments') && !isStaff ? 'overview' : activeTab;
 
   return (
     <div className="workspace-view-shell fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1081,9 +1293,19 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({ isOpen, onC
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden bg-zinc-50/70 p-6">
+        <div ref={tabContentRef} className="flex-1 overflow-hidden bg-zinc-50/70 p-6">
            {currentTab === 'overview' && (
               isStaff ? renderTeacherOverview() : renderTaskBoard()
+           )}
+           {currentTab === 'assignments' && courseId && (
+              <GroupAssignmentPublisher
+                courseId={courseId}
+                groups={groups.map(g => ({ id: g.id, name: g.name }))}
+                views={views ?? []}
+                spaceId={spaceId}
+                lang={lang === 'zh' ? 'zh' : 'en'}
+                onChanged={onAssignmentsChanged}
+              />
            )}
            {currentTab === 'tasks' && renderTaskBoard()}
            {currentTab === 'analytics' && renderAnalytics()}

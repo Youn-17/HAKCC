@@ -182,3 +182,258 @@
 .assistant-panel[data-large-text="true"] .assistant-conversation :is(.assistant-response,.assistant-user-message) { font-size: 1rem; line-height: 1.8; }
 .note-editor-shell .note-prose[contenteditable] { box-shadow: 0 4px 24px rgb(20 35 65 / 3%) !important; border-color: #e5e8ee; }
 .dark .note-editor-shell .note-prose[contenteditable] { border-color: #2b364a; }
+
+/* ── 知识空间智能体整页（2026-10-11）：桌面上放一张稿纸 ──────────────
+   中间的对话是一张白纸，左边的历史对话直接放在桌面上，右边是一块半透明的板子
+   （它在读什么、这段对话做出了什么）。变量也挂在整页上，右栏和顶栏里的下拉菜单才有底色。 */
+.agent-page {
+  --assistant-accent: #000080;
+  --assistant-ink: #202c46;
+  --assistant-muted: #5b687d;
+  --assistant-line: #e2e7ef;
+  --assistant-paper: #fff;
+  --assistant-wash: #f7f8fb;
+  color: var(--assistant-ink);
+}
+.dark .agent-page {
+  --assistant-accent: #b0bfff;
+  --assistant-ink: #e3e9f4;
+  --assistant-muted: #a4afc2;
+  --assistant-line: #2b364a;
+  --assistant-paper: #151e2e;
+  --assistant-wash: #101827;
+}
+.assistant-panel[data-layout="page"] { background: var(--assistant-paper); }
+/* 读的那一栏最宽 46rem 居中，一行三四十个字 */
+.assistant-panel[data-layout="page"] .assistant-conversation,
+.assistant-panel[data-layout="page"] .assistant-footer {
+  padding-left: max(1.5rem, calc((100% - 46rem) / 2));
+  padding-right: max(1.5rem, calc((100% - 46rem) / 2));
+}
+.assistant-panel[data-layout="page"] .assistant-conversation { padding-top: 2.25rem; padding-bottom: 1.5rem; overflow-x: hidden; }
+/* 一问一答之间多留些空；只管消息，「正在思考」之类的提示还是原来的间距 */
+.assistant-panel[data-layout="page"] .assistant-conversation > [data-ai-motion="message"]:not(:last-child) { margin-block-end: 1.75rem; }
+/* 空白页本身就占满一屏，再带一截下边距就多出一条滚动条 */
+.assistant-conversation > [data-agent-empty] { margin-block-end: 0; }
+/* 回答不再套框，像写在纸上；提问还是气泡 */
+.assistant-panel[data-layout="page"] .assistant-response {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+.assistant-panel[data-layout="page"] :is(.assistant-response, .assistant-user-message) { font-size: .9375rem; line-height: 1.85; }
+.assistant-panel[data-layout="page"][data-large-text="true"] :is(.assistant-response, .assistant-user-message) { font-size: 1.0625rem; }
+.assistant-panel[data-layout="page"] .assistant-footer {
+  position: relative;
+  border-top: 0;
+  background: var(--assistant-paper);
+  padding-top: .25rem;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+}
+/* 对话滚到底下时淡出，不在输入框上沿切一刀 */
+.assistant-panel[data-layout="page"] .assistant-footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 1.75rem;
+  background: linear-gradient(to top, var(--assistant-paper), transparent);
+  pointer-events: none;
+}
+.assistant-panel[data-layout="page"] .assistant-composer {
+  border-radius: 1.25rem;
+  box-shadow: 0 1px 2px rgb(30 58 138 / 4%), 0 14px 34px -20px rgb(30 58 138 / 30%);
+}
+/* 欢迎页的大标题：拉丁字母用 Instrument Serif，汉字落到宋体，和笔记正文一个调子 */
+.agent-page-display {
+  font-family: 'Instrument Serif', 'Songti SC', 'STSong', 'Noto Serif SC', 'SimSun', serif;
+  font-weight: 400;
+  letter-spacing: -.005em;
+}
+/* 欢迎页背后一层很淡的点阵，像画布，往四周淡出 */
+.agent-hero-grid {
+  background-image: radial-gradient(circle at 1px 1px, rgb(0 0 128 / 9%) 1px, transparent 0);
+  background-size: 1.25rem 1.25rem;
+  -webkit-mask-image: radial-gradient(ellipse 55% 65% at 50% 38%, #000 18%, transparent 74%);
+  mask-image: radial-gradient(ellipse 55% 65% at 50% 38%, #000 18%, transparent 74%);
+}
+.dark .agent-hero-grid { background-image: radial-gradient(circle at 1px 1px, rgb(176 191 255 / 10%) 1px, transparent 0); }
+/* 屏幕矮（笔记本 800 高上下）时欢迎页收紧，四张卡片不压到输入框底下：图标和顶栏里那个重复，先省掉 */
+@media (max-height: 860px) {
+  [data-agent-hero] { padding-top: .25rem; padding-bottom: .25rem; }
+  [data-agent-hero] [data-hero-icon] { display: none; }
+  [data-agent-hero] .agent-page-display { margin-top: 0; }
+}
+/* 左栏底部的今日用量 */
+.agent-usage-meter {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: .25rem;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e4e4e7;
+}
+.agent-usage-meter::-webkit-progress-bar { background: #e4e4e7; border-radius: 999px; }
+.agent-usage-meter::-webkit-progress-value { background: #000080; border-radius: 999px; }
+.agent-usage-meter::-moz-progress-bar { background: #000080; border-radius: 999px; }
+.dark .agent-usage-meter { background: #1f2937; }
+.dark .agent-usage-meter::-webkit-progress-bar { background: #1f2937; }
+.dark .agent-usage-meter::-webkit-progress-value { background: #93aafd; }
+.dark .agent-usage-meter::-moz-progress-bar { background: #93aafd; }
+/* 进场：顶栏、左栏、稿纸、右栏依次浮上来；欢迎页里的标题和四张卡片也一样。
+   只用 backwards：动画结束后不再占着 transform，悬停的位移照常生效 */
+@keyframes agent-page-rise { from { opacity: 0; transform: translate3d(0, .55rem, 0); } }
+.agent-page [data-enter] {
+  animation: agent-page-rise 520ms cubic-bezier(.22, 1, .36, 1) backwards;
+  animation-delay: calc(var(--enter-i, 0) * 70ms);
+}
+@media (prefers-reduced-motion: reduce) { .agent-page [data-enter] { animation: none; } }
+
+/* ── Note 页与 AI 助手第二版（2026-10-11 用户：布局更舒适；选中时不要明显的蓝框；AI 输入框更协调；Note 页要有动效）──
+   这一段放在最后，覆盖上面同名的规则。assistant.css 在 Tailwind 的层外面，压得过工具类，所以不加 !important。 */
+
+/* 1. 聚焦：不再套一圈深蓝。可点的东西用很淡的灰色光晕，输入框边框深一点的灰；键盘用户仍看得出焦点在哪 */
+.assistant-panel :is(button, select, input):focus-visible,
+.note-editor-shell :is(button, a, summary, [role="separator"]):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(32 44 70 / 10%);
+}
+.dark .assistant-panel :is(button, select, input):focus-visible,
+.dark .note-editor-shell :is(button, a, summary, [role="separator"]):focus-visible { box-shadow: 0 0 0 3px rgb(176 191 255 / 16%); }
+.note-editor-shell :is(input, textarea, select):focus,
+.note-editor-shell .note-prose[contenteditable]:focus {
+  outline: none;
+  border-color: rgb(32 44 70 / 20%);
+  box-shadow: 0 0 0 4px rgb(32 44 70 / 4%);
+}
+.dark .note-editor-shell :is(input, textarea, select):focus,
+.dark .note-editor-shell .note-prose[contenteditable]:focus { border-color: rgb(176 191 255 / 26%); box-shadow: 0 0 0 4px rgb(176 191 255 / 7%); }
+
+/* 2. AI 输入框：一整张圆角卡片。聚焦时不换色，只轻轻浮起；里面的按钮和下拉统一成 32px 的无框胶囊 */
+.assistant-composer {
+  border-radius: 1.25rem;
+  box-shadow: 0 1px 2px rgb(20 35 65 / 4%), 0 10px 30px -22px rgb(20 35 65 / 24%);
+  transition: border-color 200ms ease, box-shadow 280ms cubic-bezier(.22, 1, .36, 1), transform 280ms cubic-bezier(.22, 1, .36, 1);
+}
+.assistant-composer:focus-within {
+  border-color: rgb(32 44 70 / 16%);
+  box-shadow: 0 1px 2px rgb(20 35 65 / 5%), 0 18px 40px -22px rgb(20 35 65 / 32%);
+  transform: translateY(-1px);
+}
+.dark .assistant-composer:focus-within { border-color: rgb(176 191 255 / 20%); }
+.assistant-composer :is(input, textarea, select):focus { border-color: transparent; box-shadow: none; }
+.assistant-input { font-size: .9375rem; padding: .8rem 1rem .45rem; }
+.assistant-composer-refinable .assistant-input { padding-top: 2rem; }
+.assistant-tools { gap: .2rem; padding: .35rem .5rem .55rem; }
+.assistant-tools > button:not(.assistant-settings-toggle):not(:last-child) {
+  width: 1.75rem; height: 1.75rem; min-width: 1.75rem;
+  border-radius: .65rem;
+  color: var(--assistant-muted);
+  transition: background-color 160ms, color 160ms;
+}
+.assistant-tools > button:not(.assistant-settings-toggle):not(:last-child):hover { background: var(--assistant-wash); color: var(--assistant-ink); }
+.assistant-tools > .assistant-settings-toggle { min-width: 1.75rem; min-height: 1.75rem; border-radius: .65rem; }
+.assistant-tools > button:last-child { width: 2rem; height: 2rem; border-radius: 999px; }
+.assistant-primary-controls { gap: .2rem; }
+.assistant-primary-controls .assistant-model-control select {
+  height: 1.75rem; border: 0; border-radius: .65rem; padding: 0 .55rem;
+  font-size: .6875rem;
+  transition: background-color 160ms, color 160ms;
+}
+.assistant-primary-controls .assistant-answer-length { height: 1.75rem; border-radius: .65rem; padding-inline: .4rem; transition: background-color 160ms; }
+.assistant-primary-controls .assistant-answer-length:hover { background: var(--assistant-wash); }
+.assistant-primary-controls .assistant-answer-length select { font-size: .6875rem; }
+.assistant-primary-controls select:hover { background: var(--assistant-wash); border-color: transparent; color: var(--assistant-ink); }
+.assistant-composer select:focus-visible { box-shadow: none; background: var(--assistant-wash); color: var(--assistant-ink); }
+.assistant-refine-actions { top: .45rem; right: .6rem; }
+.assistant-refine-actions > button { height: 1.5rem; border-radius: 999px; padding: .15rem .55rem; color: var(--assistant-muted); transition: background-color 160ms, color 160ms; }
+.assistant-refine-actions > button:hover { background: var(--assistant-wash); color: var(--assistant-ink); }
+
+/* 3. 顶上两行松一点：标题、副标题、选智能体那一行都放大一号；两边的顶栏在桌面上一样高 */
+.assistant-header { padding-inline: .9rem; }
+.assistant-header-title h2 { font-size: .875rem; }
+.assistant-header-title p { font-size: .6875rem; margin-top: .1rem; }
+.assistant-context-bar { padding: .35rem .9rem; }
+.assistant-context-trigger { min-height: 1.85rem; padding: .25rem .45rem; font-size: .75rem; }
+.assistant-agent-description { padding: .1rem .45rem .35rem; font-size: .6875rem; }
+@media (min-width: 1024px) {
+  .note-editor-shell .assistant-header, .note-workspace-header { height: 3rem; min-height: 3rem; }
+}
+
+/* 4. AI 助手够宽时（打开笔记默认占一半）：对话和输入框收进居中的一栏，一行不拉得太长；回答不再套框，像写在纸上 */
+@container assistant (min-width: 720px) {
+  .assistant-conversation, .assistant-footer { padding-inline: max(1.25rem, calc((100% - 46rem) / 2)); }
+  .assistant-conversation { padding-top: 1.5rem; }
+  .assistant-response { background: transparent; border: 0; box-shadow: none; padding-inline: 0; }
+  .assistant-conversation :is(.assistant-response, .assistant-user-message) { font-size: .9375rem; line-height: 1.85; }
+}
+/* 回答里引用的笔记编号（行内代码）调淡，不再一块块跳出来 */
+.assistant-response :not(pre) > code {
+  padding: .05em .4em;
+  border-radius: .4rem;
+  background: rgb(32 44 70 / 5%);
+  color: var(--assistant-muted);
+  font-size: .84em;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+.dark .assistant-response :not(pre) > code { background: rgb(176 191 255 / 8%); }
+
+/* 5. Note 这一侧：工具栏按钮不再各带一圈边框，悬停才出底色；字号、行距两个下拉也一样 */
+.note-toolbar { gap: .2rem; padding: .45rem 1.25rem; background: #fbfbfd; }
+.dark .note-toolbar { background: rgb(17 24 39 / 70%); }
+.note-toolbar > button, .note-toolbar > div > button, .note-toolbar select {
+  height: 1.9rem;
+  border-color: transparent;
+  background-color: transparent;
+  border-radius: .6rem;
+  color: #52525b;
+  transition: background-color 150ms, color 150ms, transform 150ms;
+}
+.note-toolbar > button:hover, .note-toolbar > div > button:hover, .note-toolbar select:hover { background-color: rgb(32 44 70 / 6%); color: #18181b; }
+.note-toolbar > button:active, .note-toolbar > div > button:active { transform: scale(.96); }
+.dark .note-toolbar > button, .dark .note-toolbar > div > button, .dark .note-toolbar select { color: #a1a1aa; }
+.dark .note-toolbar > button:hover, .dark .note-toolbar > div > button:hover, .dark .note-toolbar select:hover { background-color: rgb(176 191 255 / 8%); color: #f4f4f5; }
+/* 正文那张纸：边框和阴影都轻一些，圆角大一号 */
+.note-editor-shell .note-prose[contenteditable] {
+  border-color: #eceef3;
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgb(30 58 138 / 3%), 0 14px 36px -26px rgb(30 58 138 / 22%) !important;
+}
+.dark .note-editor-shell .note-prose[contenteditable] { border-color: #263042; }
+/* 分隔条：平时一条细线，悬停、拖动时把手变长 */
+.note-editor-shell [role="separator"] > div { transition: height 220ms cubic-bezier(.22, 1, .36, 1), background-color 160ms; }
+.note-editor-shell [role="separator"]:hover > div, .note-editor-shell [role="separator"]:active > div { height: 6rem; }
+/* 支架：悬停时往右挪一点，像要被拿起来 */
+.note-scaffold-aside button { transition: background-color 150ms, color 150ms, transform 200ms cubic-bezier(.22, 1, .36, 1); }
+.note-scaffold-aside button:hover:not(:disabled) { transform: translateX(2px); }
+
+/* 6. 动效：打开笔记时 AI 助手从左边滑进来、Note 稍后浮上来；切页签时内容淡入；只动 transform 和 opacity */
+@keyframes note-side-in { from { opacity: 0; transform: translate3d(-.75rem, 0, 0); } }
+@keyframes note-pane-in { from { opacity: 0; transform: translate3d(0, .5rem, 0); } }
+@keyframes note-tab-in { from { opacity: 0; transform: translate3d(0, .35rem, 0); } }
+.note-editor-shell [data-note-pane="ai"] { animation: note-side-in 460ms cubic-bezier(.22, 1, .36, 1) backwards; }
+.note-editor-shell [data-note-pane="note"] { animation: note-pane-in 520ms cubic-bezier(.22, 1, .36, 1) 80ms backwards; }
+.note-tab-in { animation: note-tab-in 260ms cubic-bezier(.22, 1, .36, 1) backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .note-editor-shell [data-note-pane], .note-tab-in { animation: none; }
+  .assistant-composer, .note-toolbar > button, .note-toolbar > div > button, .note-scaffold-aside button,
+  .note-editor-shell [role="separator"] > div { transition: none; }
+  .assistant-composer:focus-within, .note-scaffold-aside button:hover:not(:disabled) { transform: none; }
+}
+
+/* Note 这一栏窄的时候（打开时和 AI 助手各占一半），工具栏只留图标，排成一行；宽了再显示文字 */
+.note-main { container: note-main / inline-size; }
+@container note-main (max-width: 900px) {
+  .note-toolbar-label { display: none; }
+  .note-toolbar { padding-inline: .6rem; gap: 1px; }
+  .note-toolbar > button { padding-inline: .3rem; }
+  .note-toolbar > div > button { padding-inline: .25rem; }
+  .note-toolbar > span { margin-inline: .15rem; }
+}

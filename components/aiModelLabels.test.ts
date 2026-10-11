@@ -37,7 +37,9 @@ describe('速度提示只写实测过的', () => {
 
   it('没测过的不猜', () => {
     expect(modelSpeedHint('openai', 'gpt-5.5')).toBeNull();
-    expect(modelSpeedHint('minimax', 'MiniMax-M2.7')).toBeNull();
-    expect(modelSpeedHint('alibaba', 'qwen3.8-max')).toBeNull();
+    // MiniMax 的对话型号 2026-10-11 单次实测过（见 aiModelLabels.speed.test.ts），没在清单里的照样不猜
+    expect(modelSpeedHint('minimax', 'MiniMax-M9')).toBeNull();
+    expect(modelSpeedHint('alibaba', 'qwen-image-2.0-pro')).toBeNull();
+    expect(modelSpeedHint('apikeyfan', 'gpt-7-preview')).toBeNull();
   });
 });

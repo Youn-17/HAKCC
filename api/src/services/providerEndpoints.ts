@@ -22,6 +22,9 @@ export const CHAT_ENDPOINTS: Record<string, string> = {
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
   minimax: 'https://api.minimax.chat/v1/text/chatcompletion_v2',
   anthropic: 'https://api.anthropic.com/v1/messages',
+  // APIKEY.FAN 中转的两个分组（OpenAI 兼容）。教师填的地址保存时会规范成 …/v1/chat/completions
+  apikeyfan: 'https://api.apikey.fan/v1/chat/completions',
+  'apikeyfan-grok': 'https://api.apikey.fan/v1/chat/completions',
 };
 
 /** 列模型清单的接口（探活、拉可用型号时用）。 */
@@ -35,7 +38,13 @@ export const MODELS_ENDPOINTS: Record<string, string> = {
   alibaba: 'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
   zhipu: 'https://open.bigmodel.cn/api/coding/paas/v4/models',
   openrouter: 'https://openrouter.ai/api/v1/models',
+  // APIKEY.FAN 中转：列模型用来验证 key
+  apikeyfan: 'https://api.apikey.fan/v1/models',
+  'apikeyfan-grok': 'https://api.apikey.fan/v1/models',
 };
+
+/** APIKEY.FAN 的生图接口（专线 slb.apikey.fan 禁用生图，见 openAiImage.ts） */
+export const APIKEYFAN_IMAGE_ENDPOINT = 'https://api.apikey.fan/v1/images/generations';
 
 /** MiniMax 的非对话接口。生图和语音都不是 OpenAI 那套形状，得单独走。 */
 export const MINIMAX_ENDPOINTS = {

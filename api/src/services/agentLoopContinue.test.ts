@@ -91,3 +91,22 @@ describe('回答被长度上限截住', () => {
     expect(done.result.finishReason).toBe('completed');
   });
 });
+
+describe('厂商资源不够、正文停在半句话（2026-10-11 评测）', () => {
+  it('insufficient_system_resource 和写到长度上限一样接着写；接完是 stop 就不再报结束原因', async () => {
+    h.replies = [
+      { content: '认为 AI 让思考变成可选项：核心类比是计算器——凡是省掉努力的工', finish_reason: 'insufficient_system_resource' },
+      { content: '具，都让我们少练了一次。', finish_reason: 'stop' },
+    ];
+    const { text, done } = await run();
+    expect(text).toBe('认为 AI 让思考变成可选项：核心类比是计算器——凡是省掉努力的工具，都让我们少练了一次。');
+    expect(done.result.continuations).toBe(1);
+    expect(done.result.providerFinish).toBeUndefined();
+  });
+
+  it('接到上限还没写完：结束原因带出去，运行记录里看得到', async () => {
+    h.replies = Array.from({ length: MAX_CONTINUATIONS + 1 }, (_, i) => ({ content: `第${i + 1}段`, finish_reason: 'length' }));
+    const { done } = await run();
+    expect(done.result.providerFinish).toBe('length');
+  });
+});

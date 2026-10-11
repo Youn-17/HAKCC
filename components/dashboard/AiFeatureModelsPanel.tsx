@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Course, Language } from '../../types';
+import { Info, ChevronDown } from 'lucide-react';
+import type { Language } from '../../types';
 import {
   ai as aiApi,
   ApiClientError,
@@ -11,52 +12,40 @@ import {
   type AiPickerPolicy,
   type AiPickerSurface,
 } from '../../services/apiClient';
-import RemixIcon from '../RemixIcon';
-import { MORANDI, chipStyle, noticeStyle } from '../morandiPalette';
-import {
-  modelDisplayName,
-  modelOptionLabel,
-  modelSpeedHint,
-  providerDisplayName,
-  type SpeedTone,
-} from '../aiModelLabels';
+import { MORANDI, noticeStyle } from '../morandiPalette';
+import { modelDisplayName, modelOptionLabel, modelSpeedHint, providerDisplayName } from '../aiModelLabels';
 
 /**
  * 课程 AI 设置里的「各功能用哪个 AI」。
  *
- * 教师原来不知道 AI 反馈、支架建议、生图这些功能各用的是哪个模型：每处代码自己挑，
- * 界面上哪里都看不到。这里把平台上每个用到 AI 的地方列出来，写明谁会用到、现在用哪个模型、
- * 出错时换哪家，并能逐项指定；另外能限定学生在笔记 AI 助手下拉框里能选哪些模型。
+ * 平台上每个用到 AI 的地方列一行，可以逐项指定模型，不指定就是「自动」；另外定各入口的模型菜单里显示哪些模型。
  * 功能清单和解析规则在后端 api/src/services/aiFeatureModels.ts，这里只负责显示和保存。
+ *
+ * 2026-10-11 用户：太长、太晃眼。改成：每个功能一行（名字、谁会用到、下拉框），说明和「出错时换哪家」收进 ⓘ，
+ * 「自动」那一项直接写现在用的是哪个；检索与解析这些不能选的折叠起来；
+ * 三个入口的模型菜单合成一张表（行是模型、按服务商分组，列是入口），点服务商那一行就一次勾上或取消这家的全部模型；
+ * 全部勾上就是不限制，不再另有「全部显示 / 只显示勾选的」两个选项。
  */
 
 type Lang2 = 'zh' | 'en';
 
-const GROUP_ORDER: AiFeatureGroup[] = ['note', 'space', 'dashboard', 'teacher', 'background'];
+const GROUP_ORDER: AiFeatureGroup[] = ['note', 'space', 'dashboard', 'teacher'];
 
 const GROUP_TITLE: Record<AiFeatureGroup, { zh: string; en: string }> = {
   note: { zh: '学生写笔记时', en: 'While students write notes' },
   space: { zh: '知识空间与讨论', en: 'Knowledge space and discussion' },
   dashboard: { zh: '学生仪表盘', en: 'Student dashboard' },
   teacher: { zh: '教师端', en: 'Teacher tools' },
-  background: { zh: '检索与解析（不在这里选模型）', en: 'Retrieval and parsing (not chosen here)' },
+  background: { zh: '检索与解析（自动，不用选）', en: 'Retrieval and parsing (automatic)' },
 };
 
-const WHO_LABEL: Record<AiFeatureModelRow['who'], { zh: string; en: string; tone: string }> = {
-  student: { zh: '学生', en: 'Students', tone: MORANDI.dustyBlue },
-  teacher: { zh: '教师', en: 'Teachers', tone: MORANDI.lilac },
-  both: { zh: '学生和教师', en: 'Both', tone: MORANDI.clay },
-};
-
-const TONE_COLOR: Record<SpeedTone, string> = {
-  fast: MORANDI.sage,
-  medium: MORANDI.ochre,
-  slow: MORANDI.rose,
+const WHO_LABEL: Record<AiFeatureModelRow['who'], { zh: string; en: string }> = {
+  student: { zh: '学生', en: 'Students' },
+  teacher: { zh: '教师', en: 'Teachers' },
+  both: { zh: '学生和教师', en: 'Both' },
 };
 
 const AUTO = 'auto';
-/** 宽屏时功能、谁会用到、现在用、指定模型四列，与表头对齐 */
-const FEATURE_GRID_LG = 'lg:grid-cols-[minmax(0,1.4fr)_6.5rem_minmax(0,1.3fr)_minmax(12rem,15rem)] lg:items-start lg:gap-5';
 const refValue = (ref: AiModelRef) => `${ref.providerId}::${ref.model}`;
 const sameRef = (a: AiModelRef, b: AiModelRef) => a.providerId === b.providerId && a.model === b.model;
 
@@ -64,52 +53,33 @@ function labels(lang: Lang2) {
   const zh = lang === 'zh';
   return {
     title: zh ? '各功能用哪个 AI' : 'Which AI each feature uses',
-    desc: zh
-      ? '这里列出平台上每个用到 AI 的地方、谁会用到、现在用的是哪个模型。每一项都可以指定模型；不指定就是「自动」：学生在等结果的功能先用 DeepSeek Flash，生成图片先用 DMX（聊天里说「画一张……」也会自动用它出图）。'
-      : 'Every place on the platform that uses AI, who uses it, and the model it uses now. You can pick a model for each; otherwise it is "Auto": features students wait on start with DeepSeek Flash, and images start with DMX (a "draw …" request in any chat also uses it).',
-    failoverNote: zh
-      ? '指定的模型出错，或同时请求太多排不上时，会按原来的顺序换下一家。'
-      : 'If the chosen model fails or is saturated, the request moves on to the next provider in the usual order.',
-    legend: zh ? '速度提示来自 2026 年 9 月的实测。' : 'Speed notes come from measurements in September 2026.',
-    course: zh ? '课程' : 'Course',
-    feature: zh ? '功能' : 'Feature',
-    who: zh ? '谁会用到' : 'Used by',
-    current: zh ? '现在用' : 'Uses now',
-    choose: zh ? '指定模型' : 'Model',
+    lead: zh ? '不指定就是「自动」。指定的模型出错或排满时，会自动换下一家。' : 'Leave it on Auto, or pick a model. If the chosen model fails or is busy, the next provider takes over.',
     auto: zh ? '自动' : 'Auto',
     autoWith: (name: string) => (zh ? `自动（现在是 ${name}）` : `Auto (now ${name})`),
-    tagTeacher: zh ? '已指定' : 'Chosen',
-    tagAuto: zh ? '自动' : 'Auto',
-    tagFixed: zh ? '固定' : 'Fixed',
-    tagActivityDefault: zh ? '新建活动的默认' : 'Default for new activities',
     fallbacks: zh ? '出错时换：' : 'On failure: ',
+    about: zh ? '说明' : 'About',
     unavailable: (name: string) => (zh
       ? `指定的 ${name} 现在用不了（这门课没有那家的 key，或模型没启用），先按自动走。`
-      : `The chosen ${name} is not available now (no key for it, or the model is not enabled); using Auto for now.`),
+      : `The chosen ${name} is not available now (no key for it, or the model is off); using Auto for now.`),
     none: zh ? '没有可用的服务商' : 'No provider available',
     noProvider: zh
-      ? '这门课还没有配置 AI 服务商，下面的功能都用不了，这里也保存不了。请先在上方「AI 集成设置」里添加一个。'
-      : 'This course has no AI provider yet: none of these features work and nothing here can be saved. Add one in "AI Integration Settings" above first.',
+      ? '这门课还没有配置 AI 服务商，下面的功能都用不了，这里也保存不了。请先在「服务商与密钥」里添加一家。'
+      : 'This course has no AI provider yet: none of these work and nothing here can be saved. Add one under "Providers & keys" first.',
     cooling: (names: string) => (zh ? `${names} 刚才连续出错，这几分钟暂时排到后面。` : `${names} failed repeatedly just now and is moved back for a few minutes.`),
-    pickerTitle: zh ? '各入口的模型菜单里显示哪些模型' : 'Which models each model menu shows',
-    pickerDesc: zh
-      ? '勾上的模型才会出现在那个入口的模型菜单里，可以多选。菜单里的「默认」是上表对应那一行的模型；那个模型没勾上时，「默认」改用勾上的里排在最前的。'
-      : 'Only ticked models appear in that entry\'s model menu; tick as many as you like. "Default" in the menu is the model of the matching row above; if that model is not ticked, Default uses the first ticked one.',
-    pickerSurface: {
-      note_partner: zh
-        ? { title: '笔记 AI 助手', desc: '笔记页左侧的 AI 助手，学生写笔记时用。' }
-        : { title: 'Note AI partner', desc: 'The AI partner on the left of the note page, used while writing notes.' },
-      workspace_agent: zh
-        ? { title: '知识空间智能体', desc: '画布顶栏「智能体」打开的侧栏。' }
-        : { title: 'Workspace assistant', desc: 'The side panel opened from "Agent" in the canvas top bar.' },
-      personal_agent: zh
-        ? { title: '学生首页的「AI 对话」', desc: '只管学生；老师在自己有教职的课里不受这份名单限制。' }
-        : { title: 'Students\' AI chat', desc: 'Applies to students only; teachers are not limited in courses they teach.' },
+    pickerTitle: zh ? '模型菜单里显示哪些模型' : 'Models shown in each model menu',
+    pickerLead: zh
+      ? '勾上的才会出现在那个入口的模型菜单里；全部勾上就是不限制（以后新启用的模型也会出现）。点服务商那一行，一次勾上或取消这家的全部模型。'
+      : 'Only ticked models appear in that menu; tick all for no limit (newly enabled models appear too). Tick a provider row to switch all its models at once.',
+    model: zh ? '模型' : 'Model',
+    surface: {
+      note_partner: zh ? { title: '笔记 AI 助手', desc: '笔记页左侧的 AI 助手，学生写笔记时用。' } : { title: 'Note AI partner', desc: 'The AI partner on the note page.' },
+      workspace_agent: zh ? { title: '知识空间智能体', desc: '画布顶栏「智能体」打开的侧栏。' } : { title: 'Workspace assistant', desc: 'The panel opened from "Agent" in the canvas top bar.' },
+      personal_agent: zh ? { title: '学生 AI 对话', desc: '学生首页的「AI 对话」；老师在自己有教职的课里不受限制。' } : { title: 'Student AI chat', desc: 'The AI chat on the student home; teachers are not limited in courses they teach.' },
     } as Record<AiPickerSurface, { title: string; desc: string }>,
-    partnerAll: zh ? '全部显示（这门课启用的对话模型）' : 'Show all chat models enabled for this course',
-    partnerSome: zh ? '只显示勾选的' : 'Show only the ticked ones',
-    partnerDefault: zh ? '默认' : 'Default',
-    keepOne: zh ? '至少留一个' : 'Keep at least one',
+    allOf: (provider: string) => (zh ? `${provider}的全部模型` : `All ${provider} models`),
+    isDefault: zh ? '默认' : 'Default',
+    defaultHint: zh ? '菜单里的「默认」：上表对应那一行用的模型；它没勾上时用勾上的第一个。' : '"Default" in the menu is the model of the matching row above, or the first ticked one.',
+    keepOne: zh ? '每个入口至少留一个模型。' : 'Keep at least one model in each menu.',
     saving: zh ? '保存中…' : 'Saving…',
     saved: zh ? '已保存' : 'Saved',
     notSaved: zh ? '没有保存：' : 'Not saved: ',
@@ -119,135 +89,79 @@ function labels(lang: Lang2) {
   };
 }
 
-function SpeedChip({ providerId, model, lang }: { providerId: string; model: string; lang: Lang2 }) {
-  const hint = modelSpeedHint(providerId, model, lang);
-  if (!hint) return null;
-  return (
-    <span
-      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium"
-      style={chipStyle(TONE_COLOR[hint.tone])}
-      title={hint.detail}
-    >
-      {hint.text}
-    </span>
-  );
-}
-
-function modelName(ref: AiModelRef, lang: Lang2) {
-  return modelOptionLabel(ref.providerId, ref.model, lang);
-}
+const modelName = (ref: AiModelRef, lang: Lang2) => modelOptionLabel(ref.providerId, ref.model, lang);
 
 /** 下拉框里按厂商分组的选项 */
-function groupOptions(options: AiModelRef[]) {
+function groupByProvider(options: AiModelRef[]) {
   const groups = new Map<string, AiModelRef[]>();
   for (const option of options) {
     const list = groups.get(option.providerId) ?? [];
-    list.push(option);
+    if (!list.some(o => sameRef(o, option))) list.push(option);
     groups.set(option.providerId, list);
   }
   return Array.from(groups.entries());
 }
 
-function FeatureRow({
-  row, lang, busy, onChoose,
-}: {
+function FeatureRow({ row, lang, busy, onChoose }: {
   row: AiFeatureModelRow;
   lang: Lang2;
   busy: boolean;
   onChoose: (row: AiFeatureModelRow, value: string) => void;
 }) {
   const t = labels(lang);
-  const who = WHO_LABEL[row.who];
-  const current = row.current;
+  const [open, setOpen] = useState(false);
   const value = row.saved && !row.savedUnavailable ? refValue(row.saved) : AUTO;
-  const autoName = current && current.source !== 'teacher' ? modelName(current, lang) : null;
-  const sourceTags: Record<NonNullable<AiFeatureModelRow['current']>['source'], string> = {
-    teacher: t.tagTeacher,
-    default: t.tagAuto,
-    auto: t.tagAuto,
-    fixed: t.tagFixed,
-    activity_default: t.tagActivityDefault,
-  };
-  const sourceTag = current ? sourceTags[current.source] : null;
+  const current = row.current;
+  const autoLabel = current && current.source !== 'teacher' ? t.autoWith(modelName(current, lang)) : t.auto;
+  const about = `${row.desc[lang]}${row.fallbacks.length > 0 ? ` ${t.fallbacks}${row.fallbacks.map(f => modelName(f, lang)).join(' → ')}。` : ''}`;
 
-  // 手机上一列往下排；平板左边是说明、右边是下拉框；宽屏四列对齐表头
   return (
-    <div
-      className={`grid grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)] sm:gap-x-6 sm:px-5 ${FEATURE_GRID_LG}`}
-      data-feature={row.id}
-    >
+    <div data-feature={row.id} className="grid grid-cols-1 gap-2 px-4 py-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(13rem,18rem)] sm:items-center sm:gap-4 sm:px-5">
       <div className="min-w-0">
-        <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{row.label[lang]}</div>
-        <p className="mt-1 max-w-[65ch] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{row.desc[lang]}</p>
-      </div>
-
-      <div className="sm:col-start-1 lg:col-start-auto">
-        <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium" style={chipStyle(who.tone)}>
-          {who[lang]}
-        </span>
-      </div>
-
-      <div className="min-w-0 space-y-1.5 sm:col-start-1 lg:col-start-auto">
-        {current ? (
-          <>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100" data-current-model>{modelName(current, lang)}</span>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">{providerDisplayName(current.providerId, lang)}</span>
-              {sourceTag && (current.source === 'teacher' ? (
-                <span className="inline-flex items-center rounded-full border border-[#000080] px-1.5 py-0.5 text-[0.625rem] font-semibold text-[#000080] dark:border-[#93AAFD] dark:text-[#93AAFD]">
-                  {sourceTag}
-                </span>
-              ) : (
-                <span className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[0.625rem] font-semibold" style={chipStyle(MORANDI.stone)}>
-                  {sourceTag}
-                </span>
-              ))}
-              <SpeedChip providerId={current.providerId} model={current.model} lang={lang} />
-            </div>
-            {row.fallbacks.length > 0 && (
-              <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                {t.fallbacks}{row.fallbacks.map(f => modelName(f, lang)).join(' → ')}
-              </p>
-            )}
-          </>
-        ) : (
-          <span className="text-sm text-zinc-500 dark:text-zinc-400">{t.none}</span>
-        )}
-        {row.savedUnavailable && row.saved && (
-          <p className="rounded-lg border px-2 py-1 text-xs leading-relaxed" style={noticeStyle(MORANDI.ochre)}>
-            {t.unavailable(modelName(row.saved, lang))}
-          </p>
-        )}
-      </div>
-
-      <div className="min-w-0 sm:col-start-2 sm:row-span-3 sm:row-start-1 lg:col-start-auto lg:row-span-1 lg:row-start-auto">
-        {row.selectable ? (
-          <select
-            value={value}
-            disabled={busy || row.options.length === 0}
-            onChange={e => onChoose(row, e.target.value)}
-            aria-label={t.selectFor(row.label[lang])}
-            title={value === AUTO ? (autoName ? t.autoWith(autoName) : t.auto) : (row.saved ? modelName(row.saved, lang) : undefined)}
-            className="h-11 w-full min-w-0 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none transition-colors hover:border-zinc-300 focus-visible:border-[#000080] focus-visible:ring-2 focus-visible:ring-[#000080]/20 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-zinc-100 sm:h-10"
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{row.label[lang]}</span>
+          <span className="text-[0.6875rem] text-zinc-400 dark:text-zinc-500">{WHO_LABEL[row.who][lang]}</span>
+          <button
+            type="button"
+            onClick={() => setOpen(v => !v)}
+            aria-expanded={open}
+            aria-label={`${t.about}：${row.label[lang]}`}
+            title={about}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-600 dark:hover:bg-gray-900 dark:hover:text-zinc-300"
           >
-            <option value={AUTO}>{t.auto}</option>
-            {groupOptions(row.options).map(([providerId, options]) => (
-              <optgroup key={providerId} label={providerDisplayName(providerId, lang)}>
-                {options.map(option => {
-                  const hint = modelSpeedHint(option.providerId, option.model, lang);
-                  return (
-                    <option key={refValue(option)} value={refValue(option)}>
-                      {modelDisplayName(option.model, lang)}{hint ? ` · ${hint.text}` : ''}
-                    </option>
-                  );
-                })}
-              </optgroup>
-            ))}
-          </select>
-        ) : (
-          <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{row.fixedNote?.[lang]}</p>
+            <Info size={13} />
+          </button>
+        </div>
+        {open && <p className="mt-1 max-w-[65ch] text-xs leading-relaxed text-zinc-500 animate-in fade-in duration-150 dark:text-zinc-400">{about}</p>}
+        {row.savedUnavailable && row.saved && (
+          <p className="mt-1.5 rounded-lg border px-2 py-1 text-xs leading-relaxed" style={noticeStyle(MORANDI.ochre)}>{t.unavailable(modelName(row.saved, lang))}</p>
         )}
       </div>
+      {row.selectable ? (
+        <select
+          value={value}
+          disabled={busy || row.options.length === 0}
+          onChange={e => onChoose(row, e.target.value)}
+          aria-label={t.selectFor(row.label[lang])}
+          className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-white px-2.5 text-sm text-zinc-800 outline-none transition-colors hover:border-zinc-300 focus-visible:border-[#000080] focus-visible:ring-2 focus-visible:ring-[#000080]/20 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-zinc-100"
+        >
+          <option value={AUTO}>{row.options.length === 0 && !current ? t.none : autoLabel}</option>
+          {groupByProvider(row.options).map(([providerId, options]) => (
+            <optgroup key={providerId} label={providerDisplayName(providerId, lang)}>
+              {options.map(option => {
+                const hint = modelSpeedHint(option.providerId, option.model, lang);
+                return (
+                  <option key={refValue(option)} value={refValue(option)}>
+                    {modelDisplayName(option.model, lang)}{hint ? ` · ${hint.text}` : ''}
+                  </option>
+                );
+              })}
+            </optgroup>
+          ))}
+        </select>
+      ) : (
+        <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{row.fixedNote?.[lang]}</p>
+      )}
     </div>
   );
 }
@@ -259,131 +173,152 @@ function pickerData(data: AiFeatureModelsPayload, surface: AiPickerSurface): AiP
   const fromServer = data.pickers?.[surface];
   if (fromServer) return fromServer;
   if (surface !== 'note_partner') return null;
-  return {
-    ...data.partnerModels,
-    options: data.features.find(f => f.id === 'note_partner')?.options ?? data.options.chat,
-  };
+  return { ...data.partnerModels, options: data.features.find(f => f.id === 'note_partner')?.options ?? data.options.chat };
 }
 
-function PickerBlock({
-  surface, policy, lang, busy, onSave,
-}: {
-  surface: AiPickerSurface;
-  policy: AiPickerPolicy;
-  lang: Lang2;
-  busy: boolean;
-  onSave: (surface: AiPickerSurface, models: AiModelRef[] | null) => void;
-}) {
-  const t = labels(lang);
-  const { options, restricted, defaultModel } = policy;
-  const allowed = policy.allowed ?? options;
-  const isAllowed = (ref: AiModelRef) => allowed.some(a => sameRef(a, ref));
-  const headingId = `ai-picker-${surface}`;
-
-  const toggle = (ref: AiModelRef) => {
-    const next = isAllowed(ref) ? allowed.filter(a => !sameRef(a, ref)) : [...allowed, ref];
-    if (next.length === 0) return;
-    onSave(surface, next);
-  };
-
+/** 勾选框；一部分勾上时显示成「半选」 */
+function TriCheckbox({ checked, mixed, ...rest }: { checked: boolean; mixed?: boolean } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'checked'>) {
   return (
-    <div className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-gray-800" role="group" aria-labelledby={headingId}>
-      <div>
-        <h4 id={headingId} className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{t.pickerSurface[surface].title}</h4>
-        <p className="mt-0.5 max-w-[65ch] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t.pickerSurface[surface].desc}</p>
-      </div>
-
-      <div className="flex flex-col gap-1 sm:flex-row sm:gap-6" role="radiogroup" aria-labelledby={headingId}>
-        {[
-          { value: false, text: t.partnerAll },
-          { value: true, text: t.partnerSome },
-        ].map(choice => (
-          <label key={String(choice.value)} className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
-            <input
-              type="radio"
-              name={`ai-picker-scope-${surface}`}
-              checked={restricted === choice.value}
-              disabled={busy || options.length === 0}
-              onChange={() => onSave(surface, choice.value ? (policy.allowed ?? options) : null)}
-              className="h-4 w-4 accent-[#000080]"
-            />
-            {choice.text}
-          </label>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {options.map(option => {
-          const checked = isAllowed(option);
-          const lastOne = restricted && checked && allowed.length === 1;
-          const isDefault = defaultModel ? sameRef(defaultModel, option) : false;
-          return (
-            <label
-              key={refValue(option)}
-              className={`flex min-h-[44px] items-center gap-2.5 rounded-xl border px-3 py-2 text-sm transition-colors ${
-                restricted ? 'cursor-pointer border-zinc-200 hover:bg-zinc-50 dark:border-gray-700 dark:hover:bg-gray-900' : 'border-zinc-100 opacity-70 dark:border-gray-800'
-              }`}
-              title={lastOne ? t.keepOne : modelSpeedHint(option.providerId, option.model, lang)?.detail}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={!restricted || busy || lastOne}
-                onChange={() => toggle(option)}
-                className="h-4 w-4 shrink-0 accent-[#000080]"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium text-zinc-800 dark:text-zinc-100">{modelName(option, lang)}</span>
-                <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span>{providerDisplayName(option.providerId, lang)}{isDefault ? ` · ${t.partnerDefault}` : ''}</span>
-                  <SpeedChip providerId={option.providerId} model={option.model} lang={lang} />
-                </span>
-              </span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
+    <input
+      {...rest}
+      type="checkbox"
+      checked={checked}
+      aria-checked={mixed ? 'mixed' : checked}
+      ref={el => { if (el) el.indeterminate = Boolean(mixed); }}
+      className="h-4 w-4 cursor-pointer accent-[#000080] disabled:cursor-not-allowed"
+    />
   );
 }
 
-function PickerModels({
-  data, lang, busy, onSave,
-}: {
+function PickerMatrix({ data, lang, busy, onSave }: {
   data: AiFeatureModelsPayload;
   lang: Lang2;
   busy: boolean;
   onSave: (surface: AiPickerSurface, models: AiModelRef[] | null) => void;
 }) {
   const t = labels(lang);
-  const blocks = PICKER_ORDER
+  const [hint, setHint] = useState('');
+  const columns = PICKER_ORDER
     .map(surface => ({ surface, policy: pickerData(data, surface) }))
-    .filter((b): b is { surface: AiPickerSurface; policy: AiPickerPolicy } => b.policy !== null);
+    .filter((c): c is { surface: AiPickerSurface; policy: AiPickerPolicy } => c.policy !== null);
+  const providers = groupByProvider(columns.flatMap(c => c.policy.options));
+
+  const allowedOf = (policy: AiPickerPolicy) => (policy.restricted ? policy.allowed ?? policy.options : policy.options);
+  const isOption = (policy: AiPickerPolicy, ref: AiModelRef) => policy.options.some(o => sameRef(o, ref));
+  const isOn = (policy: AiPickerPolicy, ref: AiModelRef) => allowedOf(policy).some(a => sameRef(a, ref));
+
+  const commit = (surface: AiPickerSurface, policy: AiPickerPolicy, next: AiModelRef[]) => {
+    const kept = next.filter(ref => isOption(policy, ref));
+    if (kept.length === 0) { setHint(t.keepOne); return; }
+    setHint('');
+    const everything = policy.options.every(o => kept.some(k => sameRef(k, o)));
+    onSave(surface, everything ? null : kept);
+  };
+  const toggleModel = (surface: AiPickerSurface, policy: AiPickerPolicy, ref: AiModelRef) => {
+    const current = allowedOf(policy);
+    commit(surface, policy, isOn(policy, ref) ? current.filter(a => !sameRef(a, ref)) : [...current, ref]);
+  };
+  const toggleProvider = (surface: AiPickerSurface, policy: AiPickerPolicy, providerId: string) => {
+    const models = policy.options.filter(o => o.providerId === providerId);
+    const current = allowedOf(policy);
+    const allOn = models.every(m => current.some(a => sameRef(a, m)));
+    commit(surface, policy, allOn
+      ? current.filter(a => a.providerId !== providerId)
+      : [...current, ...models.filter(m => !current.some(a => sameRef(a, m)))]);
+  };
 
   return (
-    <div className="space-y-4 border-t border-zinc-200 px-4 py-5 dark:border-gray-800 sm:px-5">
+    <section aria-labelledby="ai-picker-title" className="space-y-2">
       <div>
-        <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{t.pickerTitle}</h3>
-        <p className="mt-1 max-w-[65ch] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t.pickerDesc}</p>
+        <h3 id="ai-picker-title" className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{t.pickerTitle}</h3>
+        <p className="mt-0.5 max-w-[70ch] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t.pickerLead}</p>
       </div>
-      {blocks.map(({ surface, policy }) => (
-        <PickerBlock key={surface} surface={surface} policy={policy} lang={lang} busy={busy} onSave={onSave} />
-      ))}
-    </div>
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+        <table className="w-full min-w-[30rem] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-zinc-200 text-xs text-zinc-500 dark:border-gray-800 dark:text-zinc-400">
+              <th scope="col" className="px-4 py-2 text-left font-medium sm:px-5">{t.model}</th>
+              {columns.map(({ surface }) => (
+                <th key={surface} scope="col" title={t.surface[surface].desc} className="w-28 px-2 py-2 text-center font-medium">{t.surface[surface].title}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {providers.map(([providerId, models]) => {
+              const provider = providerDisplayName(providerId, lang);
+              return (
+                <React.Fragment key={providerId}>
+                  <tr className="border-t border-zinc-100 bg-zinc-50/70 dark:border-gray-900 dark:bg-gray-900/50" data-provider-row={providerId}>
+                    <th scope="row" className="px-4 py-1.5 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 sm:px-5">
+                      {provider}<span className="ml-1.5 font-normal text-zinc-400">{models.length}</span>
+                    </th>
+                    {columns.map(({ surface, policy }) => {
+                      const mine = policy.options.filter(o => o.providerId === providerId);
+                      if (mine.length === 0) return <td key={surface} className="text-center text-xs text-zinc-300 dark:text-zinc-600">—</td>;
+                      const onCount = mine.filter(m => isOn(policy, m)).length;
+                      return (
+                        <td key={surface} className="px-2 py-1.5 text-center">
+                          <TriCheckbox
+                            checked={onCount === mine.length}
+                            mixed={onCount > 0 && onCount < mine.length}
+                            disabled={busy}
+                            aria-label={`${t.surface[surface].title}：${t.allOf(provider)}`}
+                            onChange={() => toggleProvider(surface, policy, providerId)}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {models.map(model => {
+                    const hintText = modelSpeedHint(model.providerId, model.model, lang);
+                    return (
+                      <tr key={refValue(model)} className="border-t border-zinc-100 dark:border-gray-900">
+                        <td className="py-1.5 pl-8 pr-2 sm:pl-9">
+                          <span className="text-zinc-800 dark:text-zinc-100">{modelDisplayName(model.model, lang)}</span>
+                          {hintText && <span className="ml-2 text-[0.6875rem] text-zinc-400" title={hintText.detail}>{hintText.text}</span>}
+                        </td>
+                        {columns.map(({ surface, policy }) => {
+                          if (!isOption(policy, model)) return <td key={surface} className="text-center text-xs text-zinc-300 dark:text-zinc-600">—</td>;
+                          const on = isOn(policy, model);
+                          const isDefault = policy.defaultModel ? sameRef(policy.defaultModel, model) : false;
+                          return (
+                            <td key={surface} className="px-2 py-1.5 text-center">
+                              <span className="inline-flex items-center gap-1">
+                                <TriCheckbox
+                                  checked={on}
+                                  disabled={busy}
+                                  aria-label={`${t.surface[surface].title}：${modelName(model, lang)}`}
+                                  onChange={() => toggleModel(surface, policy, model)}
+                                />
+                                {isDefault && <span className="text-[0.625rem] font-medium text-[#000080] dark:text-[#93AAFD]" title={t.defaultHint}>{t.isDefault}</span>}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {hint && <p role="status" className="text-xs" style={{ color: MORANDI.rose }}>{hint}</p>}
+    </section>
   );
 }
 
-export const AiFeatureModelsPanel: React.FC<{ lang: Language; courseId: string; courses?: Course[] }> = ({ lang: rawLang, courseId: initialCourseId, courses = [] }) => {
+export const AiFeatureModelsPanel: React.FC<{ lang: Language; courseId: string }> = ({ lang: rawLang, courseId }) => {
   const lang: Lang2 = rawLang === 'zh' ? 'zh' : 'en';
   const t = labels(lang);
-  const [activeCourseId, setActiveCourseId] = useState(initialCourseId);
-  const courseId = activeCourseId || initialCourseId;
   const [data, setData] = useState<AiFeatureModelsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showBackground, setShowBackground] = useState(false);
 
   useEffect(() => {
     if (!courseId) return;
@@ -415,10 +350,7 @@ export const AiFeatureModelsPanel: React.FC<{ lang: Language; courseId: string; 
   }, [courseId]);
 
   const chooseModel = useCallback((row: AiFeatureModelRow, value: string) => {
-    if (value === AUTO) {
-      void save({ features: { [row.id]: null } });
-      return;
-    }
+    if (value === AUTO) { void save({ features: { [row.id]: null } }); return; }
     const [providerId, ...rest] = value.split('::');
     void save({ features: { [row.id]: { provider_id: providerId, model: rest.join('::') } } });
   }, [save]);
@@ -436,92 +368,75 @@ export const AiFeatureModelsPanel: React.FC<{ lang: Language; courseId: string; 
       list.push(row);
       byGroup.set(row.group, list);
     }
-    return GROUP_ORDER.filter(g => byGroup.has(g)).map(g => [g, byGroup.get(g)!] as const);
+    return byGroup;
   }, [data]);
 
   if (!courseId) return <p className="text-sm text-zinc-500 dark:text-zinc-400">{t.noCourse}</p>;
 
   const coolingNames = (data?.coolingProviders ?? []).map(p => providerDisplayName(p, lang)).join('、');
+  const busy = saving || !data?.providerConfigured;
+  const background = grouped.get('background') ?? [];
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white dark:border-gray-800 dark:bg-gray-950" aria-labelledby="ai-feature-models-title">
-      <div className="space-y-4 px-4 pt-5 sm:px-5 sm:pt-6">
-        {courses.length > 1 && (
-          <label className="block max-w-md">
-            <span className="mb-1.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">{t.course}</span>
-            <select
-              value={courseId}
-              onChange={e => setActiveCourseId(e.target.value)}
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus-visible:border-[#000080] focus-visible:ring-2 focus-visible:ring-[#000080]/20 dark:border-gray-700 dark:bg-gray-900 dark:text-zinc-100"
-            >
-              {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
-            </select>
-          </label>
-        )}
-
-        <div>
-          <div className="flex items-center gap-2">
-            <RemixIcon name="route-line" size={16} className="text-[#000080] dark:text-[#93AAFD]" />
-            <h3 id="ai-feature-models-title" className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{t.title}</h3>
-          </div>
-          <p className="mt-2 max-w-[65ch] text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">{t.desc}</p>
-          <p className="mt-1 max-w-[65ch] text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">{t.failoverNote}</p>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{t.legend}</p>
-        </div>
-
-        {data && !data.providerConfigured && (
-          <p className="rounded-xl border px-3 py-2 text-sm leading-relaxed" style={noticeStyle(MORANDI.ochre)}>{t.noProvider}</p>
-        )}
-        {coolingNames && (
-          <p className="rounded-xl border px-3 py-2 text-sm leading-relaxed" style={noticeStyle(MORANDI.ochre)}>{t.cooling(coolingNames)}</p>
-        )}
-        {loadError && (
-          <p className="rounded-xl border px-3 py-2 text-sm leading-relaxed" style={noticeStyle(MORANDI.rose)}>{t.loadFailed}{loadError}</p>
-        )}
-      </div>
+    <div className="space-y-6">
+      {data && !data.providerConfigured && (
+        <p className="rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed" style={noticeStyle(MORANDI.ochre)}>{t.noProvider}</p>
+      )}
+      {coolingNames && (
+        <p className="rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed" style={noticeStyle(MORANDI.ochre)}>{t.cooling(coolingNames)}</p>
+      )}
+      {loadError && (
+        <p className="rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed" style={noticeStyle(MORANDI.rose)}>{t.loadFailed}{loadError}</p>
+      )}
 
       {loading && !data ? (
-        <div className="space-y-3 px-4 py-5 sm:px-5" aria-busy="true">
-          {[0, 1, 2, 3].map(i => (
-            <div key={i} className={`grid grid-cols-1 gap-3 ${FEATURE_GRID_LG}`}>
-              <div className="h-10 animate-pulse rounded-lg bg-zinc-100 dark:bg-gray-900" />
-              <div className="h-6 animate-pulse rounded-full bg-zinc-100 dark:bg-gray-900" />
-              <div className="h-10 animate-pulse rounded-lg bg-zinc-100 dark:bg-gray-900" />
-              <div className="h-10 animate-pulse rounded-xl bg-zinc-100 dark:bg-gray-900" />
-            </div>
-          ))}
+        <div className="space-y-2" aria-busy="true">
+          {[0, 1, 2, 3].map(i => <div key={i} className="h-11 animate-pulse rounded-xl bg-zinc-100 dark:bg-gray-900" />)}
         </div>
       ) : data ? (
         <>
-          <div className="mt-4">
-            <div
-              aria-hidden="true"
-              className={`hidden border-y border-zinc-200 bg-zinc-50 px-5 py-2 text-xs font-medium text-zinc-500 dark:border-gray-800 dark:bg-gray-900 dark:text-zinc-400 lg:grid ${FEATURE_GRID_LG}`}
-            >
-              <span>{t.feature}</span>
-              <span>{t.who}</span>
-              <span>{t.current}</span>
-              <span>{t.choose}</span>
+          <section aria-labelledby="ai-feature-models-title" className="space-y-2">
+            <div>
+              <h3 id="ai-feature-models-title" className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{t.title}</h3>
+              <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t.lead}</p>
             </div>
-            {grouped.map(([group, rows]) => (
-              <section key={group} data-group={group} aria-label={GROUP_TITLE[group][lang]}>
-                <h4 className="border-b border-zinc-200 px-4 pb-2 pt-5 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-gray-800 dark:text-zinc-400 sm:px-5">
-                  {GROUP_TITLE[group][lang]}
-                </h4>
-                <div className="divide-y divide-zinc-100 dark:divide-gray-900">
-                  {rows.map(row => (
-                    <FeatureRow key={row.id} row={row} lang={lang} busy={saving || !data.providerConfigured} onChoose={chooseModel} />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
+            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+              {GROUP_ORDER.filter(g => grouped.has(g)).map(group => (
+                <section key={group} data-group={group} aria-label={GROUP_TITLE[group][lang]} className="border-t border-zinc-100 first:border-t-0 dark:border-gray-900">
+                  <h4 className="px-4 pb-0.5 pt-3 text-[0.6875rem] font-semibold text-zinc-400 dark:text-zinc-500 sm:px-5">{GROUP_TITLE[group][lang]}</h4>
+                  <div className="divide-y divide-zinc-50 dark:divide-gray-900/60">
+                    {grouped.get(group)!.map(row => (
+                      <FeatureRow key={row.id} row={row} lang={lang} busy={busy} onChoose={chooseModel} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {background.length > 0 && (
+                <section data-group="background" className="border-t border-zinc-100 dark:border-gray-900">
+                  <button
+                    type="button"
+                    onClick={() => setShowBackground(v => !v)}
+                    aria-expanded={showBackground}
+                    className="flex w-full items-center gap-1 px-4 py-2.5 text-left text-[0.6875rem] font-semibold text-zinc-400 transition-colors hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 sm:px-5"
+                  >
+                    <ChevronDown size={13} className={`transition-transform duration-200 ${showBackground ? 'rotate-180' : ''}`} />
+                    {GROUP_TITLE.background[lang]} · {background.length}
+                  </button>
+                  {showBackground && (
+                    <div className="divide-y divide-zinc-50 animate-in fade-in duration-150 dark:divide-gray-900/60">
+                      {background.map(row => <FeatureRow key={row.id} row={row} lang={lang} busy={busy} onChoose={chooseModel} />)}
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
+          </section>
 
-          <PickerModels data={data} lang={lang} busy={saving || !data.providerConfigured} onSave={savePicker} />
+          <PickerMatrix data={data} lang={lang} busy={busy} onSave={savePicker} />
         </>
       ) : null}
 
-      <div aria-live="polite" className="min-h-[2.75rem] px-4 pb-4 text-xs leading-relaxed sm:px-5">
+      <div aria-live="polite" className="min-h-[1.5rem] text-xs leading-relaxed">
         {saving ? (
           <span className="text-zinc-400 dark:text-zinc-500">{t.saving}</span>
         ) : saveState === 'error' && saveError ? (
@@ -530,7 +445,7 @@ export const AiFeatureModelsPanel: React.FC<{ lang: Language; courseId: string; 
           <span className="rounded-lg border px-2 py-1" style={noticeStyle(MORANDI.sage)}>{t.saved}</span>
         ) : null}
       </div>
-    </section>
+    </div>
   );
 };
 

@@ -79,3 +79,6 @@ collab/data/
 *.sqlite-*
 *.db
 *.db-*
+
+# Local deployment cache
+.deploy-cache/

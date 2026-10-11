@@ -178,7 +178,14 @@ export interface DrawRouteThresholds {
  */
 export const DRAW_ROUTE_THRESHOLDS: DrawRouteThresholds = { add: 0.5, veto: 0.25, dataChart: 0.85, form: 0.5 };
 
-export type DrawDecider = 'rule' | 'jev' | 'forced';
+export type DrawDecider = 'rule' | 'jev' | 'forced' | 'web_page';
+
+/**
+ * 要的是网页（网页、页面、自测题、测验……）：交给智能体做网页（agentMaker），不转去画图。
+ * 2026-10-11 线上：「做成一个网页：观点卡片、观点关系的概念图、3 道自测题」被截去直接画了一张概念图。
+ */
+const WEB_PAGE_WORDS = /网页|页面|html|\bH5\b|自测题|测验|小测|练习题|学习单|闪卡|web ?page|quiz/i;
+export const asksForWebPage = (text: string): boolean => WEB_PAGE_WORDS.test(text);
 
 export interface DrawDecision {
   draw: boolean;
@@ -236,6 +243,8 @@ const ROUTE_TIMEOUT_MS = 1500;
 
 export async function routeDrawRequest(text: string, opts: RouteDrawOptions = {}): Promise<DrawRoute> {
   const rule = Boolean(detectDrawIntent(text));
+  // 学生按了「画图」照样画；说要网页的不画，也不用问 Jev
+  if (!opts.forced && asksForWebPage(text)) return { draw: false, mode: 'new', form: null, decidedBy: 'web_page', rule };
   const dataChart = hasDataChartWords(text);
   const hasPrevious = Boolean(opts.previous);
   const decide = (judgment: DrawJudgment | null) =>

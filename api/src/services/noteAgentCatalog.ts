@@ -1,4 +1,5 @@
 export type ConversationAgentMode =
+  | 'maker'
   | 'idea_coach'
   | 'gap_finder'
   | 'connection_scout'
@@ -42,6 +43,28 @@ const BASE_AGENT_RULES = [
 ].join('\n');
 
 /**
+ * 智能体动手做事的四个工具（agentMaker.ts 的 MAKER_TOOL_NAMES，这里不 import 那个模块：它连着数据库和模型调用）。
+ * 学生用的几个模式都带上：哪个模式里学生说「做成网页」「帮我规划」都接得住。
+ */
+export const MAKER_TOOLS = ['update_plan', 'ask_choice', 'create_artifact', 'revise_artifact'];
+
+/**
+ * 「动手做」（2026-10-11 用户：智能体要能规划、问学生选方案、做出可以打开看的网页）。
+ * 自由提问里说了「做成网页」「出几道题」「帮我规划」这类要动手的话，前端自动转到这个模式。
+ * 不用 BASE_AGENT_RULES 里「只走一步、给一个建议」那句：这里要把一件事从头做完，但主意由学生拿。
+ */
+const MAKER_INSTRUCTION = [
+  '你是知识建构课堂里帮学生动手做事的 AI 协作伙伴。请用中文回复（除非用户明确使用英文提问）。',
+  '学生想把自己的想法、笔记或课程资料做成一样东西：网页、自测题、对比表、概念图、时间线、小模拟、学习计划、写作提纲……你负责把它做出来，过程中让学生拿主意。',
+  '做法：先弄清楚要做什么、给谁用；有两三种做法时用 ask_choice 让学生选；要分几步的任务先用 update_plan 列计划；用检索工具找齐学生的笔记和课程资料，内容以它们为准；最后用 create_artifact 做出来，或者直接在回答里给出（比如一份提纲）。',
+  'Preserve student epistemic agency. 学生自己该想的部分（观点、结论、综合、反思）不要替学生写：给骨架、给选项、给提示，留出空让学生填。做出来的东西要标明内容来自哪些笔记。',
+  'When evidence or related Notes are missing, name the gap and suggest a next action instead of pretending certainty.',
+  'NEVER use emoji or emoticons in your responses. Write in clean, professional text only.',
+  'Your available tools are listed in the tool schema below. Use them whenever you need classroom context — do NOT describe what you would search for; actually call the tool and then respond based on the real results.',
+  '如果学生只是问一个问题、不需要做什么，就直接回答，不列计划、不提问。',
+].join('\n');
+
+/**
  * 带图那一轮追加的规则。以前它挂在一个叫 visual_reader 的独立模式上，
  * 但「读图」不是一种教学模式，而是一种输入方式——学生在「观点澄清」里
  * 拍一张白板照，不该被要求先切模式。所以模式删掉，规则改成按需追加。
@@ -56,12 +79,21 @@ export const IMAGE_TURN_RULES = [
 ].join('\n');
 
 const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
+  maker: {
+    id: 'maker',
+    label: 'Maker',
+    usesKnowledgeNetworkTools: true,
+    prefersWebEvidence: false,
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'search_course_materials', 'generate_image', ...MAKER_TOOLS],
+    loopMode: 'plan_and_solve',
+    systemInstruction: MAKER_INSTRUCTION,
+  },
   idea_coach: {
     id: 'idea_coach',
     label: 'Idea clarification',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: false,
-    toolNames: ['read_note', 'get_note_context', 'analyze_argument', 'search_course_materials', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'analyze_argument', 'search_course_materials', 'save_reflection', 'generate_image', ...MAKER_TOOLS],
     loopMode: 'react',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -75,7 +107,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Inquiry gaps',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: false,
-    toolNames: ['read_note', 'get_note_context', 'search_notes', 'analyze_argument', 'search_course_materials', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'analyze_argument', 'search_course_materials', 'save_reflection', 'generate_image', ...MAKER_TOOLS],
     loopMode: 'react',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -90,7 +122,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Idea connections',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: false,
-    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'search_course_materials', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'search_course_materials', 'save_reflection', 'generate_image', ...MAKER_TOOLS],
     loopMode: 'react',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -105,7 +137,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Evidence testing',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: true,
-    toolNames: ['read_note', 'get_note_context', 'search_notes', 'search_course_materials', 'web_search', 'find_sources', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'search_course_materials', 'web_search', 'find_sources', 'save_reflection', 'generate_image', ...MAKER_TOOLS],
     loopMode: 'react',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -120,7 +152,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
     label: 'Idea rise-above',
     usesKnowledgeNetworkTools: true,
     prefersWebEvidence: false,
-    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'search_course_materials', 'save_reflection', 'generate_image'],
+    toolNames: ['read_note', 'get_note_context', 'search_notes', 'compare_notes', 'get_workspace_summary', 'search_course_materials', 'save_reflection', 'generate_image', ...MAKER_TOOLS],
     loopMode: 'reflection',
     systemInstruction: [
       BASE_AGENT_RULES,
@@ -172,6 +204,7 @@ const AGENT_SPECS: Record<ConversationAgentMode, ConversationAgentSpec> = {
 
 export function normalizeConversationAgentMode(value: unknown): ConversationAgentMode {
   if (
+    value === 'maker' ||
     value === 'idea_coach' ||
     value === 'gap_finder' ||
     value === 'connection_scout' ||

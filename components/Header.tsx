@@ -8,6 +8,7 @@ import { LangSwitcher2 } from './LangSwitcher';
 import RemixIcon from './RemixIcon';
 import ChangePasswordModal from './auth/ChangePasswordModal';
 import { useDismissible } from '../hooks/useDismissible';
+import { useEnterMotion } from '../hooks/useEnterMotion';
 
 interface HeaderProps {
   title?: string;
@@ -54,6 +55,9 @@ const Header: React.FC<HeaderProps> = ({
   // 既关掉菜单，也照常落到你真正点的那个东西上。
   useDismissible({ open: isViewMenuOpen, onDismiss: () => setIsViewMenuOpen(false), ref: viewMenuRef });
   useDismissible({ open: isNotifMenuOpen, onDismiss: () => setIsNotifMenuOpen(false), ref: notifMenuRef });
+  // 两个下拉打开时，里面的项一条条出现
+  useEnterMotion(viewMenuRef, isViewMenuOpen ? 'open' : null, { step: 18, maxStagger: 8, distance: 4 });
+  useEnterMotion(notifMenuRef, isNotifMenuOpen ? 'open' : null, { step: 24, maxStagger: 6, distance: 4 });
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -154,22 +158,32 @@ const Header: React.FC<HeaderProps> = ({
           </button>
           {isViewMenuOpen && (
             <>
-              <div className="absolute top-full mt-1 right-0 w-56 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl rounded-xl shadow-lg border border-gray-200 dark:border-gray-800 py-1 z-50 max-h-[70vh] overflow-y-auto">
+              <div className="absolute top-full mt-1 right-0 w-56 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl rounded-xl shadow-lg border border-gray-200 dark:border-gray-800 py-1 z-50 max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150">
                 <div className="px-3 py-1.5 text-[0.6875rem] font-medium text-gray-400 tracking-[0.08em] border-b border-gray-200 dark:border-gray-800 mb-1 font-mono" style={smallCaps}>
                   {t.switchView}
                 </div>
                 {views.map(view => (
                   <button
                     key={view.id}
+                    data-enter-item
                     onClick={() => { onViewSelect(view.id); setIsViewMenuOpen(false); }}
                     className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-gray-900 flex items-center justify-between transition-colors
                       ${activeViewId === view.id ? 'text-[#000080] font-medium' : 'text-gray-600'}`}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <span
-                        className="h-2 w-2 flex-shrink-0 rounded-[2px]"
-                        style={{ backgroundColor: viewColor(view.id) }}
-                      />
+                      {view.groupLogoUrl ? (
+                        <img
+                          src={view.groupLogoUrl}
+                          alt=""
+                          draggable={false}
+                          className="h-4 w-4 flex-shrink-0 rounded bg-white object-contain ring-1 ring-gray-200 dark:ring-gray-700"
+                        />
+                      ) : (
+                        <span
+                          className="h-2 w-2 flex-shrink-0 rounded-[2px]"
+                          style={{ backgroundColor: viewColor(view.id) }}
+                        />
+                      )}
                       <span className="truncate">{view.title}</span>
                     </div>
                     {activeViewId === view.id && <RemixIcon name="check-line" size={13} className="text-[#000080] flex-shrink-0" />}
@@ -234,7 +248,7 @@ const Header: React.FC<HeaderProps> = ({
         </button>
         {isNotifMenuOpen && (
           <>
-            <div className="absolute top-full mt-1 right-0 w-80 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl rounded-xl shadow-lg border border-gray-200 dark:border-gray-800 z-50 overflow-hidden">
+            <div className="absolute top-full mt-1 right-0 w-80 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl rounded-xl shadow-lg border border-gray-200 dark:border-gray-800 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
               <div className="px-4 py-2.5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
                 <span className="font-medium text-sm text-gray-700">{t.notifications}</span>
                 {unreadCount > 0 && (
@@ -248,6 +262,7 @@ const Header: React.FC<HeaderProps> = ({
                   notifications.map(n => (
                     <div
                       key={n.id}
+                      data-enter-item
                       onClick={() => { onNotificationClick?.(n); setIsNotifMenuOpen(false); }}
                       className={`p-3.5 border-b border-gray-200 dark:border-gray-800/50 hover:bg-black/[0.02] cursor-pointer flex gap-3 transition-colors ${!n.read ? 'bg-[#000080]/[0.02]' : ''}`}
                     >

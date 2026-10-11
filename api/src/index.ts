@@ -18,6 +18,9 @@ setGlobalDispatcher(new Agent({
 
 
 const PORT = Number(process.env.PORT ?? 4000);
+// 发版前的评测候选（deploy.sh backend-eval）：和线上共用一个库，后台任务只能线上那一份跑，
+// 不然知识库解析、补向量、清登录记录都会干两遍
+const RUN_BACKGROUND_JOBS = process.env.HAKCC_EVAL_CANDIDATE !== '1';
 
 // Node 22 exits the process on an unhandled rejection. A single mishandled
 // promise in one request would take the API down for every student mid-class,
@@ -39,6 +42,11 @@ app.listen(PORT, () => {
   warmNoteSanitizer()
     .then(() => console.log('[HAKCC API] note HTML sanitizer ready'))
     .catch(err => console.error('[HAKCC API] note HTML sanitizer failed to start — saving notes will fail:', err?.message));
+
+  if (!RUN_BACKGROUND_JOBS) {
+    console.log('[HAKCC API] eval candidate: background jobs are off');
+    return;
+  }
 
   // 重启前提交给 MinerU、还没取回结果的解析任务会悬在那里，
   // 除非恰好有学生去打开那份文档。延后一点跑，别和启动抢资源。

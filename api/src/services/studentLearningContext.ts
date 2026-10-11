@@ -17,13 +17,13 @@ export async function loadStudentLearningContext({ userId, courseId, question }:
   const results = await Promise.all([
     supabase.from('notes').select('id, title, content, updated_at, spaces!inner(course_id)')
       .in('space_id', spaceIds).eq('author_id', userId).eq('spaces.course_id', courseId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(40),
-    supabase.from('agent_messages').select('id, content, created_at, agent_conversations!inner(user_id, course_id, space_id)')
-      .in('agent_conversations.space_id', spaceIds).eq('agent_conversations.user_id', userId).eq('agent_conversations.course_id', courseId).eq('role', 'user').order('created_at', { ascending: false }).limit(20),
+    supabase.from('agent_messages').select('id, content, created_at, agent_conversations!inner(user_id, course_id, space_id, deleted_at)')
+      .in('agent_conversations.space_id', spaceIds).is('agent_conversations.deleted_at', null).eq('agent_conversations.user_id', userId).eq('agent_conversations.course_id', courseId).eq('role', 'user').order('created_at', { ascending: false }).limit(20),
     supabase.from('note_conversation_messages').select('id, content, created_at, note_conversation_threads!inner(course_id, created_by, target_type, space_id, deleted_at)')
       .in('note_conversation_threads.space_id', spaceIds).is('note_conversation_threads.deleted_at', null).eq('sender_id', userId).eq('sender_kind', 'user').eq('note_conversation_threads.course_id', courseId)
       .eq('note_conversation_threads.created_by', userId).eq('note_conversation_threads.target_type', 'ai').order('created_at', { ascending: false }).limit(20),
     supabase.from('agent_conversations').select('id, conversation_memory, updated_at')
-      .in('space_id', spaceIds).eq('user_id', userId).eq('course_id', courseId).order('updated_at', { ascending: false }).limit(3),
+      .in('space_id', spaceIds).is('deleted_at', null).eq('user_id', userId).eq('course_id', courseId).order('updated_at', { ascending: false }).limit(3),
     supabase.from('note_conversation_threads').select('id, conversation_memory, updated_at')
       .in('space_id', spaceIds).is('deleted_at', null).eq('created_by', userId).eq('course_id', courseId).eq('target_type', 'ai').order('updated_at', { ascending: false }).limit(3),
   ]);

@@ -131,12 +131,15 @@ describe('POST /ai/image', () => {
     });
     const logged = h.state.inserts.filter(i => i.table === 'ai_interventions');
     expect(logged).toHaveLength(1);
-    expect(logged[0].row).toMatchObject({
+    // 整行比对：线上没有 model_name 列，多一个键整条被拒（aiInterventionWrites.test.ts）
+    expect(logged[0].row).toEqual({
       space_id: 'space-1',
       user_id: 'student-1',
       trigger_type: 'doc_ai_direct_image',
       provider_id: 'dmx',
-      model_name: 'qwen-image-plus',
+      model_full_name: 'qwen-image-plus',
+      input_context_summary: '画一张[细胞分裂]的插画',
+      response_text: IMAGE_URL,
       visibility_scope: 'private',
     });
   });

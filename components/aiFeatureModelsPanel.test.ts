@@ -129,50 +129,50 @@ afterEach(async () => {
 });
 
 describe('各功能用哪个 AI', () => {
-  it('按分组列出每个功能：谁会用到、现在用哪个（可读名字）、速度提示、出错时换哪家', async () => {
+  it('按分组每个功能一行：名字、谁会用到；说明和出错时换哪家收在 ⓘ 里，点开才显示', async () => {
     api.get.mockResolvedValue(payload());
     const el = await mount();
 
     expect(api.get).toHaveBeenCalledWith('course-1');
-    for (const title of ['学生写笔记时', '知识空间与讨论', '教师端', '检索与解析（不在这里选模型）']) {
+    for (const title of ['学生写笔记时', '知识空间与讨论', '教师端', '检索与解析（自动，不用选）']) {
       expect(el.textContent).toContain(title);
     }
-
     const feedback = featureRow('note_feedback');
     expect(feedback.textContent).toContain('AI 反馈与支架建议');
-    expect(feedback.querySelector('[data-current-model]')?.textContent).toBe('DeepSeek Flash');
-    expect(feedback.textContent).toContain('快，并发高');
-    expect(feedback.textContent).toContain('自动');
-    expect(feedback.textContent).toContain('出错时换：GLM-5.3 → GLM-5.3 Flash（DMX 聚合）');
+    expect(feedback.textContent).not.toContain('出错时换');
     expect(feedback.textContent).not.toContain('deepseek-flash');
-
+    await click(feedback.querySelector('button[aria-expanded]') as HTMLElement);
+    expect(featureRow('note_feedback').textContent).toContain('出错时换：GLM-5.3 → GLM-5.3 Flash（DMX 聚合）');
     expect(featureRow('note_partner').textContent).toContain('学生和教师');
-    expect(featureRow('teacher_agents').textContent).toContain('已指定');
-    expect(featureRow('note_image').querySelector('[data-current-model]')?.textContent).toBe('MiniMax image-01');
-    expect(featureRow('note_image').textContent).toContain('约 35 秒一张');
   });
 
-  it('下拉框：「自动」在前（悬停看到现在是哪个），按厂商分组，带速度提示；生图只列生图模型', async () => {
+  it('下拉框：「自动」那一项写明现在用哪个，按厂商分组，带速度提示；生图只列生图模型', async () => {
     api.get.mockResolvedValue(payload());
     await mount();
 
     const select = selectIn('note_feedback');
     expect(select.value).toBe('auto');
-    expect(select.options[0].textContent).toBe('自动');
-    expect(select.title).toBe('自动（现在是 DeepSeek Flash）');
+    expect(select.options[0].textContent).toBe('自动（现在是 DeepSeek Flash）');
     const groups = Array.from(select.querySelectorAll('optgroup')).map(g => g.label);
     expect(groups).toEqual(['DeepSeek', '智谱', 'DMX 聚合']);
     const texts = Array.from(select.options).map(o => o.textContent);
     expect(texts).toContain('DeepSeek Flash · 快，并发高');
     expect(texts).toContain('GPT-5.5 · 最慢');
+    expect(selectIn('note_image').options[0].textContent).toBe('自动（现在是 MiniMax image-01）');
 
     const image = Array.from(selectIn('note_image').options).map(o => o.value);
     expect(image).toEqual(['auto', 'minimax::image-01', 'minimax::image-01-live', 'dmx::qwen-image-plus', 'dmx::gpt-image-2']);
+    // 老师指定过的，「自动」不再写现在是哪个
+    expect(selectIn('teacher_agents').options[0].textContent).toBe('自动');
+    expect(selectIn('teacher_agents').value).toBe('zhipu::glm-5.3');
   });
 
-  it('不能在这里选的功能不给下拉框，写明用什么', async () => {
+  it('检索与解析这些不能选的折叠着；展开后不给下拉框，写明用什么', async () => {
     api.get.mockResolvedValue(payload());
-    await mount();
+    const el = await mount();
+    expect(featureRow('web_search')).toBeNull();
+    const toggle = Array.from(el.querySelectorAll('button')).find(b => b.textContent?.includes('检索与解析'))!;
+    await click(toggle);
     expect(featureRow('web_search').querySelector('select')).toBeNull();
     expect(featureRow('web_search').textContent).toContain('只用 Tavily');
   });
@@ -187,7 +187,6 @@ describe('各功能用哪个 AI', () => {
     await choose(selectIn('note_feedback'), 'zhipu::glm-5.3-flash');
     expect(api.update).toHaveBeenLastCalledWith('course-1', { features: { note_feedback: { provider_id: 'zhipu', model: 'glm-5.3-flash' } } });
     expect(el.textContent).toContain('已保存');
-    expect(featureRow('note_feedback').querySelector('[data-current-model]')?.textContent).toBe('GLM-5.3 Flash');
     expect(selectIn('note_feedback').value).toBe('zhipu::glm-5.3-flash');
 
     await choose(selectIn('note_feedback'), 'auto');
@@ -230,82 +229,66 @@ describe('各功能用哪个 AI', () => {
   });
 });
 
-describe('各入口的模型菜单：知识空间助手、学生首页 AI 对话各有一份名单', () => {
+describe('模型菜单名单：一张表，行是模型（按服务商分组），列是三个入口', () => {
   const policy = (over: Partial<{ allowed: typeof CHAT | null; restricted: boolean }> = {}) => ({
     allowed: null, defaultModel: ref('deepseek', 'deepseek-flash'), restricted: false, options: CHAT, ...over,
   });
-  const sectionOf = (title: string) => Array.from(host!.querySelectorAll('h4'))
-    .find(h => h.textContent === title)!.parentElement!.parentElement!;
-  const radioIn = (section: HTMLElement, text: string) => Array.from(section.querySelectorAll('label'))
-    .find(l => l.textContent?.includes(text))!.querySelector('input') as HTMLInputElement;
+  const headers = () => Array.from(host!.querySelectorAll('thead th')).map(th => th.textContent);
+  const box = (label: string) => host!.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement;
+  const asRows = (list: typeof CHAT) => list.map(r => ({ provider_id: r.providerId, model: r.model }));
 
-  it('三个入口各一块；知识空间助手改成「只显示勾选的」存进 picker_models，不动笔记 AI 助手那份', async () => {
+  it('三个入口三列；旧后端只给笔记 AI 助手那一份时只有那一列', async () => {
     const pickers = { note_partner: policy(), workspace_agent: policy(), personal_agent: policy() };
     api.get.mockResolvedValue(payload({ pickers }));
-    api.update.mockResolvedValue(payload({ pickers: { ...pickers, workspace_agent: policy({ allowed: CHAT, restricted: true }) } }));
     await mount();
+    expect(headers()).toEqual(['模型', '笔记 AI 助手', '知识空间智能体', '学生 AI 对话']);
+    await act(async () => { root?.unmount(); });
+    host?.remove();
 
-    expect(Array.from(host!.querySelectorAll('h4')).map(h => h.textContent))
-      .toEqual(expect.arrayContaining(['笔记 AI 助手', '知识空间智能体', '学生首页的「AI 对话」']));
-    await click(radioIn(sectionOf('知识空间智能体'), '只显示勾选的'));
+    api.get.mockResolvedValue(payload());
+    await mount();
+    expect(headers()).toEqual(['模型', '笔记 AI 助手']);
+  });
+
+  it('不限时全部勾着；取消一个就只存剩下的（知识空间智能体存进 picker_models，不动笔记 AI 助手）', async () => {
+    const pickers = { note_partner: policy(), workspace_agent: policy(), personal_agent: policy() };
+    api.get.mockResolvedValue(payload({ pickers }));
+    api.update.mockResolvedValue(payload({ pickers }));
+    await mount();
+    expect(box('知识空间智能体：GPT-5.5（DMX 聚合）').checked).toBe(true);
+    await click(box('知识空间智能体：GPT-5.5（DMX 聚合）'));
     expect(api.update).toHaveBeenLastCalledWith('course-1', {
-      picker_models: { workspace_agent: CHAT.map(r => ({ provider_id: r.providerId, model: r.model })) },
+      picker_models: { workspace_agent: asRows(CHAT.filter(r => r.model !== 'gpt-5.5')) },
     });
   });
 
-  it('旧后端只给笔记 AI 助手那一份时，只显示那一块', async () => {
+  it('点服务商那一行：一次取消这家的全部模型；部分勾着时点一下全勾上，全部勾上就存「不限」', async () => {
     api.get.mockResolvedValue(payload());
-    await mount();
-    const titles = Array.from(host!.querySelectorAll('h4')).map(h => h.textContent);
-    expect(titles).toContain('笔记 AI 助手');
-    expect(titles).not.toContain('知识空间智能体');
-  });
-});
-
-describe('笔记 AI 助手的菜单名单', () => {
-  const partnerSection = () => Array.from(host!.querySelectorAll('h4'))
-    .find(h => h.textContent === '笔记 AI 助手')!.parentElement!.parentElement!;
-  const radio = (text: string) => Array.from(partnerSection().querySelectorAll('label'))
-    .find(l => l.textContent?.includes(text))!.querySelector('input') as HTMLInputElement;
-  const box = (name: string) => Array.from(partnerSection().querySelectorAll('label'))
-    .find(l => l.textContent?.startsWith(name))!.querySelector('input') as HTMLInputElement;
-
-  it('不限时全部可选、勾选框不可点；标出哪个是默认', async () => {
-    api.get.mockResolvedValue(payload());
-    await mount();
-    expect(radio('全部显示').checked).toBe(true);
-    expect(box('DeepSeek Flash').disabled).toBe(true);
-    expect(partnerSection().textContent).toContain('DeepSeek · 默认');
-  });
-
-  it('改成「只提供勾选的」先把全部勾上存下；取消一个就存剩下的', async () => {
-    api.get.mockResolvedValue(payload());
-    const restricted = payload({ partnerModels: { allowed: CHAT, defaultModel: ref('deepseek', 'deepseek-flash'), restricted: true } });
-    api.update.mockResolvedValue(restricted);
-    await mount();
-
-    await click(radio('只显示勾选的'));
-    expect(api.update).toHaveBeenLastCalledWith('course-1', {
-      partner_models: CHAT.map(r => ({ provider_id: r.providerId, model: r.model })),
-    });
-
-    await click(box('GPT-5.5（DMX 聚合）'));
-    expect(api.update).toHaveBeenLastCalledWith('course-1', {
-      partner_models: CHAT.filter(r => r.model !== 'gpt-5.5').map(r => ({ provider_id: r.providerId, model: r.model })),
-    });
-  });
-
-  it('只剩一个时不能再取消；改回不限就存 null', async () => {
-    const onlyOne = payload({ partnerModels: { allowed: [ref('deepseek', 'deepseek-flash')], defaultModel: ref('deepseek', 'deepseek-flash'), restricted: true } });
-    api.get.mockResolvedValue(onlyOne);
     api.update.mockResolvedValue(payload());
     await mount();
+    await click(box('笔记 AI 助手：DMX 聚合的全部模型'));
+    expect(api.update).toHaveBeenLastCalledWith('course-1', { partner_models: asRows(CHAT.filter(r => r.providerId !== 'dmx')) });
+    await act(async () => { root?.unmount(); });
+    host?.remove();
 
-    expect(box('DeepSeek Flash').checked).toBe(true);
-    expect(box('DeepSeek Flash').disabled).toBe(true);
-    expect(box('GLM-5.3 Flash').checked).toBe(false);
-
-    await click(radio('全部显示'));
+    const partial = CHAT.filter(r => !(r.providerId === 'zhipu' && r.model === 'glm-5.3'));
+    api.get.mockResolvedValue(payload({ partnerModels: { allowed: partial, defaultModel: ref('deepseek', 'deepseek-flash'), restricted: true } }));
+    await mount();
+    const zhipu = box('笔记 AI 助手：智谱的全部模型');
+    expect(zhipu.indeterminate).toBe(true);
+    await click(zhipu);
     expect(api.update).toHaveBeenLastCalledWith('course-1', { partner_models: null });
+  });
+
+  it('只剩一个时不能再取消，提示至少留一个；标出哪个是默认', async () => {
+    const onlyOne = payload({ partnerModels: { allowed: [ref('deepseek', 'deepseek-flash')], defaultModel: ref('deepseek', 'deepseek-flash'), restricted: true } });
+    api.get.mockResolvedValue(onlyOne);
+    const el = await mount();
+    expect(box('笔记 AI 助手：DeepSeek Flash').checked).toBe(true);
+    expect(box('笔记 AI 助手：GLM-5.3 Flash').checked).toBe(false);
+    expect(el.querySelector('tbody')!.textContent).toContain('默认');
+    await click(box('笔记 AI 助手：DeepSeek Flash'));
+    expect(api.update).not.toHaveBeenCalled();
+    expect(el.textContent).toContain('每个入口至少留一个模型');
   });
 });

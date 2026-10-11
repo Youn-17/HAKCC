@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import RemixIcon from '../RemixIcon';
 import { support, type SupportInboxItem } from '../../services/apiClient';
 import type { HelpLang } from './helpWidgetModel';
+import { useLayoutMotion } from '../../hooks/useLayoutMotion';
+import { useEnterMotion } from '../../hooks/useEnterMotion';
 
 /**
  * 小球里的「学生求助」（2026-10-05 用户：教师端也要显示这个球，一是能看到学生的求助）。
@@ -87,6 +89,9 @@ const HelpInbox: React.FC<HelpInboxProps> = ({ lang, active, onChanged, onOpenDe
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [failedId, setFailedId] = useState<string | null>(null);
   const [replied, setReplied] = useState<string | null>(null);
+  // 打开收件箱时一张张出现；回复后那张拿掉，其余的平滑补位
+  const listMotion = useLayoutMotion<HTMLDivElement>({ step: 24, maxStagger: 6 });
+  useEnterMotion(listMotion.root, active && data ? 'shown' : null, { step: 40, maxStagger: 5 });
   const repliedTimer = useRef(0);
 
   const load = useCallback(() => {
@@ -106,6 +111,7 @@ const HelpInbox: React.FC<HelpInboxProps> = ({ lang, active, onChanged, onOpenDe
     setFailedId(null);
     try {
       await support.answer(item.id, text);
+      listMotion.capture();
       setData(prev => prev && {
         student: prev.student.filter(q => q.id !== item.id),
         teacher: prev.teacher.filter(q => q.id !== item.id),
@@ -133,6 +139,8 @@ const HelpInbox: React.FC<HelpInboxProps> = ({ lang, active, onChanged, onOpenDe
     return (
       <article
         key={item.id}
+        data-layout-item
+        data-enter-item
         className="rounded-xl border border-zinc-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900"
       >
         <p className="flex flex-wrap items-center gap-x-1.5 text-[0.75rem] text-zinc-500 dark:text-gray-400">
@@ -202,9 +210,9 @@ const HelpInbox: React.FC<HelpInboxProps> = ({ lang, active, onChanged, onOpenDe
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-zinc-50 p-3 dark:bg-gray-950">
+      <div ref={listMotion.ref} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-zinc-50 p-3 dark:bg-gray-950">
         {replied && (
-          <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[0.8125rem] text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          <p role="status" data-layout-item className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[0.8125rem] text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
             {t.replied(replied)}
           </p>
         )}
@@ -229,13 +237,13 @@ const HelpInbox: React.FC<HelpInboxProps> = ({ lang, active, onChanged, onOpenDe
           </div>
         )}
         {data && data.student.length > 0 && (
-          <section aria-label={t.waiting(data.student.length)} className="space-y-2">
+          <section aria-label={t.waiting(data.student.length)} data-layout-item className="space-y-2">
             <h3 className="px-1 text-[0.75rem] font-semibold text-zinc-500 dark:text-gray-400">{t.waiting(data.student.length)}</h3>
             {data.student.map(card)}
           </section>
         )}
         {data && data.teacher.length > 0 && (
-          <section aria-label={t.fromTeachers(data.teacher.length)} className="space-y-2">
+          <section aria-label={t.fromTeachers(data.teacher.length)} data-layout-item className="space-y-2">
             <h3 className="px-1 text-[0.75rem] font-semibold text-zinc-500 dark:text-gray-400">{t.fromTeachers(data.teacher.length)}</h3>
             {data.teacher.map(card)}
           </section>

@@ -101,7 +101,7 @@ const LoginLogPanel: React.FC<{ lang: Language }> = ({ lang }) => {
     : role;
 
   return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <section>
       <h2 className="mb-4 flex items-center gap-2.5 text-xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">
         <div className="rounded-xl border border-stone-200 bg-stone-100 p-2 text-stone-700 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-200">
           <LogIn size={18} />

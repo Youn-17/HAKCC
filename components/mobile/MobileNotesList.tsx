@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useLayoutMotion } from '../../hooks/useLayoutMotion';
 import RemixIcon from '../RemixIcon';
 import type { Note, Language } from '../../types';
 import { htmlToPlainText, noteSearchText } from '../noteText';
@@ -43,6 +44,9 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
   const [search, setSearch] = useState('');
   /** 「我的」：只列自己写的（2026-10-05 用户：学生找不到自己的笔记） */
   const [mineOnly, setMineOnly] = useState(false);
+  // 换排序、筛选、「我的」时，笔记从原来的位置滑到新位置；笔记太多时不动（量一遍位置在手机上会卡）
+  const listMotion = useLayoutMotion<HTMLDivElement>({ step: 22, maxStagger: 8 });
+  const glide = () => { if (filtered.length <= 60) listMotion.capture(); };
 
   const filtered = useMemo(() => {
     let list = notes;
@@ -79,7 +83,7 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
           <button
             type="button"
             aria-pressed={mineOnly}
-            onClick={() => setMineOnly(v => !v)}
+            onClick={() => { glide(); setMineOnly(v => !v); }}
             className={`shrink-0 px-3 h-7 rounded-full text-xs font-medium transition-colors ${
               mineOnly ? 'bg-[#000080] text-white' : `${MINE_CARD.tagClass} active:opacity-80`
             }`}
@@ -89,7 +93,7 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
           {FILTER_OPTIONS.map(f => (
             <button
               key={f.id}
-              onClick={() => setFilter(f.id)}
+              onClick={() => { glide(); setFilter(f.id); }}
               className={`shrink-0 px-3 h-7 rounded-full text-xs font-medium transition-colors ${
                 filter === f.id
                   ? 'bg-[#000080] text-white'
@@ -108,7 +112,7 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
         <span>{filtered.length} {lbl('条笔记', 'notes')}</span>
         <select
           value={sort}
-          onChange={e => setSort(e.target.value as SortMode)}
+          onChange={e => { glide(); setSort(e.target.value as SortMode); }}
           className="text-xs bg-transparent border-none outline-none text-gray-500 cursor-pointer"
         >
           <option value="newest">{lbl('最新优先', 'Newest first')}</option>
@@ -119,7 +123,7 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
 
       {/* Notes list */}
       {/* 顶上留出角标的位置：New / 火骑在卡片上沿，滚动容器会把第一张卡的角标裁掉 */}
-      <div className="flex-1 overflow-y-auto px-4 pt-3 pb-20 space-y-3">
+      <div ref={listMotion.ref} className="flex-1 overflow-y-auto px-4 pt-3 pb-20 space-y-3">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
             <RemixIcon name="inbox-line" size={40} />
@@ -136,6 +140,7 @@ const MobileNotesList: React.FC<MobileNotesListProps> = ({ notes, lang, onNoteOp
             return (
               <button
                 key={note.id}
+                data-layout-item
                 onClick={() => onNoteOpen(note)}
                 data-mine={isMine || undefined}
                 className={`relative w-full text-left rounded-xl p-3.5 border active:scale-[0.98] transition-transform shadow-sm ${

@@ -97,6 +97,7 @@ import { settleOptimisticMessage } from './noteConversationMerge';
 import {
   NOTE_AI_SPLIT_LAYOUT,
   clampNoteAiPanelWidth,
+  defaultNoteAiPanelWidth,
   resizeNoteAiPanelWidth,
 } from './noteEditorSplitLayout';
 import {
@@ -124,6 +125,13 @@ import { applyToolEvent, stepsFromMetadata } from './agentProcessSteps';
 import type { ToolCallInfo } from './AgentToolCallDisplay';
 import { getAnswerLength } from './answerLengthPref';
 import { chooseDrawing, lastReplyFrom, previousDrawingFrom, type DrawChoice } from './drawRouting';
+import { AgentDeliverables, AgentPlanBlock, ArtifactCards, ArtifactViewer } from './agent/AgentExtrasView';
+import MemoryPanel from './agent/MemoryPanel';
+import {
+  applyAgentEvent, choiceReplyText, extrasFromLiveMetadata, extrasFromMetadata, extrasToMetadata, hasExtras, looksLikeMakerTask,
+  type AgentQuestion, type AgentQuestionOption,
+} from './agent/agentTurn';
+import type { NoteConversationAgentMode } from '../services/apiClient';
 import { useScaffoldRecommendation } from './scaffoldRecommend';
 import {
   formatThreadTime,
@@ -251,7 +259,9 @@ const DEFAULT_PROVIDER_MODELS: Record<string, string[]> = {
   doubao: ['doubao-pro-32k'],
   xai: ['grok-2'],
   baidu: ['ernie-4.0-8k'],
-  alibaba: ['qwen3.8-max', 'qwen3.6-plus', 'qwen3.8-flash'],
+  alibaba: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.8-flash'],
+  apikeyfan: ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-5.6-terra', 'gpt-5.6-sol'],
+  'apikeyfan-grok': ['grok-4.7', 'grok-4.20-0309-non-reasoning', 'grok-4.5', 'grok-4.6'],
   zhipu: ['glm-5.3', 'glm-5.2', 'glm-4.7', 'glm-4.6', 'glm-5.3-flash', 'glm-4.5-air', 'glm-4.6v', 'glm-4.5v'],
   openrouter: ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet'],
 };
@@ -317,7 +327,8 @@ function hashText(value: string): string {
   return `${value.length}:${hash}`;
 }
 
-import MarkdownMessage, { isSafeHttpUrl, shortenUrl, readTable } from './chatMarkdown';
+import MarkdownMessage, { isSafeHttpUrl } from './chatMarkdown';
+import { INSERT_TAGS, renderMarkdownToHtml } from './aiInsertHtml';
 import { renderCanvasSnapshot, type SnapshotEdge } from './canvasSnapshot';
 import { useDismissible } from '../hooks/useDismissible';
 
@@ -341,74 +352,6 @@ const NOTE_TEXT_COLORS = [
   { value: '#71717a', label: { zh: '灰', en: 'Grey' } },
 ] as const;
 
-function renderInlineMarkdownToHtml(value: string) {
-  return value
-    .split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<>"']+)/g)
-    .filter(Boolean)
-    .map(part => {
-      if (part.startsWith('**') && part.endsWith('**')) return `<strong>${escapeHtml(part.slice(2, -2))}</strong>`;
-      if (part.startsWith('`') && part.endsWith('`')) return `<code style="background:#f1f5f9;color:#334155;border-radius:4px;padding:1px 5px;font-size:.92em;">${escapeHtml(part.slice(1, -1))}</code>`;
-      const markdownLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
-      if (markdownLink && isSafeHttpUrl(markdownLink[2])) {
-        return `<a href="${escapeHtml(markdownLink[2])}" target="_blank" rel="noreferrer" style="color:#0f6ca6;text-decoration:underline;word-break:break-word;">${escapeHtml(markdownLink[1])}</a>`;
-      }
-      if (part.startsWith('http') && isSafeHttpUrl(part)) {
-        return `<a href="${escapeHtml(part)}" target="_blank" rel="noreferrer" style="color:#0f6ca6;text-decoration:underline;word-break:break-word;">${escapeHtml(shortenUrl(part))}</a>`;
-      }
-      return escapeHtml(part);
-    })
-    .join('');
-}
-
-function renderMarkdownToHtml(content: string) {
-  const lines = content.replace(/\r\n/g, '\n').split('\n');
-  const html: string[] = [];
-  let listItems: string[] = [];
-  const flushList = () => {
-    if (!listItems.length) return;
-    html.push(`<ul style="margin:8px 0 8px 20px;padding:0;">${listItems.map(item => `<li style="margin:4px 0;line-height:1.65;">${renderInlineMarkdownToHtml(item)}</li>`).join('')}</ul>`);
-    listItems = [];
-  };
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index].trim();
-    if (!line) {
-      flushList();
-      continue;
-    }
-    // 表格：学生把 AI 的回答采纳进笔记时，表格要跟着进去，不能退化成一行行竖线
-    const table = readTable(lines, index);
-    if (table) {
-      flushList();
-      const cell = 'border:1px solid #e2e8f0;padding:6px 10px;vertical-align:top;line-height:1.6;';
-      html.push(
-        `<table style="border-collapse:collapse;width:100%;margin:10px 0;font-size:.92em;"><thead><tr>${table.header
-          .map((h, c) => `<th style="${cell}background:#f1f5f9;font-weight:700;text-align:${table.align[c]};">${renderInlineMarkdownToHtml(h)}</th>`).join('')}</tr></thead><tbody>${table.rows
-          .map(row => `<tr>${row.map((d, c) => `<td style="${cell}text-align:${table.align[c]};">${renderInlineMarkdownToHtml(d)}</td>`).join('')}</tr>`).join('')}</tbody></table>`,
-      );
-      index = table.next - 1;
-      continue;
-    }
-    const bullet = line.match(/^[-*]\s+(.+)$/);
-    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
-    if (bullet || numbered) {
-      listItems.push((bullet ?? numbered)?.[1] ?? line);
-      continue;
-    }
-    flushList();
-    if (line.startsWith('### ')) {
-      html.push(`<h4 style="margin:10px 0 4px;font-size:14px;line-height:1.5;font-weight:700;color:#0f172a;">${renderInlineMarkdownToHtml(line.slice(4))}</h4>`);
-    } else if (line.startsWith('## ')) {
-      html.push(`<h3 style="margin:12px 0 6px;font-size:15px;line-height:1.5;font-weight:700;color:#0f172a;">${renderInlineMarkdownToHtml(line.slice(3))}</h3>`);
-    } else if (line === '---') {
-      html.push('<hr style="border:0;border-top:1px solid #cbd5e1;margin:12px 0;" />');
-    } else {
-      html.push(`<p style="margin:6px 0;line-height:1.75;">${renderInlineMarkdownToHtml(line)}</p>`);
-    }
-  }
-  flushList();
-  return html.join('');
-}
 
 async function readSSEStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -479,6 +422,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const [aiConfigs, setAiConfigs] = useState<ApiAIConfig[]>([]);
   const [threads, setThreads] = useState<NoteConversationThread[]>([]);
   const [recentThreadsOpen, setRecentThreadsOpen] = useState(false);
+  // 「AI 记得什么」（学生看、删、关自己的 AI 记忆）
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   /** 历史对话里正等着确认删除的那一段 */
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -636,7 +581,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const [aiPublishError, setAiPublishError] = useState('');
   const [aiPublishing, setAiPublishing] = useState(false);
   const [aiSelectionMenu, setAiSelectionMenu] = useState<AiSelectionMenu | null>(null);
-  const [aiPanelWidth, setAiPanelWidth] = useState<number>(NOTE_AI_SPLIT_LAYOUT.defaultAiWidth);
+  // 打开时 AI 助手和 Note 各占一半；拖过分隔条以后窗口再怎么变都照拖的宽度（只夹在上下限里），双击回到一半
+  const [aiPanelWidth, setAiPanelWidth] = useState<number>(() => defaultNoteAiPanelWidth(typeof window === 'undefined' ? 1440 : window.innerWidth));
+  const splitUserSizedRef = useRef(false);
   const editorRef = useRef<HTMLDivElement>(null);
   /** beforeinput 走原生监听：React 的 onBeforeInput 拿不到 inputType。处理函数经 ref 取最新版本。 */
   const beforeInputRef = useRef<((e: InputEvent) => void) | null>(null);
@@ -650,6 +597,18 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const editorRangeRef = useRef<Range | null>(null);
   const editorTextOffsetRef = useRef<number | null>(null);
   const aiInputRef = useRef<HTMLTextAreaElement>(null);
+  // 智能体做好的网页：点卡片上的「打开」在隔离窗口里看（agent/AgentExtrasView）
+  const [artifactViewerId, setArtifactViewerId] = useState<string | null>(null);
+  // 导入到笔记里的网页卡片（aiInsertHtml.artifactEmbedHtml）：编辑和只读时点「打开网页」都打开隔离窗口
+  const openArtifactFromNote = (event: React.MouseEvent | React.KeyboardEvent) => {
+    if ('key' in event && event.key !== 'Enter' && event.key !== ' ') return;
+    const trigger = (event.target as HTMLElement | null)?.closest?.('[data-open-artifact]');
+    const id = trigger?.getAttribute('data-open-artifact');
+    if (!id) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setArtifactViewerId(id);
+  };
   useGrowingTextarea(aiInputRef, aiInput, isOpen && aiOpen);
   const aiMotionRef = useAiSurfaceMotion<HTMLElement>({ open: isOpen && aiOpen, ready: !threadLoading });
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -1035,7 +994,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
 
   useEffect(() => {
     const handleResize = () => {
-      setAiPanelWidth(width => clampNoteAiPanelWidth(width, window.innerWidth));
+      setAiPanelWidth(width => (splitUserSizedRef.current
+        ? clampNoteAiPanelWidth(width, window.innerWidth)
+        : defaultNoteAiPanelWidth(window.innerWidth)));
     };
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -2435,7 +2396,12 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   };
 
   /** 一次 AI 回合。发送与「重新生成」共用同一条链路。 */
-  const runAiTurn = async (prompt: string, options: { restoreInputOnError?: boolean } = {}) => {
+  const runAiTurn = async (prompt: string, options: {
+    restoreInputOnError?: boolean;
+    /** 不按菜单里选的模式走：「动手做」自动转过去的、接着上一轮智能体的、点了选项卡的 */
+    agentMode?: NoteConversationAgentMode;
+    choice?: { question_id: string; label: string; other?: boolean };
+  } = {}) => {
     if (!prompt.trim() || sending) return;
     if (!canChatWithAI || !concreteAiSelection) {
       setAiError(t.noAi);
@@ -2446,6 +2412,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     setAiError(null);
     const tempAssistantId = `stream-${Date.now()}`;
     const turnAttachments = aiAttachments;
+    const turnAgentMode = options.agentMode ?? selectedAgentMode;
     setAiAttachments([]);
     // 附件正文随 attachments 一起送给后端：后端只把它拼进这一轮的模型输入，
     // 不写进消息正文。以前是拼在 content 里的，于是整篇 PDF 在对话里铺开，
@@ -2478,12 +2445,13 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
         provider_id: concreteAiSelection.providerId,
         model: concreteAiSelection.model,
         use_web_search: useWebSearchForNextMessage,
-        agent_mode: selectedAgentMode || undefined,
+        agent_mode: turnAgentMode || undefined,
         attachments: turnAttachments,
         answer_length: getAnswerLength(),
+        ...(options.choice ? { choice: options.choice } : {}),
         // 选了具体模式才走智能体；「自由提问」直接打模型，省掉工具装载和 ReAct 循环
         // 但带了图必须走智能体那条：只有它会挂 image_url 并切到视觉模型。
-      }, Boolean(selectedAgentMode) || turnAttachments.length > 0);
+      }, Boolean(turnAgentMode) || turnAttachments.length > 0);
       let streamedText = '';
       let failed = false;
       await readSSEStream(reader, event => {
@@ -2513,7 +2481,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               // 每一步的状态、结果、用时（AgentProcess）
               toolSteps: applyToolEvent((existing?.aiMetadata?.toolSteps as ToolCallInfo[] | undefined) ?? [], event),
               use_web_search: useWebSearchForNextMessage,
-              agent_mode: selectedAgentMode,
+              agent_mode: turnAgentMode,
             };
             if (existing) {
               return prev.map(message => message.id === tempAssistantId
@@ -2550,7 +2518,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               reasoningStatus: event.reasoningStatus,
               reasoningChars: event.reasoningChars,
               use_web_search: useWebSearchForNextMessage,
-              agent_mode: selectedAgentMode,
+              agent_mode: turnAgentMode,
             };
             if (existing) {
               return prev.map(message => message.id === tempAssistantId
@@ -2569,6 +2537,27 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
           });
           return;
         }
+        // 计划清单、选项卡、写网页的进度、做好的网页（agentMaker）：挂在这条临时回答上，写完由服务端存下的 ai_metadata 接手
+        if ('agentPlan' in event || 'agentQuestion' in event || 'artifactStatus' in event || 'artifact' in event) {
+          setMessages(prev => {
+            const existing = prev.find(message => message.id === tempAssistantId);
+            const current = extrasFromLiveMetadata(existing?.aiMetadata);
+            const patch = extrasToMetadata(applyAgentEvent(current, event) ?? current);
+            if (existing) {
+              return prev.map(message => (message.id === tempAssistantId ? { ...message, aiMetadata: { ...message.aiMetadata, ...patch } } : message));
+            }
+            return [...prev, {
+              id: tempAssistantId,
+              threadId: thread.id,
+              senderKind: 'assistant',
+              content: '',
+              attachments: [],
+              aiMetadata: { provider_id: concreteAiSelection.providerId, model: concreteAiSelection.model, streaming: true, agent_mode: turnAgentMode || undefined, ...patch },
+              createdAt: new Date().toISOString(),
+            } as NoteConversationMessage];
+          });
+          return;
+        }
         if (typeof event.token === 'string') {
           streamedText += event.token;
           setMessages(prev => {
@@ -2580,7 +2569,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               senderKind: 'assistant',
               content: streamedText,
               attachments: [],
-              aiMetadata: { provider_id: concreteAiSelection.providerId, model: concreteAiSelection.model, streaming: true, use_web_search: useWebSearchForNextMessage, agent_mode: selectedAgentMode || undefined },
+              aiMetadata: { provider_id: concreteAiSelection.providerId, model: concreteAiSelection.model, streaming: true, use_web_search: useWebSearchForNextMessage, agent_mode: turnAgentMode || undefined },
               createdAt: new Date().toISOString(),
             } as NoteConversationMessage];
           });
@@ -2601,6 +2590,32 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     } finally {
       if (live()) endAiTurn();
     }
+  };
+
+  /** 这条回答是哪个智能体模式答的（自由提问转过去的算「动手做」） */
+  const agentModeOf = (message: NoteConversationMessage): NoteConversationAgentMode => {
+    const mode = message.aiMetadata?.agent_mode;
+    return typeof mode === 'string' && mode && mode !== 'free_ask' ? mode as NoteConversationAgentMode : 'maker';
+  };
+
+  /**
+   * 自由提问时要不要转给智能体：上一轮还在做事（列了计划、在等学生选、做了网页）就接着；
+   * 说的是要动手做的事（做网页、出题、整理成表、帮着规划）就转给「动手做」。菜单里选了模式的照旧。
+   */
+  const makerModeFor = (prompt: string): NoteConversationAgentMode | undefined => {
+    if (selectedAgentMode) return undefined;
+    const last = [...messages].reverse().find(message => message.senderKind === 'assistant');
+    if (last && hasExtras(extrasFromMetadata(last.aiMetadata))) return agentModeOf(last);
+    return looksLikeMakerTask(prompt) ? 'maker' : undefined;
+  };
+
+  /** 点了选项卡上的一个：当作学生说了「我选：……」，接着交给答这一轮的那个智能体 */
+  const chooseAgentOption = async (message: NoteConversationMessage, question: AgentQuestion, option: AgentQuestionOption) => {
+    await runAiTurn(choiceReplyText(option, lang === 'zh' ? 'zh' : 'en'), {
+      restoreInputOnError: false,
+      agentMode: selectedAgentMode || agentModeOf(message),
+      choice: { question_id: question.id, label: option.label },
+    });
   };
 
   const sendAiMessage = async () => {
@@ -2627,7 +2642,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     }
     setAiInput('');
     setPromptBeforeRefine(null);
-    await runAiTurn(prompt);
+    await runAiTurn(prompt, { agentMode: makerModeFor(prompt) });
   };
 
   /** 重新生成：把这条回复之前最近的一条学生消息再跑一遍，输入框里正在写的内容不动。 */
@@ -2641,7 +2656,12 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       await generateImageDirect(previousUser.content, { draw: true, mode: 'new', form: null });
       return;
     }
-    await runAiTurn(previousUser.content, { restoreInputOnError: false });
+    // 智能体答的那一轮（比如自由提问转去「动手做」的）照原来的模式重答
+    const answeredMode = messages[index].aiMetadata?.agent_mode;
+    await runAiTurn(previousUser.content, {
+      restoreInputOnError: false,
+      ...(!selectedAgentMode && typeof answeredMode === 'string' && answeredMode && answeredMode !== 'free_ask' ? { agentMode: answeredMode as NoteConversationAgentMode } : {}),
+    });
   };
 
   /** 「新建对话」：强制开新线程，不复用 ensureAiThread 里那条既有的。 */
@@ -3200,13 +3220,6 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
    * 不采纳的归类。点一下即完成 —— 强制写句子在插入那条路径上已经产生了近四成
    * 「没有」「没有理由」式的应付，标签既省事又更好编码。
    */
-  /** 课程没配 GenAI 支架时的采纳归类；配了支架就以支架为准，不重复问 */
-  const INSERT_TAGS = [
-    { key: 'new_angle', zh: '给了我没想到的角度', en: 'A new angle' },
-    { key: 'clearer', zh: '帮我说得更清楚', en: 'Says it more clearly' },
-    { key: 'evidence', zh: '提供了证据或例子', en: 'Evidence or example' },
-    { key: 'to_verify', zh: '先放着，待我查证', en: 'Keep for now, verify later' },
-  ];
 
   const REJECT_TAGS = [
     { key: 'misread', zh: '误解了我的意思', en: 'Misread my point' },
@@ -3236,7 +3249,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     return (
       <article
         key={feedback.id}
-        className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-200 rounded-xl border border-[#000080]/15 bg-[#000080]/[0.035] p-3.5 dark:border-[#93AAFD]/20 dark:bg-[#93AAFD]/[0.06]"
+        className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-300 rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(30,58,138,0.04),0_10px_28px_-22px_rgba(30,58,138,0.25)] dark:border-gray-800 dark:bg-gray-900"
       >
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 text-[0.6875rem] font-semibold text-[#000080] dark:text-[#93AAFD]">
@@ -3417,6 +3430,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const moveSplitResize = (event: React.PointerEvent<HTMLDivElement>) => {
     const state = splitResizeRef.current;
     if (!state || state.pointerId !== event.pointerId) return;
+    splitUserSizedRef.current = true;
     setAiPanelWidth(resizeNoteAiPanelWidth({
       startWidth: state.startWidth,
       startX: state.startX,
@@ -3436,16 +3450,19 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   };
 
   const resetSplitResize = () => {
-    setAiPanelWidth(clampNoteAiPanelWidth(NOTE_AI_SPLIT_LAYOUT.defaultAiWidth, window.innerWidth));
+    splitUserSizedRef.current = false;
+    setAiPanelWidth(defaultNoteAiPanelWidth(window.innerWidth));
   };
 
   const handleSplitResizeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 48 : 24;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
+      splitUserSizedRef.current = true;
       setAiPanelWidth(width => clampNoteAiPanelWidth(width - step, window.innerWidth));
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
+      splitUserSizedRef.current = true;
       setAiPanelWidth(width => clampNoteAiPanelWidth(width + step, window.innerWidth));
     } else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -3492,7 +3509,16 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     deletedIds: deletedThreadIdsRef.current,
   });
   const aiPanel = (
-    <aside ref={aiMotionRef} data-large-text={largeText} aria-label={t.aiPartner} className="ai-motion-surface assistant-panel flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 dark:border-gray-800">
+    <aside ref={aiMotionRef} data-large-text={largeText} aria-label={t.aiPartner} className="ai-motion-surface assistant-panel relative flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 dark:border-gray-800">
+      {memoryOpen && (resolvedCourseIdRef.current || courseId) && (
+        <MemoryPanel
+          courseId={resolvedCourseIdRef.current || courseId || ''}
+          lang={lang === 'zh' ? 'zh' : 'en'}
+          surface="note"
+          conversationId={selectedThread?.id ?? null}
+          onClose={() => setMemoryOpen(false)}
+        />
+      )}
       {/* 标题、新建、历史、收起放在一行。原来标题、两个按钮、分隔线、「围绕当前 Note 讨论」叠了四层，
           占掉侧栏顶上一百多像素，真正的对话区反而挤在下面。历史列表做成浮在下面的菜单，不再把对话往下顶。 */}
       <div ref={historyMenuRef} className="relative shrink-0 border-b border-gray-100 dark:border-gray-800">
@@ -3522,6 +3548,18 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
           >
             <RemixIcon name="history-line" size={16} /><span className="assistant-header-action-label">{t.chatHistory}{historyThreads.length > 0 && <span className="ml-1 tabular-nums text-gray-500">· {historyThreads.length}</span>}</span>
           </button>
+          {!staffLike && (
+            <button
+              type="button"
+              onClick={() => { setMemoryOpen(true); setRecentThreadsOpen(false); }}
+              aria-label={lang === 'zh' ? 'AI 记得什么' : 'What the AI remembers'}
+              title={lang === 'zh' ? 'AI 记得什么' : 'What the AI remembers'}
+              data-memory-open
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000080]/25 dark:text-gray-400 dark:hover:bg-gray-800"
+            >
+              <RemixIcon name="bookmark-3-line" size={16} />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setAiOpen(false)}
@@ -3656,6 +3694,10 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               : stepsFromMetadata(message.aiMetadata);
             // 流式回复的临时消息，字还没出来：显示「正在思考 / 读取 / 组织回答」的动效，不是一个空气泡加小转圈
             const waitingForText = isStreaming && !message.content.trim();
+            // 计划清单、选项卡、做好的网页；选项卡答没答过看这条回答之后学生说的第一句
+            const agentExtras = extrasFromLiveMetadata(message.aiMetadata);
+            const laterUser = messages.slice(index + 1).find(m => m.senderKind === 'user');
+            const laterChoice = laterUser?.aiMetadata?.choice as { label?: unknown } | undefined;
             // 这一轮已经结束（出错中断）却留下的空临时消息：不画，免得动效一直转下去
             if (waitingForText && !sending) return null;
 
@@ -3679,13 +3721,16 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                   <div className="assistant-response px-3.5 py-3 text-[0.8125rem] leading-6">
                     {waitingForText ? (
                       // 还没开始写：一步步显示在做什么（2026-10-05 用户：等的时候别让学生觉得无聊）
-                      <AgentProcess
-                        steps={processSteps}
-                        phase="waiting"
-                        startedAt={aiTurnStartedAtRef.current}
-                        thinking={reasoningStatus === 'thinking'}
-                        lang={lang === 'zh' ? 'zh' : 'en'}
-                      />
+                      <>
+                        <AgentProcess
+                          steps={processSteps}
+                          phase="waiting"
+                          startedAt={aiTurnStartedAtRef.current}
+                          thinking={reasoningStatus === 'thinking'}
+                          lang={lang === 'zh' ? 'zh' : 'en'}
+                        />
+                        <AgentPlanBlock plan={agentExtras.plan} progress={agentExtras.progress} lang={lang === 'zh' ? 'zh' : 'en'} />
+                      </>
                     ) : (
                       <>
                         {/* 字一出来，「思考中 / 正在组织回答」的小标签就不用了：流出来的字本身就在说它在写 */}
@@ -3701,6 +3746,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                           elapsedMs={typeof message.aiMetadata?.elapsed_ms === 'number' ? message.aiMetadata.elapsed_ms : undefined}
                           lang={lang === 'zh' ? 'zh' : 'en'}
                         />
+                        <AgentPlanBlock plan={agentExtras.plan} progress={isStreaming ? agentExtras.progress : undefined} lang={lang === 'zh' ? 'zh' : 'en'} />
+                        {agentExtras.artifacts && <ArtifactCards artifacts={agentExtras.artifacts} onOpen={setArtifactViewerId} lang={lang === 'zh' ? 'zh' : 'en'} />}
                         <MarkdownMessage content={message.content} isMine={false} />
                         <KbSourceCards
                           sources={parseKbSources(message.aiMetadata?.kb_sources)}
@@ -3708,6 +3755,16 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                           streaming={isStreaming}
                           lang={lang === 'zh' ? 'zh' : 'en'}
                           onOpen={onOpenKbSource}
+                        />
+                        <AgentDeliverables
+                          extras={agentExtras}
+                          laterUserText={laterUser ? laterUser.content : null}
+                          choiceLabel={typeof laterChoice?.label === 'string' ? laterChoice.label : null}
+                          disabled={sending || isStreaming}
+                          onChoose={(question, option) => void chooseAgentOption(message, question, option)}
+                          onOther={() => { setAiInput(prev => (prev.trim() ? prev : (lang === 'zh' ? '我的想法：' : 'My idea: '))); aiInputRef.current?.focus(); }}
+                          lang={lang === 'zh' ? 'zh' : 'en'}
+                          contentShowsQuestion={Boolean(agentExtras.question) && message.content.trim() === agentExtras.question?.question}
                         />
                         {isStreaming && <div className="mt-1.5"><AiThinkingDots /></div>}
                       </>
@@ -3939,7 +3996,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               onClick={() => void sendAiMessage()}
               disabled={sending || !aiInput.trim() || !canChatWithAI}
               title={!aiInput.trim() && aiAttachments.length > 0 ? attachmentQuestionHint(aiAttachments, lang === 'zh' ? 'zh' : 'en') : undefined}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#000080] text-white transition-all hover:bg-[#000060] active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#000080] text-white shadow-[0_6px_14px_-8px_rgba(0,0,128,0.6)] transition-all duration-200 hover:bg-[#000060] active:scale-[0.94] disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-400 disabled:shadow-none dark:bg-[#93AAFD] dark:text-gray-950 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
               aria-label={t.send}
             >
               {sending ? <Loader2 size={16} className="animate-spin" /> : <RemixIcon name="arrow-up-line" size={16} />}
@@ -4046,10 +4103,12 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const sidePanel = showParentPanel ? parentPanel : (aiOpen ? aiPanel : null);
 
   return (
-    <div className="note-editor-shell fixed inset-0 z-[100] flex bg-white dark:bg-gray-950 font-sans">
+    <div className="note-editor-shell fixed inset-0 z-[100] flex bg-white dark:bg-gray-950 font-sans" onClickCapture={openArtifactFromNote} onKeyDownCapture={openArtifactFromNote}>
+      {artifactViewerId && <ArtifactViewer artifactId={artifactViewerId} onClose={() => setArtifactViewerId(null)} lang={lang === 'zh' ? 'zh' : 'en'} />}
       <div className="flex h-full w-full items-stretch gap-0">
       {sidePanel && isLargeScreen && (
         <div
+          data-note-pane="ai"
           className="h-full shrink-0"
           style={{ width: `${aiPanelWidth}px` }}
         >
@@ -4074,10 +4133,10 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
           onKeyDown={handleSplitResizeKeyDown}
           className="group flex h-full w-2 shrink-0 cursor-col-resize touch-none items-center justify-center"
         >
-          <div className="h-16 w-1 rounded-full bg-gray-300 dark:bg-gray-700 transition-colors group-hover:bg-[#000080] dark:group-hover:bg-blue-400 group-focus-visible:bg-[#000080]" />
+          <div className="h-10 w-[3px] rounded-full bg-zinc-200 group-hover:bg-zinc-400 group-active:bg-zinc-500 group-focus-visible:bg-zinc-400 dark:bg-gray-700 dark:group-hover:bg-gray-500" />
         </div>
       )}
-      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
+      <div data-note-pane="note" className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
         <div className="note-workspace-header flex select-none flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 px-4 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] backdrop-blur-sm">
           <div className="flex shrink-0 items-center gap-2">
             <FileText size={15} className="text-[#000080]" />
@@ -4094,7 +4153,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               </span>
             )}
           </div>
-          <nav className="flex items-center gap-0.5">
+          <nav className="flex items-center gap-0.5 rounded-xl bg-zinc-100/80 p-0.5 dark:bg-gray-800/70">
             {[
               { id: 'edit' as const, label: t.edit, icon: FileText },
               { id: 'read' as const, label: t.read, icon: BookOpen },
@@ -4107,10 +4166,11 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
+                  aria-pressed={activeTab === tab.id}
+                  className={`inline-flex items-center gap-1.5 rounded-[0.6rem] px-3 py-1 text-xs transition-all duration-200 active:scale-[0.97] ${
                     activeTab === tab.id
-                      ? 'bg-[#000080]/8 font-semibold text-[#000080] dark:bg-blue-950/50 dark:text-blue-300'
-                      : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800'
+                      ? 'bg-white font-semibold text-zinc-900 shadow-[0_1px_2px_rgba(30,58,138,0.08),0_1px_6px_-2px_rgba(30,58,138,0.10)] dark:bg-gray-900 dark:text-zinc-50'
+                      : 'text-zinc-500 hover:text-zinc-800 dark:text-gray-400 dark:hover:text-gray-200'
                   }`}
                 >
                   <Icon size={13} />
@@ -4171,7 +4231,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
 
         <div className={`grid min-h-0 flex-1 grid-cols-1 bg-white dark:bg-gray-950 ${readOnlyNote ? '' : 'sm:grid-cols-[210px_minmax(0,1fr)] xl:grid-cols-[230px_minmax(0,1fr)]'}`}>
           {/* 只读时没有东西可插，支架栏收起 */}
-          <aside className={`hidden min-h-0 overflow-y-auto border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 p-3 ${readOnlyNote ? '' : 'sm:block'}`}>
+          <aside className={`note-scaffold-aside hidden min-h-0 overflow-y-auto border-r border-zinc-100 dark:border-gray-800 bg-[#fafafb] dark:bg-gray-900 px-3.5 py-4 ${readOnlyNote ? '' : 'sm:block'}`}>
             {isRiseAbove ? (
               <>
                 {/* Rise Above: Cited notes reference panel */}
@@ -4249,10 +4309,10 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             )}
           </aside>
 
-          <main className="flex min-h-0 flex-col bg-white dark:bg-gray-950">
-            <div className="border-b border-gray-200 dark:border-gray-800 bg-white px-5 py-2.5 dark:bg-gray-950 sm:px-8">
+          <main className="note-main flex min-h-0 flex-col bg-white dark:bg-gray-950">
+            <div className="border-b border-zinc-100 dark:border-gray-800 bg-white px-5 py-3 dark:bg-gray-950 sm:px-8">
               <label className="flex w-full items-center gap-3">
-                <span className="shrink-0 text-sm font-semibold text-gray-700 dark:text-gray-300">{t.title}</span>
+                <span className="shrink-0 text-xs font-medium text-zinc-400 dark:text-gray-500">{t.title}</span>
                 <input
                   value={title}
                   readOnly={readOnlyNote}
@@ -4260,7 +4320,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                   placeholder={isRiseAbove ? (lang === 'zh' ? '为你的综合观点命名...' : 'Name your synthesis...') : t.titlePlaceholder}
                   aria-label={t.title}
                   style={{ fontSize: `${Math.round(noteFontSize * 1.15)}px` }}
-                  className="note-prose min-w-0 flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-semibold text-gray-900 outline-none transition-colors placeholder:font-normal placeholder:text-gray-400 focus:border-[#000080] focus:bg-white focus:ring-1 focus:ring-[#000080] dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:bg-gray-950 dark:focus:ring-blue-400"
+                  className="note-prose min-w-0 flex-1 rounded-xl border border-transparent bg-transparent px-3 py-1.5 font-bold tracking-tight text-zinc-900 outline-none transition-colors duration-200 placeholder:font-normal placeholder:text-zinc-400 hover:bg-zinc-50 focus:bg-white dark:text-gray-100 dark:hover:bg-gray-900 dark:focus:bg-gray-950"
                 />
               </label>
               {saveBlocked && (
@@ -4277,12 +4337,12 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             {/* 切到别的页签时撰写区只藏起来、不卸载。正文只在打开笔记时写进编辑区一次，卸载后重新挂上的是空的，
                 再点「贡献」就把空正文存进了库（2026-10-06）。保存、阅读、信息页签都读这一个编辑区 */}
             <div className={activeTab === 'edit' ? 'contents' : 'hidden'}>
-                <div className={`${readOnlyNote ? 'hidden' : 'flex'} flex-wrap items-center gap-1 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-4 py-1.5`}>
+                <div className={`note-toolbar note-tab-in ${readOnlyNote ? 'hidden' : 'flex'} flex-wrap items-center gap-1 border-b border-zinc-100 dark:border-gray-800 px-4 py-1.5`}>
                   <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageInput} />
                   <input ref={documentInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={handleDocumentInput} />
-                  <button type="button" onClick={() => formatBlock('h1')} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.heading1}><Heading1 size={14} />{t.heading1}</button>
-                  <button type="button" onClick={() => formatBlock('h2')} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.heading2}><Heading2 size={14} />{t.heading2}</button>
-                  <button type="button" onClick={() => formatBlock('p')} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.paragraph}><AlignLeft size={14} />{t.paragraph}</button>
+                  <button type="button" onClick={() => formatBlock('h1')} aria-label={t.heading1} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.heading1}><Heading1 size={14} /><span className="note-toolbar-label">{t.heading1}</span></button>
+                  <button type="button" onClick={() => formatBlock('h2')} aria-label={t.heading2} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.heading2}><Heading2 size={14} /><span className="note-toolbar-label">{t.heading2}</span></button>
+                  <button type="button" onClick={() => formatBlock('p')} aria-label={t.paragraph} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.paragraph}><AlignLeft size={14} /><span className="note-toolbar-label">{t.paragraph}</span></button>
                   <span className="mx-1 h-6 w-px bg-gray-200 dark:bg-gray-700" />
                   <button type="button" onClick={() => execCmd('bold')} className="h-7 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Bold" aria-label="Bold"><Bold size={14} /></button>
                   <button type="button" onClick={() => execCmd('italic')} className="h-7 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Italic" aria-label="Italic"><Italic size={14} /></button>
@@ -4347,10 +4407,10 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                     <option value={2}>{t.lineHeight} {t.lhDouble}</option>
                   </select>
                   <span className="mx-1 h-6 w-px bg-gray-200 dark:bg-gray-700" />
-                  <button type="button" onClick={() => imageInputRef.current?.click()} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.insertImage}><ImageIcon size={14} />{t.insertImage}</button>
-                  <button type="button" onClick={() => documentInputRef.current?.click()} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.insertDocument}><Paperclip size={14} />{t.insertDocument}</button>
+                  <button type="button" onClick={() => imageInputRef.current?.click()} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.insertImage} aria-label={t.insertImage}><ImageIcon size={14} /><span className="note-toolbar-label">{t.insertImage}</span></button>
+                  <button type="button" onClick={() => documentInputRef.current?.click()} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={t.insertDocument} aria-label={t.insertDocument}><Paperclip size={14} /><span className="note-toolbar-label">{t.insertDocument}</span></button>
                 </div>
-                <div className="relative min-h-0 flex-1 overflow-y-auto bg-zinc-50/60 p-4 dark:bg-gray-950 sm:p-6" onMouseMove={handleEditorMouseMove} onMouseLeave={() => setHoveredScaffold(null)}>
+                <div className="note-tab-in relative min-h-0 flex-1 overflow-y-auto bg-zinc-50/60 p-4 dark:bg-gray-950 sm:p-7" onMouseMove={handleEditorMouseMove} onMouseLeave={() => setHoveredScaffold(null)}>
                   <div
                     ref={editorRef}
                     contentEditable={!readOnlyNote}
@@ -4385,7 +4445,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                 </div>
                 {renderTeacherFeedbackSection()}
                 {/* 自动反馈是给作者改自己笔记用的，别人的笔记上不显示 */}
-                <section className={`${readOnlyNote ? 'hidden ' : ''}border-t border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 px-4 py-2.5 max-h-[28vh] overflow-y-auto`}>
+                <section className={`${readOnlyNote ? 'hidden ' : ''}border-t border-zinc-100 dark:border-gray-800 bg-white dark:bg-gray-950 px-5 py-3 max-h-[28vh] overflow-y-auto`}>
                   <div className={`flex flex-wrap items-center justify-between gap-2 ${visibleFeedbacks.length > 0 ? 'mb-2.5' : ''}`}>
                     <div>
                       <div className="flex items-center gap-1.5 text-sm font-bold text-gray-800 dark:text-gray-200"><Sparkles size={15} className="text-amber-500" />{t.autoFeedback}</div>
@@ -4399,12 +4459,12 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                         type="button"
                         onClick={handleAskAI}
                         disabled={requestingFeedback || !concreteAiSelection}
-                        className="inline-flex items-center gap-1 rounded-sm border border-amber-400 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-xs font-semibold text-amber-700 transition-all duration-200 hover:border-amber-300 hover:bg-amber-100/80 active:scale-[0.97] disabled:opacity-50 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
                       >
                         <Sparkles size={13} />{lang === 'zh' ? '请求反馈' : 'Ask AI'}
                       </button>
                       {feedbacks.length > 0 && (
-                        <button type="button" onClick={() => { if (!showFeedbackHistory) setDismissedFeedbackIds(new Set()); setShowFeedbackHistory(value => !value); }} className="inline-flex items-center gap-1 rounded-sm border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                        <button type="button" onClick={() => { if (!showFeedbackHistory) setDismissedFeedbackIds(new Set()); setShowFeedbackHistory(value => !value); }} className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-600 transition-all duration-200 hover:border-zinc-300 hover:bg-zinc-50 active:scale-[0.97] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                           <History size={13} />{t.history}
                         </button>
                       )}
@@ -4418,7 +4478,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             </div>
 
             {activeTab === 'read' && (
-              <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-50/60 p-4 dark:bg-gray-950 sm:p-6">
+              <div className="note-tab-in min-h-0 flex-1 overflow-y-auto bg-zinc-50/60 p-4 dark:bg-gray-950 sm:p-7">
                 <article
                   style={proseStyle}
                   className="note-prose min-h-full w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-6 py-5 text-gray-900 dark:text-gray-100 sm:px-9 sm:py-6 sm:px-10 sm:py-8 [&_a]:break-words [&_a]:font-semibold [&_a]:text-blue-700 dark:[&_a]:text-blue-400 [&_a]:underline [&_h1]:mb-2 [&_h1]:mt-3 [&_h1]:text-[1.45em] [&_h1]:font-bold [&_h2]:mb-1.5 [&_h2]:mt-2.5 [&_h2]:text-[1.2em] [&_h2]:font-bold [&_img]:max-w-full"
@@ -4433,7 +4493,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             )}
 
             {activeTab === 'connections' && (
-              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <div className="note-tab-in min-h-0 flex-1 overflow-y-auto p-5">
                 {connectionsLoading ? (
                   <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading</div>
                 ) : !noteId || connections.length === 0 ? (
@@ -4454,7 +4514,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             )}
 
             {activeTab === 'info' && (
-              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <div className="note-tab-in min-h-0 flex-1 overflow-y-auto p-5">
                 <div className="grid max-w-3xl gap-4">
                   <dl className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm overflow-hidden">
                     <div className="grid grid-cols-[130px_1fr] border-b border-gray-100 dark:border-gray-800 px-4 py-2.5">

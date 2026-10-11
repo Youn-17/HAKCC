@@ -4,6 +4,7 @@
 @import "./styles/remixicon/remixicon.css";
 @import "./styles/assistant.css";
 @import "./styles/aiMotion.css";
+@import "./styles/animateIn.css";
 
 /* Enable class-based dark mode (ThemeContext toggles .dark on <html>) */
 @variant dark (&:where(.dark, .dark *));

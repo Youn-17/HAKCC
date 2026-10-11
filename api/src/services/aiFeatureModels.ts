@@ -4,6 +4,9 @@ import { kbEmbeddingConfigured, KB_EMBEDDING_MODEL } from './kbEmbedding';
 import {
   DMX_IMAGE_MODELS,
   MINIMAX_IMAGE_MODELS,
+  QWEN_IMAGE_MODELS,
+  NATIVE_IMAGE_MODELS,
+  APIKEYFAN_PROVIDERS,
   NATIVE_MODELS,
   TASK_TIERS,
   defaultEnabledModels,
@@ -21,6 +24,7 @@ export type AiFeatureId =
   | 'note_image'
   | 'image_plan'
   | 'workspace_agent'
+  | 'html_artifact'
   | 'discussion_digest'
   | 'view_topics'
   | 'doc_ai'
@@ -98,7 +102,17 @@ export const CODING_PROVIDER_ORDER = [
   'dmxapi', 'dmx', 'openai', 'deepseek', 'zhipu', 'alibaba', 'moonshot',
 ] as const;
 
-export const IMAGE_PROVIDER_ORDER = ['minimax', 'dmx', 'dmxapi'] as const;
+/**
+ * 智能体写网页（2026-10-11）：一次长输出，要的是写代码的本事而不是快。GPT（APIKEY.FAN）、GLM（智谱 Coding Plan）在前，
+ * DeepSeek 其次；DMX 从香港出去最慢最不稳，垫底。
+ */
+export const ARTIFACT_PROVIDER_ORDER = [
+  'apikeyfan', 'zhipu', 'deepseek', 'openai', 'anthropic', 'alibaba', 'moonshot', 'google',
+  'openrouter', 'doubao', 'xai', 'minimax', 'apikeyfan-grok', 'dmxapi', 'dmx',
+] as const;
+
+/** 生图：千问（百炼）、APIKEY.FAN（GPT / Grok）2026-10-11 接入，排在原有两家后面 */
+export const IMAGE_PROVIDER_ORDER = ['minimax', 'dmx', 'dmxapi', 'alibaba', 'apikeyfan', 'apikeyfan-grok'] as const;
 
 /**
  * 学生笔记 AI 助手下拉框列得出的厂商（和 components/NoteEditorModal.tsx 的 DEFAULT_PROVIDER_MODELS 一致）。
@@ -106,7 +120,7 @@ export const IMAGE_PROVIDER_ORDER = ['minimax', 'dmx', 'dmxapi'] as const;
  */
 export const PARTNER_PROVIDERS = [
   'deepseek', 'zhipu', 'moonshot', 'alibaba', 'openai', 'anthropic', 'google',
-  'doubao', 'xai', 'baidu', 'openrouter', 'dmx', 'dmxapi',
+  'doubao', 'xai', 'baidu', 'openrouter', 'apikeyfan', 'apikeyfan-grok', 'dmx', 'dmxapi',
 ] as const;
 
 export const AI_FEATURES: readonly AiFeatureDef[] = [
@@ -172,6 +186,17 @@ export const AI_FEATURES: readonly AiFeatureDef[] = [
     desc: {
       zh: '知识空间顶部「智能体」打开的侧栏，读整个空间或选中的笔记来回答。侧栏里手选了模型就用手选的，选「默认」时用这一行。',
       en: 'The side panel opened from "Agent" in a knowledge space. A model picked in the panel wins; "Default" uses this row.',
+    },
+  },
+  {
+    // 2026-10-11：智能体先列计划、问学生选哪个方案，再把笔记做成可以打开的网页（agentMaker.ts）
+    id: 'html_artifact', group: 'space', who: 'both', kind: 'chat', dmxTier: 'agent',
+    realtime: false, selectable: true, failover: true,
+    order: ARTIFACT_PROVIDER_ORDER,
+    label: { zh: '智能体做网页', en: 'Agent-built web pages' },
+    desc: {
+      zh: '笔记 AI 助手和知识空间智能体把笔记、课程资料做成可以打开的网页（概念图、对比表、自测题、时间线、小模拟）时，写网页用这一行。写代码强的模型做得更好；一页要写几十秒，学生能看到进度。',
+      en: 'When the note AI partner or the knowledge space agent turns notes and course materials into a web page students can open (concept map, comparison table, quiz, timeline, small simulation), this row writes the page. Models that write code well do better; a page takes tens of seconds and students see the progress.',
     },
   },
   {
@@ -511,10 +536,15 @@ export function modelsForRow(row: Pick<CourseAiRow, 'provider_id' | 'enabled_mod
   if (kind === 'image') {
     if (pid === 'minimax') return MINIMAX_IMAGE_MODELS.map(m => m.id);
     if (isDmx(pid)) return DMX_IMAGE_MODELS.map(m => m.id);
+    if (pid === 'alibaba') return QWEN_IMAGE_MODELS.map(m => m.id);
+    // APIKEY.FAN 的两个分组：这把 key 所在分组的生图型号，配好就能用（和 MiniMax、千问一样不按勾选）
+    if (APIKEYFAN_PROVIDERS.has(pid)) return (NATIVE_IMAGE_MODELS[pid] ?? []).map(m => m.id);
     return [];
   }
   if (kind !== 'chat' || pid === 'tavily') return [];
-  const enabled = normalizeEnabledModels(pid, row.enabled_models);
+  // 勾选里混着生图型号的（早先 APIKEY.FAN 只画图时存的）不算对话模型
+  const imageIds = new Set((NATIVE_IMAGE_MODELS[pid] ?? []).map(m => m.id));
+  const enabled = normalizeEnabledModels(pid, row.enabled_models).filter(m => !imageIds.has(m));
   return enabled.length ? enabled : defaultEnabledModels(pid);
 }
 
@@ -570,6 +600,8 @@ export function defaultModelForRow(def: AiFeatureDef, row: CourseAiRow): string 
   if (def.kind === 'image') {
     if (row.provider_id === 'minimax') return MINIMAX_IMAGE_MODELS[0].id;
     if (isDmx(row.provider_id)) return DMX_IMAGE_MODELS[0].id;
+    if (row.provider_id === 'alibaba') return QWEN_IMAGE_MODELS[0].id;
+    if (APIKEYFAN_PROVIDERS.has(row.provider_id)) return modelsForRow(row, 'image')[0] ?? null;
     return null;
   }
   if (def.kind !== 'chat') return null;
@@ -614,7 +646,9 @@ function defaultRuleChoice(def: AiFeatureDef, rows: readonly CourseAiRow[]): Mod
   const usable = featureRows(def, rows);
   if (def.kind === 'image') {
     const provider = defaultImageProvider();
-    const row = usable.find(r => (provider === 'dmx' ? isDmx(r.provider_id) : r.provider_id === 'minimax'));
+    // 默认那家（DMX，或服务器设的 MiniMax）没配，就按生图顺序用配了的第一家（比如只配了千问）
+    const row = usable.find(r => (provider === 'dmx' ? isDmx(r.provider_id) : r.provider_id === 'minimax'))
+      ?? sortByOrder(usable, IMAGE_PROVIDER_ORDER)[0];
     const model = row ? defaultModelForRow(def, row) : null;
     return row && model ? { providerId: row.provider_id, model } : null;
   }

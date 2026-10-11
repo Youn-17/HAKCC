@@ -2,8 +2,10 @@ import { supabase } from '../config/supabase';
 import { decryptProviderApiKey } from './aiProviderConfig';
 import { generateImage } from './modelRouter';
 import { generateMinimaxImage } from './minimaxMedia';
+import { generateQwenImage } from './qwenImage';
+import { generateOpenAiImage } from './openAiImage';
 import { persistGeneratedImage } from './generatedMedia';
-import { COURSE_AI_ROW_COLUMNS, featureChoice, isDmx, type CourseAiRow } from './aiFeatureModels';
+import { COURSE_AI_ROW_COLUMNS, featureChoice, isDmx, modelsForRow, type CourseAiRow } from './aiFeatureModels';
 
 /**
  * 课程范围内的生图。智能体工具 generate_image 和「直接画一张」那条快路
@@ -46,8 +48,13 @@ export async function generateNoteImage(
 
   const minimaxCfg = configs.find(c => c.provider_id === 'minimax' && c.api_key_encrypted);
   const dmxCfg = configs.find(c => isDmx(c.provider_id) && c.api_key_encrypted);
-  if (!minimaxCfg && !dmxCfg) {
-    return { ok: false, error: '本课程未配置 MiniMax 或 DMX，无法生成图像。' };
+  const qwenCfg = configs.find(c => c.provider_id === 'alibaba' && c.api_key_encrypted);
+  // APIKEY.FAN 中转（GPT 生图、Grok 生图两个分组各一把 key），2026-10-11 接入
+  const relayCfgs = (['apikeyfan', 'apikeyfan-grok'] as const)
+    .map(pid => configs.find(c => c.provider_id === pid && c.api_key_encrypted))
+    .filter((c): c is CourseAiRow => Boolean(c));
+  if (!minimaxCfg && !dmxCfg && !qwenCfg && relayCfgs.length === 0) {
+    return { ok: false, error: '本课程没有配置能画图的服务商（MiniMax、DMX、通义千问或 APIKEY.FAN），无法生成图像。' };
   }
   const choice = featureChoice('note_image', configs);
 
@@ -91,7 +98,46 @@ export async function generateNoteImage(
     return null;
   };
 
-  const order = choice && isDmx(choice.providerId) ? [tryDmx, tryMinimax] : [tryMinimax, tryDmx];
+  // 千问（百炼）2026-10-11 接入
+  const tryQwen = async (): Promise<Generated | null> => {
+    if (!qwenCfg) return null;
+    const result = await generateQwenImage({
+      apiKey: decryptProviderApiKey(qwenCfg.api_key_encrypted as string),
+      prompt: trimmed,
+      model: choice?.providerId === 'alibaba' ? choice.model : undefined,
+      aspectRatio: options.aspectRatio,
+      size: options.size,
+      chatEndpoint: qwenCfg.endpoint_url as string | null,
+    });
+    if (result.ok) return { url: result.url, model: result.model, provider: 'alibaba' };
+    failures.push(`千问: ${result.error}`);
+    return null;
+  };
+
+  const tryRelay = (cfg: CourseAiRow) => async (): Promise<Generated | null> => {
+    const pid = cfg.provider_id;
+    const result = await generateOpenAiImage({
+      apiKey: decryptProviderApiKey(cfg.api_key_encrypted as string),
+      prompt: trimmed,
+      model: choice?.providerId === pid ? choice.model : (modelsForRow(cfg, 'image')[0] ?? 'gpt-image-2'),
+      provider: pid,
+      endpointUrl: cfg.endpoint_url as string | null,
+      aspectRatio: options.aspectRatio,
+      size: options.size,
+    });
+    if (result.ok) return { url: result.url, b64: result.b64, model: result.model, provider: pid };
+    failures.push(`${pid === 'apikeyfan' ? 'APIKEY.FAN GPT' : 'APIKEY.FAN Grok'}: ${result.error}`);
+    return null;
+  };
+
+  // 先打选中的那家（教师指定的或默认规则挑的），其余按 DMX → MiniMax → 千问 → APIKEY.FAN 兜底；
+  // 没有任何选择时和原来一样先 MiniMax
+  const attempts: Record<string, () => Promise<Generated | null>> = { dmx: tryDmx, minimax: tryMinimax, alibaba: tryQwen };
+  for (const cfg of relayCfgs) attempts[cfg.provider_id] = tryRelay(cfg);
+  const fallbackOrder = ['dmx', 'minimax', 'alibaba', 'apikeyfan', 'apikeyfan-grok'];
+  const chosen = choice ? (isDmx(choice.providerId) ? 'dmx' : choice.providerId) : 'minimax';
+  const first = attempts[chosen] ? chosen : 'minimax';
+  const order = [first, ...fallbackOrder.filter(p => p !== first)].filter(p => attempts[p]).map(p => attempts[p]);
   let finished: Generated | null = null;
   for (const [i, attempt] of order.entries()) {
     if (finished) break;

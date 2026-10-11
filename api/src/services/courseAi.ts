@@ -25,7 +25,7 @@ import {
 const MAX_ATTEMPTS = 3;
 const TIMEOUT_MS = 60_000;
 
-interface Candidate {
+export interface Candidate {
   providerId: string;
   model: string;
   apiKey: string;
@@ -37,7 +37,7 @@ interface Candidate {
  * （AI 教学日志是「先原厂 key，再走 DMX 聚合」），冷却中、并发满的沉底。
  * 只用连通性验证过的 key（原来就这样）；设置从全部行里读，它可能存在没验证过的那一行上。
  */
-async function resolveCandidates(courseId: string, featureId: AiFeatureId): Promise<Candidate[]> {
+export async function resolveCandidates(courseId: string, featureId: AiFeatureId): Promise<Candidate[]> {
   const { data } = await supabase
     .from('teacher_ai_configs')
     .select(COURSE_AI_ROW_COLUMNS)

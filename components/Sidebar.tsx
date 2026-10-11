@@ -5,11 +5,14 @@ import { Language } from '../types';
 import { RELATION_COLORS } from './relationColors';
 import { MINE_CARD, SIGNAL_RED, shade } from './morandiPalette';
 import { useDismissible } from '../hooks/useDismissible';
+import { useEnterMotion } from '../hooks/useEnterMotion';
 
 interface SidebarProps {
   activeTool: string;
   onToolSelect: (id: string) => void;
   onToolOpen: (id: string) => void;
+  /** 点到别处时收掉工具按钮的高亮 */
+  onDismissActiveTool?: () => void;
   onFileUpload?: (file: File) => void;
   onOpenAttachmentModal: () => void;
   /** 课程教职（按课内身份）才有「成员」：在这门课里只是普通成员的教师账号和学生一样看不到 */
@@ -204,7 +207,7 @@ const BadgeSwatch: React.FC<{ kind: (typeof BADGE_ITEMS)[number]['key'] }> = ({ 
 const LEGEND_MORE_KEY = 'hakcc-legend-more';
 
 const Sidebar: React.FC<SidebarProps> = ({
-  activeTool, onToolSelect, onToolOpen, onOpenAttachmentModal,
+  activeTool, onToolSelect, onToolOpen, onDismissActiveTool, onOpenAttachmentModal,
   isStaff, lang, width, onWidthChange,
   onOpenMap, onOpenTimeline, onOpenGroups, onOpenMembers, onOpenIdeaGraph,
   mineActive, onToggleMine, collaborativeDocumentsEnabled = false,
@@ -216,9 +219,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [legendMore, setLegendMore] = useState(() => {
     try { return localStorage.getItem(LEGEND_MORE_KEY) === '1'; } catch { return false; }
   });
+  // 点开「线型和标记」时一行行出现；进页面时记着是展开的，不播
+  const [legendOpenedAt, setLegendOpenedAt] = useState(0);
+  const legendMoreRef = useRef<HTMLDivElement>(null);
+  useEnterMotion(legendMoreRef, legendMore && legendOpenedAt ? legendOpenedAt : null, {
+    targets: root => Array.from(root.children), step: 22, maxStagger: 10, distance: 4,
+  });
   const toggleLegendMore = useCallback(() => {
     setLegendMore(prev => {
       try { localStorage.setItem(LEGEND_MORE_KEY, prev ? '0' : '1'); } catch { /* 隐私模式下记不住，这次照样能开 */ }
+      if (!prev) setLegendOpenedAt(Date.now());
       return !prev;
     });
   }, []);
@@ -230,6 +240,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // 悬停提示按坐标定位，页面一滚它就悬在错的地方，所以滚动也要收掉
   useDismissible({ open: !!tooltip, onDismiss: hideTooltip, dismissOnScroll: true });
+
+  // 工具按钮的高亮只提示「刚点了这个」，点到别处就收掉（2026-10-10 用户）。
+  // 再点同一个按钮不算别处：交给它自己的点击处理，绘图、视图是开关
+  const activeButtonRef = useRef<HTMLButtonElement>(null);
+  const dismissActiveTool = useCallback(() => onDismissActiveTool?.(), [onDismissActiveTool]);
+  useDismissible({ open: Boolean(activeTool), onDismiss: dismissActiveTool, ref: activeButtonRef });
 
   const dragRef = useRef(false);
   const startXRef = useRef(0);
@@ -280,6 +296,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     return (
       <div key={id} className="flex w-full shrink-0 justify-center">
         <button
+          ref={isActive && id !== 'mine' ? activeButtonRef : undefined}
           type="button"
           onClick={() => handleClick(id)}
           onMouseEnter={!expanded ? (e) => showTooltip(e, lbl(def.labelZh, def.labelEn), lbl(def.descZh, def.descEn)) : undefined}
@@ -380,7 +397,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <RemixIcon name={legendMore ? 'arrow-up-s-line' : 'arrow-down-s-line'} size={13} />
                 {lbl('线型和标记', 'Lines & badges')}
               </button>
-              {legendMore && (<>
+              {legendMore && (<div ref={legendMoreRef} className="space-y-1.5">
               <SectionLabel text={lbl('线型', 'lines')} />
               {LINE_ITEMS.map((l, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -402,7 +419,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <span className="text-[0.6875rem] text-gray-600 leading-tight">{lbl(b.zh, b.en)}</span>
                 </div>
               ))}
-              </>)}
+              </div>)}
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Language, Scaffold, ScaffoldMetadata } from '../types';
 import { scaffolds as scaffoldsApi, trackEvent } from '../services/apiClient';
+import { useLayoutMotion } from '../hooks/useLayoutMotion';
 import {
   L1_LABEL, L1_ORDER, L1_TONE, gaiFlagForSave, type ScaffoldL1,
   groupScaffolds, scaffoldGroup, scaffoldL1, scaffoldLabel, scaffoldMatches,
@@ -78,6 +79,8 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
   const [confirmDelete, setConfirmDelete] = useState<{ ids: string[]; globals: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // 列表↔卡片、换分类、显示/隐藏时，支架从原来的位置滑到新位置（anime.js Layout）。打字搜索不动，免得每个字都晃一下
+  const listMotion = useLayoutMotion<HTMLDivElement>({ step: 18, maxStagger: 12 });
 
   const t = lang === 'zh' ? {
     title: '支架管理', all: '全部', use: '插入笔记',
@@ -190,6 +193,7 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
     const next = !scaffold.hidden;
     const apply = (value: boolean) =>
       onUpdateScaffolds(scaffolds.map(s => (s.id === scaffold.id ? { ...s, hidden: value } : s)));
+    listMotion.capture();
     apply(next);
     setError('');
     void scaffoldsApi.setPrefs(courseId, scaffold.id, { hidden: next })
@@ -309,7 +313,7 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
             </span>
           </div>
           <div className="view-toolbar flex items-center gap-2">
-            {!draft && <button type="button" aria-pressed={scaffoldLayout === 'cards'} onClick={() => setScaffoldLayout(value => value === 'list' ? 'cards' : 'list')}>{lang === 'zh' ? (scaffoldLayout === 'list' ? '列表' : '卡片') : (scaffoldLayout === 'list' ? 'List' : 'Cards')}</button>}
+            {!draft && <button type="button" aria-pressed={scaffoldLayout === 'cards'} onClick={() => { listMotion.capture(); setScaffoldLayout(value => value === 'list' ? 'cards' : 'list'); }}>{lang === 'zh' ? (scaffoldLayout === 'list' ? '列表' : '卡片') : (scaffoldLayout === 'list' ? 'List' : 'Cards')}</button>}
             {canEdit && !draft && (
               <button
                 type="button" role="switch" aria-checked={requireScaffold} onClick={() => void togglePolicy()} disabled={policyBusy}
@@ -439,7 +443,7 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
                 <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t.search}
                   className="w-full rounded-lg border border-zinc-200 bg-white py-1.5 pl-8 pr-3 text-sm outline-none transition-colors focus:border-[#000080] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
               </div>
-              <button type="button" onClick={() => setActiveL1('all')}
+              <button type="button" onClick={() => { listMotion.capture(); setActiveL1('all'); }}
                 className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
                   activeL1 === 'all'
                     ? 'border-zinc-800 bg-zinc-800 text-white dark:border-gray-200 dark:bg-gray-200 dark:text-gray-900'
@@ -447,7 +451,7 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
                 {t.all} {visible.length}
               </button>
               {L1_ORDER.filter(l1 => counts.has(l1)).map(l1 => (
-                <button key={l1} type="button" onClick={() => setActiveL1(l1)}
+                <button key={l1} type="button" onClick={() => { listMotion.capture(); setActiveL1(l1); }}
                   className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
                     activeL1 === l1 ? L1_TONE[l1].chipActive : L1_TONE[l1].chip}`}>
                   {L1_LABEL[l1][lang]} {counts.get(l1)}
@@ -455,7 +459,7 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
               ))}
               {canEdit && (
                 <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-zinc-500 dark:text-gray-400">
-                  <input type="checkbox" checked={showHidden} onChange={e => setShowHidden(e.target.checked)} />
+                  <input type="checkbox" checked={showHidden} onChange={e => { listMotion.capture(); setShowHidden(e.target.checked); }} />
                   {t.showHidden}
                 </label>
               )}
@@ -488,7 +492,7 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div ref={listMotion.ref} className="flex-1 overflow-y-auto px-6 py-4">
               {error && (
                 <p className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                   <AlertCircle size={14} className="mt-0.5 shrink-0" />{error}
@@ -500,14 +504,14 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
                   <p className="text-sm">{t.empty}</p>
                 </div>
               ) : sections.map(section => (
-                <section key={section.l1} className="mb-6">
+                <section key={section.l1} data-layout-item className="mb-6">
                   <div className="mb-2 flex items-center gap-2">
                     <span className={`h-2 w-2 rounded-full ${L1_TONE[section.l1].dot}`} />
                     <h3 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-gray-200">{L1_LABEL[section.l1][lang]}</h3>
                   </div>
                   <div className="space-y-4">
                     {section.groups.map(group => (
-                      <div key={group.name}>
+                      <div key={group.name} data-layout-item>
                         <div className="mb-1.5 text-xs font-semibold text-zinc-400 dark:text-gray-500">
                           {group.name} · {group.items.length}
                         </div>
@@ -516,7 +520,7 @@ const ScaffoldModal: React.FC<ScaffoldModalProps> = ({
                             const isGlobal = !scaffold.courseId;
                             const meta = scaffold.metadata;
                             return (
-                              <li key={scaffold.id}
+                              <li key={scaffold.id} data-layout-item
                                 className={`view-content-card group flex items-center gap-3 px-3 py-2.5 transition-colors ${scaffoldLayout === 'cards' ? 'rounded-xl border border-zinc-200 dark:border-gray-800' : ''} ${
                                   scaffold.hidden ? 'bg-zinc-50/70 dark:bg-gray-900/60' : 'bg-white dark:bg-gray-950'
                                 } hover:bg-zinc-50 dark:hover:bg-gray-900`}>

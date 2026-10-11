@@ -778,7 +778,8 @@ router.get(
     const { data: reflectionCounts } = await supabase
       .from('agent_reflections')
       .select('user_id')
-      .eq('course_id', courseId);
+      .eq('course_id', courseId)
+      .eq('memory_kind', 'profile');
 
     const reflCountMap = new Map<string, number>();
     for (const r of reflectionCounts ?? []) {
@@ -840,6 +841,7 @@ router.get(
         .select('id, reflection_type, content, topic_keywords, created_at')
         .eq('user_id', userId)
         .eq('course_id', courseId)
+        .eq('memory_kind', 'profile')
         .order('created_at', { ascending: false })
         .limit(20),
       supabase

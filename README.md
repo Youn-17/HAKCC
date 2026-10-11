@@ -6,6 +6,14 @@
 
 Created and maintained by **[Zhenhai He](https://github.com/Youn-17)**. HAKCC brings shared **Notes**, **Build-on** discourse, **Rise-above** discussion, bounded AI partners, and teacher support into one course environment. This repository publishes the application source, mechanism figures, theoretical references, and fictional demonstrations. Latest tagged package: **v0.7.0**. The `main` branch includes subsequent source changes.
 
+## Latest source on main · 2026-10-11
+
+Student Note AI and workspace agents can offer choices, create or revise interactive pages, and import answers and pages into Notes. Students can review, delete or turn off cross-conversation memories. Teachers can choose or write **AI guidance strategies**, extract course page templates, publish group assignments and upload group logos.
+
+These features retrieve saved context; they do not train model weights. Strategy trial statistics count follow-up activity and do not measure learning effects. Existing compatible databases need migrations `088`–`094` after `087`; the migration archive has not been verified as a complete fresh-database replay. Application changelog versions are separate from the tagged source releases; the latest tag remains v0.7.0.
+
+Evaluation requires explicit `--course`, `--space` and `--user` arguments for isolated test fixtures. Note tasks also require `EVAL_NOTE_PERSONALIZED_FOR_WHOM`, `EVAL_NOTE_ESSAY_PROXY` and `EVAL_NOTE_STRUGGLE`. Production fixture IDs are excluded. Student-guide media links use the public platform; local media exports and source artwork are not bundled in Git.
+
 ## New in v0.7.0
 
 Knowledge spaces add a dedicated discussion-analysis page with word clouds, keyword changes, Note-level idea relay and open discussions. View, student and date filters share source inspection and canvas return. Optional citation checks and draft scaffold suggestions are included.

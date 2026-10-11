@@ -15,7 +15,7 @@ vi.mock('../config/jev', async (importOriginal) => {
 });
 vi.mock('./jevClient', () => ({ askJev: h.askJev }));
 
-import { heuristicDepth, lengthInstruction, maxTokensFor, parseAnswerLength, planAnswerLength } from './answerLength';
+import { explicitBrevity, heuristicDepth, lengthInstruction, maxTokensFor, parseAnswerLength, planAnswerLength } from './answerLength';
 
 const depthAnswer = (probabilities: Record<string, number>) => ({
   model: 'jev-1.13.0',
@@ -96,5 +96,30 @@ describe('提示词里怎么说', () => {
     expect(text).toContain('适中');
     expect(text).toContain('never pad');
     expect(text).toContain('Always finish');
+  });
+});
+
+describe('学生明说要多短（2026-10-11 评测：「用一句话概括」答了 606 字）', () => {
+  it('认得出一句话、一个问题、简短；学生说自己的话不算', () => {
+    expect(explicitBrevity('用一句话概括这条笔记的核心主张。')).toBe('sentence');
+    expect(explicitBrevity('请基于这张 Note 生成一个能推动社区继续探究的 promising question。')).toBe('question');
+    expect(explicitBrevity('这条观点最需要补充哪个解释？只提一个能让我继续探究的问题，不要代写答案。')).toBe('question');
+    expect(explicitBrevity('请对这条 Note 提出一个有启发性的追问')).toBe('question');
+    expect(explicitBrevity('简单说一下什么是合意困难')).toBe('brief');
+    expect(explicitBrevity('Summarize this note in one sentence.')).toBe('sentence');
+    for (const q of ['我想提一个问题：AI 会取代教师吗？', '我这一句话写得对吗？', '这两三句话哪里不对？', '生成一个问题清单', '什么是知识建构？']) {
+      expect(explicitBrevity(q), q).toBeNull();
+    }
+  });
+
+  it('明说要短：目标字数按要求定、档位让路，max_tokens 照旧留足；提示词写明这一条优先', async () => {
+    h.askJev.mockRejectedValue(new Error('timeout'));
+    const plan = await planAnswerLength('用一句话概括这条笔记的核心主张。', 'medium');
+    expect(plan).toMatchObject({ explicit: 'sentence', target: 80 });
+    expect(plan.maxTokens).toBeGreaterThanOrEqual(1200);
+    const text = lengthInstruction(plan);
+    expect(text).toContain('ONE sentence');
+    expect(text).toContain('overrides');
+    expect(text).not.toContain('about 80 Chinese characters');
   });
 });

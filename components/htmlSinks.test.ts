@@ -81,6 +81,20 @@ describe('HTML 写入点', () => {
     expect(load[0].code).toMatch(SANITIZED);
   });
 
+  it('内嵌网页（iframe srcDoc）只能在隔离窗口里跑：sandbox 只给 allow-scripts，绝不给同源', () => {
+    // 智能体做的网页（2026-10-11，agent/AgentExtrasView）：脚本要能跑，但不能拿到平台的登录和本地存储
+    const frames = sourceFiles().flatMap(path => {
+      const file = relative(ROOT, path).split('\\').join('/');
+      const lines = readFileSync(path, 'utf-8').split('\n');
+      return lines.flatMap((line, i) => (/\bsrcDoc=/.test(line) ? [{ file, line: i + 1, context: lines.slice(Math.max(0, i - 8), i + 8).join('\n') }] : []));
+    });
+    expect(frames.length).toBeGreaterThan(0);
+    for (const frame of frames) {
+      expect(frame.context, `${frame.file}:${frame.line}`).toMatch(/sandbox="allow-scripts"/);
+      expect(frame.context, `${frame.file}:${frame.line}`).not.toMatch(/allow-same-origin|allow-top-navigation|allow-popups|allow-forms/);
+    }
+  });
+
   it('对话式笔记里的 AI 回复先转义再进编辑器', () => {
     const src = readFileSync(join(ROOT, 'components/Workspace.tsx'), 'utf-8');
     const start = src.indexOf('<AiDialogueNote');

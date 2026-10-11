@@ -3,6 +3,7 @@ import RemixIcon from './RemixIcon';
 import type { Note } from '../types';
 import { noteSearchText } from './noteText';
 import { highlightParts, searchNotes, searchTokens, type SearchableNote, type SearchHit } from './canvasSearchMatch';
+import { useEnterMotion } from '../hooks/useEnterMotion';
 
 /**
  * 搜索笔记的框（2026-10-09）。放在顶栏课程名后面（用户要求，原来浮在画布左上角）。
@@ -106,6 +107,9 @@ const CanvasSearch: React.FC<Props> = ({ lang, items, onPick, onMatchesChange, h
     [here, elsewhere],
   );
   const open = focused && tokens.length > 0;
+  // 下拉刚打开时结果一条条出现；之后每打一个字结果会重排，不再动
+  const resultsRef = useRef<HTMLDivElement>(null);
+  useEnterMotion(resultsRef, open ? 'open' : null, { step: 18, maxStagger: 8, distance: 4 });
 
   useEffect(() => { setActive(0); }, [query]);
 
@@ -163,6 +167,7 @@ const CanvasSearch: React.FC<Props> = ({ lang, items, onPick, onMatchesChange, h
       <li
         key={hit.id}
         id={`${listId}-${index}`}
+        data-enter-item
         role="option"
         aria-selected={selected}
         onMouseDown={e => e.preventDefault()}
@@ -244,7 +249,7 @@ const CanvasSearch: React.FC<Props> = ({ lang, items, onPick, onMatchesChange, h
       </div>
 
       {open && (
-        <div className={`${inHeader ? 'absolute left-0 top-full z-50' : ''} mt-1.5 w-[22rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-[0_16px_40px_-16px_rgba(15,23,42,0.35)] dark:border-gray-700 dark:bg-gray-900`}>
+        <div ref={resultsRef} className={`${inHeader ? 'absolute left-0 top-full z-50' : ''} mt-1.5 w-[22rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-[0_16px_40px_-16px_rgba(15,23,42,0.35)] animate-in fade-in slide-in-from-top-1 duration-150 dark:border-gray-700 dark:bg-gray-900`}>
           <div className="border-b border-zinc-100 px-3 py-1.5 text-[0.6875rem] text-zinc-500 dark:border-gray-800 dark:text-gray-400" aria-live="polite">
             {shown.length === 0
               ? (zh ? `没有找到「${query.trim()}」` : `Nothing matches "${query.trim()}"`)

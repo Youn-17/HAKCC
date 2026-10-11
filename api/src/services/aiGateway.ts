@@ -19,6 +19,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { adaptResponsesReply, routeToResponses } from './responsesApi';
 
 type FailureKind = 'rate_limit' | 'server' | 'timeout' | 'other';
 
@@ -75,6 +76,7 @@ const HOST_PROVIDER: Array<[RegExp, string]> = [
   [/openrouter\.ai/i, 'openrouter'],
   [/minimax(i)?\.(chat|com)/i, 'minimax'],
   [/api\.tavily\.com/i, 'tavily'],
+  [/apikey\.fan/i, 'apikeyfan'],
 ];
 
 export function providerFromUrl(url: string): string {
@@ -132,6 +134,9 @@ const PROVIDER_LIMITS: Record<string, number> = {
   doubao: num('AI_MAX_CONCURRENT_NATIVE', 6),
   xai: num('AI_MAX_CONCURRENT_OTHER', 4),
   openrouter: num('AI_MAX_CONCURRENT_OTHER', 4),
+  // APIKEY.FAN 中转（2026-10-11 接入，还没压过）：对话按域名都落在 apikeyfan 桶，生图按分组传桶名
+  apikeyfan: num('AI_MAX_CONCURRENT_NATIVE', 6),
+  'apikeyfan-grok': num('AI_MAX_CONCURRENT_NATIVE', 6),
 };
 /**
  * 每分钟请求数上限。并发和 RPM 是两回事，而且对 Kimi 来说 RPM 才是真约束：
@@ -348,8 +353,12 @@ export async function aiFetch(
   }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  // 只认 Responses 接口的模型：请求在这里转过去，回复转回 Chat Completions 的形状（responsesApi.ts）
+  const responses = routeToResponses(url, init.body);
   try {
-    return await fetchWithConnRetry(url, { ...init, signal: controller.signal }, opts?.label);
+    if (!responses) return await fetchWithConnRetry(url, { ...init, signal: controller.signal }, opts?.label);
+    const reply = await fetchWithConnRetry(responses.url, { ...init, body: responses.body, signal: controller.signal }, opts?.label);
+    return await adaptResponsesReply(reply, responses);
   } catch (e) {
     stats.failed++;
     throw e;

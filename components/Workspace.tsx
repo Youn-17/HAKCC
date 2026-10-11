@@ -24,7 +24,12 @@ import ViewCard, { VIEW_CARD_WIDTH, VIEW_CARD_HEIGHT } from './ViewCard';
 // 见 RiseAboveRoom.tsx —— 系统只指出该往哪儿想，那句更高一层的说法由学生自己写。
 import ScaffoldModal from './ScaffoldModal';
 import MemberManagementModal from './MemberManagementModal';
-import GroupManagementModal from './GroupManagementModal';
+import GroupManagementModal, { type GroupModalTab } from './GroupManagementModal';
+import GroupAssignmentPanel from './GroupAssignmentPanel';
+import {
+  DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM, createWheelClassifier, isTypingTarget, stepZoom, wheelPanDelta, wheelZoomFactor, zoomAround,
+  type ViewPort as CanvasViewPort,
+} from './canvasNavigation';
 import AISidePanel from './AISidePanel';
 import WorkspaceAgentPanel from './WorkspaceAgentPanel';
 import { workspaceAgent as workspaceAgentApi } from '../services/apiClient';
@@ -167,6 +172,8 @@ function apiViewToView(view: ApiView): ViewDefinition {
     title: view.title,
     description: view.description,
     creatorId: view.creatorId ?? '',
+    groupId: view.groupId ?? null,
+    groupLogoUrl: view.groupLogoUrl ?? null,
     createdAt: view.createdAt,
     lastModified: view.lastModified,
   };
@@ -336,6 +343,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   } = useSpaceData(spaceId);
 
   const [activeTool, setActiveTool] = useState<string>('');
+  const clearActiveTool = useCallback(() => setActiveTool(''), []);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
@@ -364,6 +372,21 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     const match = rest.match(/^riseabove\/([^/]+)$/);
     return match ? decodeURIComponent(match[1]) : null;
   }, [params]);
+
+  /**
+   * 知识空间智能体是整页：/workspace/:courseId/agent（2026-10-11 用户：点智能体直接就是整页）。
+   * 面板一直挂着、不在这个地址时不渲染，所以出去再进来，对话还是刚才那一段。
+   */
+  const routeAgentPage = (params['*'] ?? '').replace(/^\/+|\/+$/g, '') === 'agent';
+  const openAgentPage = useCallback(() => {
+    if (pathRef.current === `${workspaceBasePath}/agent`) return;
+    navigate(`${workspaceBasePath}/agent`, { state: { fromWorkspace: true } });
+  }, [navigate, workspaceBasePath]);
+  /** 从空间里点进来的：后退一步回去，历史里不多一条；直接打开链接进来的：换成画布地址 */
+  const closeAgentPage = useCallback(() => {
+    if ((location.state as { fromWorkspace?: boolean } | null)?.fromWorkspace) navigate(-1);
+    else navigate(workspaceBasePath, { replace: true });
+  }, [location.state, navigate, workspaceBasePath]);
   
   // View Management State
   // 主画布在顶栏和视图列表里就叫 Welcome（2026-10-09 用户：视图后面默认写 Welcome，不写别的）
@@ -371,6 +394,10 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   /** 视图列表是哪个空间的。没回来之前，指向别的视图的笔记会暂时落在主画布上 */
   const [viewsLoadedFor, setViewsLoadedFor] = useState<string | null>(null);
   const [activeViewId, setActiveViewId] = useState<string>('view-welcome');
+  /** 任务面板和发布任务用：视图的标题和它属于哪个组（「为每组建视图」建的） */
+  const viewMetas = useMemo(() => views.map(v => ({ id: v.id, title: v.title, groupId: v.groupId ?? null })), [views]);
+  /** 正在拖或正在保存位置的视图卡片：定时刷新先别覆盖，免得卡片被拽回原处 */
+  const viewCardBusyRef = useRef(0);
   const [isViewPanelOpen, setIsViewPanelOpen] = useState(false);
   /** 卡片 = 某个视图在某块画布上的一个落点。一个视图可以有任意多张，散在各处。 */
   const [viewCards, setViewCards] = useState<ApiViewCard[]>([]);
@@ -431,10 +458,13 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
 
   // Group Management State
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  /** 教师发布的小组任务（2026-10-10）：弹窗打开到哪个页签；面板何时重取、何时展开 */
+  const [groupModalTab, setGroupModalTab] = useState<GroupModalTab | undefined>(undefined);
+  const [assignmentRefreshKey, setAssignmentRefreshKey] = useState(0);
+  const [assignmentFocusKey, setAssignmentFocusKey] = useState(0);
 
   // AI Side Panel + Workspace Agent State
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
-  const [isWorkspaceAgentOpen, setIsWorkspaceAgentOpen] = useState(false);
   const [wsAgentConfigs, setWsAgentConfigs] = useState<ApiAIConfig[]>([]);
 
   // Inquiry Panel State
@@ -467,12 +497,12 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
 
   // Fetch workspace agent AI configs when panel opens
   useEffect(() => {
-    if (isWorkspaceAgentOpen && courseId && wsAgentConfigs.length === 0) {
+    if (routeAgentPage && courseId && wsAgentConfigs.length === 0) {
       workspaceAgentApi.getConfigs(courseId)
         .then(({ aiConfigs }) => setWsAgentConfigs(aiConfigs))
         .catch(() => {});
     }
-  }, [isWorkspaceAgentOpen, courseId, wsAgentConfigs.length]);
+  }, [routeAgentPage, courseId, wsAgentConfigs.length]);
 
   // File Viewer State
   const [viewingFile, setViewingFile] = useState<Note | null>(null);
@@ -657,11 +687,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   /**
    * 进入课程时的缩放。原来按内容「全部装进屏幕」来算，一块几十条笔记的画布会被
    * 压到 30%，卡片上的字根本读不了；空画布又是 100%，两种情形差太远。
-   * 现在锚定在 60%：内容多时最多缩到 55%，内容少也不放大过 60%，
-   * 学生每次进来看到的密度大致一样。
+   * 后来锚定在 55%–60%；2026-10-10 用户要求进去就是 60%，「重置视图」、切视图也一样（DEFAULT_ZOOM）。
    */
-  const DEFAULT_ZOOM = 0.6;
-  const MIN_FIT_ZOOM = 0.55;
   const HOME_VIEWPORT = { x: -1500 * DEFAULT_ZOOM, y: -800 * DEFAULT_ZOOM, zoom: DEFAULT_ZOOM };
   const [viewPort, setViewPort] = useState(HOME_VIEWPORT);
   /** 教师是否要求本课程笔记必须带支架；随支架列表一起从后端拿到 */
@@ -750,9 +777,10 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     const centerX = minX + bboxW / 2;
     const centerY = minY + bboxH / 2;
 
-    const vw = window.innerWidth - 54;
-    const vh = window.innerHeight - 40 - 38;
-    const zoom = Math.min(Math.max(Math.min(vw / bboxW, vh / bboxH), MIN_FIT_ZOOM), DEFAULT_ZOOM);
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const vw = rect?.width || window.innerWidth - 54;
+    const vh = rect?.height || window.innerHeight - 40 - 38;
+    const zoom = DEFAULT_ZOOM;
 
     setViewPort({ x: -centerX * zoom + vw / 2, y: -centerY * zoom + vh / 2, zoom });
   }, []);
@@ -1346,6 +1374,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
 
     const onMove = (ev: MouseEvent) => {
       if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+      if (!moved) viewCardBusyRef.current += 1;
       moved = true;
       const dx = (ev.clientX - startX) / viewPort.zoom;
       const dy = (ev.clientY - startY) / viewPort.zoom;
@@ -1373,7 +1402,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
       viewCardsApi.move(card.id, x, y).catch(err => {
         console.error('Failed to save view card position:', err);
         setViewCards(prev => prev.map(c => (c.id === card.id ? { ...c, x: card.x, y: card.y } : c)));
-      });
+      }).finally(() => { viewCardBusyRef.current = Math.max(0, viewCardBusyRef.current - 1); });
     };
 
     window.addEventListener('mousemove', onMove);
@@ -1504,19 +1533,56 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   }, [notes, activeViewId, lang, goToView]);
 
   // Views live on the server; Welcome is always prepended as the home canvas.
+  // 视图不在实时推送里（只有笔记、关系、反馈在）：原来只在进空间时取一次，老师新建的视图，
+  // 开着页面的学生要刷新才看得到（2026-10-10 用户报）。现在半分钟取一次，切回页面马上取。
   useEffect(() => {
     if (!spaceId) { setViews(INITIAL_VIEWS); setViewCards([]); return; }
     let cancelled = false;
-    viewsApi.list(spaceId)
+    const load = (first: boolean) => viewsApi.list(spaceId)
       .then(({ views: loaded, cards }) => {
         if (cancelled) return;
-        setViews([...INITIAL_VIEWS, ...loaded.map(apiViewToView)]);
-        setViewCards(cards);
-        setViewsLoadedFor(spaceId);
+        if (!first && viewCardBusyRef.current > 0) return;
+        const nextViews = [...INITIAL_VIEWS, ...loaded.map(apiViewToView)];
+        setViews(prev => (JSON.stringify(prev) === JSON.stringify(nextViews) ? prev : nextViews));
+        setViewCards(prev => (JSON.stringify(prev) === JSON.stringify(cards) ? prev : cards));
+        if (first) setViewsLoadedFor(spaceId);
       })
-      .catch(() => { if (!cancelled) { setViews(INITIAL_VIEWS); setViewCards([]); setViewsLoadedFor(spaceId); } });
-    return () => { cancelled = true; };
+      .catch(() => { if (!cancelled && first) { setViews(INITIAL_VIEWS); setViewCards([]); setViewsLoadedFor(spaceId); } });
+    void load(true);
+    const refresh = () => { if (!document.hidden) void load(false); };
+    const timer = window.setInterval(refresh, 30_000);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+    };
   }, [spaceId]);
+
+  /**
+   * 为每组建视图（2026-10-10 用户：「为每组建空间」实际就是为每组建视图）：入口卡片横排在主画布内容的上方，
+   * 不压在笔记上。已经有视图的组跳过。
+   */
+  const handleCreateGroupViews = useCallback(async () => {
+    if (!spaceId) throw new Error('No space');
+    const welcome = notes.filter(n => n.views?.includes(WELCOME_VIEW_ID) || !n.views?.length);
+    const cardsHere = viewCards.filter(c => c.hostViewId === WELCOME_VIEW_ID);
+    const xs = [...welcome.map(n => n.x), ...cardsHere.map(c => c.x)];
+    const ys = [...welcome.map(n => n.y), ...cardsHere.map(c => c.y)];
+    const result = await viewsApi.createGroupViews(spaceId, {
+      origin_x: xs.length ? Math.min(...xs) : 0,
+      origin_y: ys.length ? Math.min(...ys) - VIEW_CARD_HEIGHT - 80 : 0,
+      gap: VIEW_CARD_WIDTH + 40,
+    });
+    if (result.views.length) {
+      const added = result.views.map(apiViewToView);
+      setViews(prev => [...prev, ...added.filter(v => !prev.some(p => p.id === v.id))]);
+      setViewCards(prev => [...prev, ...result.cards.filter(c => !prev.some(p => p.id === c.id))]);
+    }
+    return { created: result.views.map(v => v.title), existing: result.existing };
+  }, [spaceId, notes, viewCards]);
 
   // ── Canvas shapes ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1863,8 +1929,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
       text,
     });
     setViewingFile(null);
-    setIsWorkspaceAgentOpen(true);
-  }, [viewingFile, lang]);
+    openAgentPage();
+  }, [viewingFile, lang, openAgentPage]);
 
   /**
    * 笔记 AI 回答下面的来源卡片：打开那份附件，PDF 跳到那一页。阅读页叠在笔记页上面，关掉回到笔记。
@@ -2557,27 +2623,113 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // 鼠标滚轮缩放（老习惯不改）；触控板双指滑动平移、双指捏合缩放（规则见 canvasNavigation.ts）
+    const classify = createWheelClassifier();
     const onWheel = (e: WheelEvent) => {
       // 详情面板等浮层渲染在画布容器**内部**，滚轮事件会冒泡到这里。
       // 这个监听器无条件 preventDefault 去做缩放，于是浮层永远滚不动。
       if ((e.target as HTMLElement | null)?.closest('[data-canvas-overlay]')) return;
       e.preventDefault();
-      const zoomSensitivity = -0.001;
+      cancelViewportTween();
+      const intent = classify(e as WheelEvent & { wheelDeltaY?: number });
+      if (intent === 'pan') {
+        const { dx, dy } = wheelPanDelta(e);
+        setViewPort(prev => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
+        return;
+      }
       const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      setViewPort(prev => {
-        const newZoom = Math.min(Math.max(prev.zoom + e.deltaY * zoomSensitivity, 0.1), 3);
-        const worldX = (mouseX - prev.x) / prev.zoom;
-        const worldY = (mouseY - prev.y) / prev.zoom;
-        const newX = mouseX - worldX * newZoom;
-        const newY = mouseY - worldY * newZoom;
-        return { x: newX, y: newY, zoom: newZoom };
-      });
+      const factor = wheelZoomFactor(e, intent);
+      setViewPort(prev => zoomAround(prev, e.clientX - rect.left, e.clientY - rect.top, prev.zoom * factor));
     };
+    // Safari 的触控板捏合不发 wheel，发 gesture 事件；不拦的话整页跟着缩放
+    let gestureFrom = DEFAULT_ZOOM;
+    const onGestureStart = (e: Event) => { e.preventDefault(); cancelViewportTween(); gestureFrom = viewPortRef.current.zoom; };
+    const onGestureChange = (e: Event) => {
+      e.preventDefault();
+      const g = e as Event & { scale?: number; clientX?: number; clientY?: number };
+      const rect = canvas.getBoundingClientRect();
+      const px = (g.clientX ?? rect.left + rect.width / 2) - rect.left;
+      const py = (g.clientY ?? rect.top + rect.height / 2) - rect.top;
+      setViewPort(prev => zoomAround(prev, px, py, gestureFrom * (g.scale ?? 1)));
+    };
+    const onGestureEnd = (e: Event) => { e.preventDefault(); };
     canvas.addEventListener('wheel', onWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', onWheel);
+    canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
+    canvas.addEventListener('gesturechange', onGestureChange, { passive: false });
+    canvas.addEventListener('gestureend', onGestureEnd, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('gesturestart', onGestureStart);
+      canvas.removeEventListener('gesturechange', onGestureChange);
+      canvas.removeEventListener('gestureend', onGestureEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * 按住空格拖动 = 平移（在笔记上按下也行），和常见的画板软件一样；鼠标中键同理。
+   * 正在输入时不拦空格；焦点停在某个按钮上时空格照常按按钮。
+   */
+  const spaceHeldRef = useRef(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  useEffect(() => {
+    const canPan = (target: EventTarget | null) => {
+      if (isTypingTarget(target)) return false;
+      const active = document.activeElement;
+      return !active || active === document.body || Boolean(canvasRef.current?.contains(active));
+    };
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || !canPan(e.target)) return;
+      e.preventDefault();
+      if (!spaceHeldRef.current) { spaceHeldRef.current = true; setSpaceHeld(true); }
+    };
+    const release = () => { if (spaceHeldRef.current) { spaceHeldRef.current = false; setSpaceHeld(false); } };
+    const up = (e: KeyboardEvent) => { if (e.code === 'Space') release(); };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', release);
+    };
+  }, []);
+
+  /** 右下角按钮的缩放带一点过渡（约 0.18 秒），以画布中心为准；系统要求减少动态效果时直接跳过去 */
+  const viewportTweenRef = useRef<number | null>(null);
+  const viewportTweenEndRef = useRef<number | null>(null);
+  function cancelViewportTween() {
+    if (viewportTweenRef.current !== null) cancelAnimationFrame(viewportTweenRef.current);
+    if (viewportTweenEndRef.current !== null) window.clearTimeout(viewportTweenEndRef.current);
+    viewportTweenRef.current = null;
+    viewportTweenEndRef.current = null;
+  }
+  const zoomCanvasTo = useCallback((nextZoom: number) => {
+    cancelViewportTween();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const cx = (rect?.width ?? window.innerWidth) / 2;
+    const cy = (rect?.height ?? window.innerHeight) / 2;
+    const from: CanvasViewPort = viewPortRef.current;
+    const target = zoomAround(from, cx, cy, nextZoom);
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { setViewPort(target); return; }
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / 180);
+      const k = 1 - Math.pow(1 - t, 3);
+      setViewPort(zoomAround(from, cx, cy, from.zoom + (target.zoom - from.zoom) * k));
+      viewportTweenRef.current = t < 1 ? requestAnimationFrame(tick) : null;
+    };
+    viewportTweenRef.current = requestAnimationFrame(tick);
+    // 后台标签页里 rAF 会被节流，过渡停在半路：到时间一定落到目标值
+    viewportTweenEndRef.current = window.setTimeout(() => {
+      if (viewportTweenRef.current !== null) cancelAnimationFrame(viewportTweenRef.current);
+      viewportTweenRef.current = null;
+      viewportTweenEndRef.current = null;
+      setViewPort(target);
+    }, 240);
+  }, []);
+  useEffect(() => () => cancelViewportTween(), []);
   
   const handleMouseDownCanvas = (e: React.MouseEvent) => {
     if (contextMenu?.visible) closeContextMenu();
@@ -2585,18 +2737,28 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     setSelectedNoteId(null);
     // Clear multi-selection on plain canvas click (not shift)
     if (!e.shiftKey) setMultiSelectedIds(new Set());
-    if (e.button === 0 || e.button === 1) {
-      setDragMode('pan');
-      dragStartRef.current = { x: e.clientX, y: e.clientY };
+    if (e.button === 0 || e.button === 1) startPan(e, e.button === 1);
+  };
+
+  /**
+   * 开始平移：空白处左键 / 中键，或者按住空格、用中键在笔记上按下。
+   * 只在中键（Windows 上会弹自动滚动）和从笔记上开始时拦默认行为：
+   * 空白处左键照常让输入框失焦，搜索下拉之类靠失焦收起的东西不受影响。
+   */
+  function startPan(e: React.MouseEvent, preventDefault: boolean) {
+    if (preventDefault) e.preventDefault();
+    cancelViewportTween();
+    setDragMode('pan');
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
     pendingDeltaRef.current = { dx: 0, dy: 0 };
-    }
-  };
+  }
 
   const handleMouseDownNote = useCallback((e: React.MouseEvent, note: Note) => {
     e.stopPropagation();
     setContextMenu(prev => (prev?.visible ? null : prev));
     closePeekNow();
+    if (e.button === 1 || (e.button === 0 && spaceHeldRef.current)) { startPan(e, true); return; }
     if (e.button !== 0) return;
 
     if (e.shiftKey) {
@@ -2785,6 +2947,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
     if (path.includes('/note/') && lastPathRef.current !== path) return;
     // 讨论室有自己的一对 effect，这里不能顺手把它的地址改回画布
     if (path.includes('/riseabove/')) return;
+    // 智能体整页的地址由面板自己进出（整页 / 返回画布）
+    if (path === `${workspaceBasePath}/agent` && !editingNote && !isCreatingNew) return;
     const target = isCreatingNew || (editingNote && !editingNote.id)
       ? `${workspaceBasePath}/note/new`
       : editingNote
@@ -2845,7 +3009,9 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
       
       // Navigate
       if (n.link) {
-          if (n.link.type === 'group') setIsGroupModalOpen(true);
+          // 「新的小组任务」：任务就在画布左上角的面板里，展开它，不必打开小组管理
+          if (n.type === 'group_assignment') setAssignmentFocusKey(k => k + 1);
+          else if (n.link.type === 'group') setIsGroupModalOpen(true);
           if (n.link.type === 'view') goToView(n.link.id);
           if (n.link.type === 'note') {
               const targetNote = notes.find(note => note.id === n.link!.id);
@@ -3078,8 +3244,8 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         onNotificationClick={handleNotificationClick}
         onExit={handleExit}
         onLogout={logout}
-        isWorkspaceAgentOpen={isWorkspaceAgentOpen}
-        onToggleWorkspaceAgent={() => setIsWorkspaceAgentOpen(v => !v)}
+        isWorkspaceAgentOpen={routeAgentPage}
+        onToggleWorkspaceAgent={openAgentPage}
         onOpenAnalytics={viewerIsStaff ? () => setIsAnalyticsOpen(true) : undefined}
         afterTitle={spaceId ? (
           <CanvasSearch
@@ -3095,6 +3261,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         <Sidebar
           collaborativeDocumentsEnabled={COLLAB_ENABLED}
           activeTool={activeTool}
+          onDismissActiveTool={clearActiveTool}
           onToolSelect={handleToolSelect}
           onToolOpen={handleToolOpen}
           onFileUpload={handleFileUpload}
@@ -3223,7 +3390,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
           {/* Main Canvas Area */}
           <div
             ref={canvasRef}
-            className="flex-1 relative overflow-hidden cursor-default select-none"
+            className={`flex-1 relative overflow-hidden select-none ${dragMode === 'pan' ? 'cursor-grabbing' : spaceHeld ? 'cursor-grab' : 'cursor-default'}`}
             style={{
               touchAction: 'manipulation',
               backgroundColor: '#f5f7fb',
@@ -3344,6 +3511,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                    viewId={card.viewId}
                    title={target.title}
                    noteCount={noteCountByView.get(card.viewId) ?? 0}
+                   logoUrl={target.groupLogoUrl}
                    x={card.x}
                    y={card.y}
                    lang={lang}
@@ -3690,6 +3858,21 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
             );
           })()}
 
+          {/* 教师发布的小组任务：浮在画布左上角，不是笔记 */}
+          {spaceId && (
+            <GroupAssignmentPanel
+              spaceId={spaceId}
+              viewId={activeViewId}
+              views={viewMetas}
+              onGoToView={goToView}
+              lang={lang === 'zh' ? 'zh' : 'en'}
+              isStaff={viewerIsStaff}
+              refreshKey={assignmentRefreshKey}
+              focusKey={assignmentFocusKey}
+              onManage={viewerIsStaff ? () => { setGroupModalTab('assignments'); setIsGroupModalOpen(true); } : undefined}
+            />
+          )}
+
           {/* Zoom + Controls Bar */}
           <div className="absolute bottom-5 right-5 flex items-center gap-2 z-30">
             {foldTotals.branches > 0 && (
@@ -3710,16 +3893,54 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
                 </button>
               </div>
             )}
-            <div className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-xs font-mono text-gray-600 shadow border border-gray-200 pointer-events-none">
-              {Math.round(viewPort.zoom * 100)}%
+            {/* 缩放：触控板用户不必靠滚轮（2026-10-10 用户）。点百分比回到 60% */}
+            <div
+              data-canvas-overlay
+              onMouseDown={e => e.stopPropagation()}
+              className="flex items-center overflow-hidden rounded-xl border border-gray-200 bg-white/90 text-gray-600 shadow backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300"
+            >
+              <button
+                type="button"
+                onClick={() => zoomCanvasTo(stepZoom(viewPort.zoom, -1))}
+                disabled={viewPort.zoom <= MIN_ZOOM + 0.001}
+                aria-label={lang === 'zh' ? '缩小' : 'Zoom out'}
+                title={lang === 'zh' ? '缩小' : 'Zoom out'}
+                className="flex h-9 w-9 items-center justify-center transition-colors hover:bg-gray-100 hover:text-gray-900 active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              >
+                <RemixIcon name="subtract-line" size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => zoomCanvasTo(DEFAULT_ZOOM)}
+                aria-label={lang === 'zh' ? `当前 ${Math.round(viewPort.zoom * 100)}%，点一下回到 60%` : `${Math.round(viewPort.zoom * 100)}%, click to return to 60%`}
+                title={lang === 'zh'
+                  ? '点一下回到 60%\n触控板：双指滑动平移，双指捏合缩放\n鼠标：滚轮缩放\n按住空格或鼠标中键拖动：平移'
+                  : 'Click to return to 60%\nTrackpad: two-finger swipe to pan, pinch to zoom\nMouse: wheel to zoom\nHold Space or the middle button and drag to pan'}
+                className="h-9 min-w-[3.75rem] border-x border-gray-200 px-2 text-xs font-medium tabular-nums transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 dark:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              >
+                {Math.round(viewPort.zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={() => zoomCanvasTo(stepZoom(viewPort.zoom, 1))}
+                disabled={viewPort.zoom >= MAX_ZOOM - 0.001}
+                aria-label={lang === 'zh' ? '放大' : 'Zoom in'}
+                title={lang === 'zh' ? '放大' : 'Zoom in'}
+                className="flex h-9 w-9 items-center justify-center transition-colors hover:bg-gray-100 hover:text-gray-900 active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              >
+                <RemixIcon name="add-line" size={16} />
+              </button>
             </div>
             <button
+              type="button"
               onClick={frameActiveView}
+              onMouseDown={e => e.stopPropagation()}
+              data-canvas-overlay
               aria-label={lang === 'zh' ? '重置视图' : 'Reset view'}
-              title={lang === 'zh' ? '重置视图' : 'Reset view'}
-              className="bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-xs text-gray-600 shadow border border-gray-200 hover:bg-white transition-colors"
+              title={lang === 'zh' ? '重置视图：回到这块画布的内容，60%' : 'Reset view: back to this canvas\'s content at 60%'}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-gray-600 shadow backdrop-blur-sm transition-colors hover:bg-white hover:text-gray-900 active:scale-[0.94] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300"
             >
-              <RemixIcon name="focus-3-line" size={13} />
+              <RemixIcon name="focus-3-line" size={15} />
             </button>
           </div>
 
@@ -4069,6 +4290,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
            onDeleteView={handleDeleteView}
            lang={lang}
            currentUserId={user?.id}
+           myGroupId={viewerIsStaff ? null : myGroup?.id ?? null}
            isStaff={viewerIsStaff}
            offsetLeft={sidebarWidth}
         />
@@ -4564,7 +4786,12 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
 
       <GroupManagementModal
         isOpen={isGroupModalOpen}
-        onClose={() => setIsGroupModalOpen(false)}
+        onClose={() => { setIsGroupModalOpen(false); setGroupModalTab(undefined); }}
+        views={viewMetas}
+        onCreateGroupViews={viewerIsStaff && spaceId ? handleCreateGroupViews : undefined}
+        initialTab={groupModalTab}
+        onAssignmentsChanged={() => setAssignmentRefreshKey(k => k + 1)}
+        onGroupLogoChanged={(groupId, logoUrl) => setViews(prev => prev.map(v => (v.groupId === groupId ? { ...v, groupLogoUrl: logoUrl } : v)))}
         isStaff={viewerIsStaff}
         lang={lang}
         courseId={courseId}
@@ -4606,10 +4833,14 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         onSelectNote={focusNote}
       />
 
-      {/* Workspace Agent Panel */}
+      {/* 知识空间智能体：/agent 地址下的整页 */}
       <WorkspaceAgentPanel
-        isOpen={isWorkspaceAgentOpen}
-        onClose={() => setIsWorkspaceAgentOpen(false)}
+        isOpen={routeAgentPage}
+        layout="page"
+        onClose={closeAgentPage}
+        currentUserId={user?.id ?? null}
+        onNotesChanged={refetchSpace}
+        onOpenNote={(id) => navigate(`${workspaceBasePath}/note/${encodeURIComponent(id)}`)}
         courseId={courseId}
         spaceId={spaceId ?? undefined}
         userRole={userRole}
@@ -4619,9 +4850,10 @@ const Workspace: React.FC<WorkspaceProps> = ({ courseId: _courseId, courseTitle:
         selectedNoteIds={[...multiSelectedIds]}
         spaceNotes={notes
           .filter(n => n.type !== 'attachment' && n.type !== 'drawing')
-          .map(n => ({ id: n.id, title: n.title, author: n.author }))}
+          // authorId 只给自己写的（AI 发布的笔记 author_id 也是学生，不能往里导入）
+          .map(n => ({ id: n.id, title: n.title, author: n.author, authorId: isOwnNote(n, user?.id) ? n.authorId : undefined, updatedAt: n.createdAt }))}
         groupId={myGroup?.id ?? null}
-        onLocateNote={(id) => { setIsWorkspaceAgentOpen(false); focusNote(id); }}
+        onLocateNote={(id) => { closeAgentPage(); focusNote(id); }}
         pendingAttachment={assistantAttachment}
         onPendingAttachmentTaken={() => setAssistantAttachment(null)}
         onOpenKbSource={openKbSource}

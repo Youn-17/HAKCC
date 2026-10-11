@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Search, ChevronDown, X } from 'lucide-react';
 import type { Language, Scaffold } from '../types';
 import { isGenAiScaffold, scaffoldGroup, scaffoldLabel, scaffoldMatches } from './scaffoldLibrary';
+import { useEnterMotion } from '../hooks/useEnterMotion';
 
 /**
  * 支架选择器：两级，照 Knowledge Forum 的做法。
@@ -97,6 +98,9 @@ const ScaffoldPicker: React.FC<Props> = ({
     return g ? [g] : [];
   }, [groups, activeGroup, query, searching]);
   const total = visible.reduce((n, g) => n + g.items.length, 0);
+  // 换一组支架时，这一组一条条出现；搜索时不动
+  const listRef = useRef<HTMLDivElement>(null);
+  useEnterMotion(listRef, searching ? null : activeGroup, { step: 22, maxStagger: 10 });
 
   const renderItem = (scaffold: Scaffold) => {
     const active = selectedId === scaffold.id;
@@ -104,7 +108,7 @@ const ScaffoldPicker: React.FC<Props> = ({
     const alt = lang === 'zh' ? scaffold.titleEn : scaffold.title;
     return (
       <button
-        key={scaffold.id} type="button" onClick={() => onPick(scaffold)}
+        key={scaffold.id} type="button" onClick={() => onPick(scaffold)} data-enter-item
         title={alt && alt !== label ? alt : t.add}
         className={`group flex w-full items-center gap-1.5 rounded-lg px-2.5 py-2 text-left text-[0.8125rem] leading-snug transition-colors ${
           active
@@ -211,7 +215,7 @@ const ScaffoldPicker: React.FC<Props> = ({
         )}
       </div>
 
-      <div className={`min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-0.5 ${compact ? '' : 'max-h-[46vh]'}`}>
+      <div ref={listRef} className={`min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-0.5 ${compact ? '' : 'max-h-[46vh]'}`}>
         {total === 0 ? (
           <p className="rounded-lg border border-dashed border-zinc-300 px-3 py-4 text-center text-xs text-zinc-500 dark:border-gray-700 dark:text-gray-400">{t.empty}</p>
         ) : visible.map(g => (

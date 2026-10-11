@@ -255,24 +255,38 @@ export function collectGroupQuestions(
   return [...byTitle.values()].slice(0, limit);
 }
 
+/** 生成观点图谱要用的全部数据：组里的笔记（不含视图卡）、组员、与这些笔记相关的 Build-on。 */
+export type IdeaGraphSource = {
+  notes: NoteRow[];
+  memberIds: string[];
+  relations: RelationRow[];
+};
+
+export async function loadIdeaGraphSource(groupId: string, courseId: string): Promise<IdeaGraphSource> {
+  const { notes, memberIds } = await fetchGroupNotes(groupId, courseId);
+  const visible = notes.filter(n => n.type !== 'view');
+  const relations = await fetchRelations(visible.map(n => n.id));
+  return { notes: visible, memberIds, relations };
+}
+
 /**
- * 生成一期观点图谱。纯统计与图算法，不调用任何 LLM ——
+ * 截至 windowEnd 的一期观点图谱。纯统计与图算法，不调用任何 LLM ——
  * 这样它既便宜又稳定，而且不会把「系统的说法」混进学生的讨论里。
+ *
+ * 只看 windowEnd 之前已经写了的笔记、已经做了的 Build-on（2026-10-11）：补算往期时（几周没人打开，
+ * 一次补齐每一周），每一期才是那一周结束时的样子，而不是拿今天的笔记去冒充上个月。
  */
-export async function buildGroupIdeaGraph(params: {
-  groupId: string;
-  courseId: string;
+export function computeIdeaGraph(source: IdeaGraphSource, params: {
   windowStart: Date;
   windowEnd: Date;
   previous?: IdeaGraphPayload | null;
-}): Promise<{ payload: IdeaGraphPayload; noteCount: number }> {
-  const { groupId, courseId, windowStart, windowEnd, previous } = params;
-  const { notes, memberIds } = await fetchGroupNotes(groupId, courseId);
-
-  const visible = notes.filter(n => n.type !== 'view');
-  const noteIds = visible.map(n => n.id);
-  const noteIdSet = new Set(noteIds);
-  const relations = await fetchRelations(noteIds);
+}): { payload: IdeaGraphPayload; noteCount: number } {
+  const { windowStart, windowEnd, previous } = params;
+  const endMs = windowEnd.getTime();
+  const memberIds = source.memberIds;
+  const visible = source.notes.filter(n => new Date(n.created_at).getTime() <= endMs);
+  const noteIdSet = new Set(visible.map(n => n.id));
+  const relations = source.relations.filter(r => new Date(r.created_at).getTime() <= endMs);
   const inWindow = visible.filter(n => {
     const t = new Date(n.created_at);
     return t >= windowStart && t <= windowEnd;
@@ -427,12 +441,28 @@ export async function buildGroupIdeaGraph(params: {
   };
 }
 
-/** 上一期快照；没有就返回 null。 */
+/** 取数据并算一期（教师手动重算、判断笔记够不够时用）。 */
+export async function buildGroupIdeaGraph(params: {
+  groupId: string;
+  courseId: string;
+  windowStart: Date;
+  windowEnd: Date;
+  previous?: IdeaGraphPayload | null;
+}): Promise<{ payload: IdeaGraphPayload; noteCount: number }> {
+  const source = await loadIdeaGraphSource(params.groupId, params.courseId);
+  return computeIdeaGraph(source, params);
+}
+
+/**
+ * 最新一期快照；没有就返回 null。按覆盖到的时间（window_end）排，不按生成时间：
+ * 一次补齐好几周时，这些往期是同一刻生成的。
+ */
 export async function fetchLatestIdeaGraph(groupId: string) {
   const { data, error } = await supabase
     .from('group_idea_graphs')
     .select('id, generated_at, window_start, window_end, note_count, payload, trigger')
     .eq('group_id', groupId)
+    .order('window_end', { ascending: false })
     .order('generated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -452,6 +482,38 @@ export function shouldRegenerate(latestWindowEnd: string | null, now = new Date(
 }
 
 export { MIN_NOTES_FOR_GRAPH };
+
+const WEEK_MS = IDEA_GRAPH_PERIOD_DAYS * 86_400_000;
+/** 一次最多补多少周：一个学期十几周，再多说明这个组早就不用了 */
+const MAX_BACKFILL_WEEKS = 26;
+
+/**
+ * 该补哪几期（2026-10-11 用户：每周更新一次，能看历史）。返回每一期的结束时间，从早到晚。
+ *
+ * 周的格子从第一期的起点（还没有任何一期时就是建组日）起每 7 天一格，教师手动重算的那几期不挪格子。
+ * 从最近一期自动快照往后、到现在为止走完的每一格补一期；原来是「谁在满 7 天后打开就从那一刻切」，
+ * 几周没人打开就只有一期盖住好几周。
+ * 还没有任何一期、又不满一周时（刚建组），先出一期覆盖到现在，学生不用干等一周。
+ */
+export function weeklyWindowsDue(params: {
+  anchor: Date;
+  lastAutoEnd: Date | null;
+  hasAny: boolean;
+  now: Date;
+  max?: number;
+}): Date[] {
+  const { anchor, lastAutoEnd, hasAny, now, max = MAX_BACKFILL_WEEKS } = params;
+  const origin = anchor.getTime();
+  const from = (lastAutoEnd ?? anchor).getTime();
+  const ends: Date[] = [];
+  let k = Math.max(1, Math.floor((from - origin) / WEEK_MS) + 1);
+  for (let end = origin + k * WEEK_MS; end <= now.getTime(); k++, end = origin + k * WEEK_MS) {
+    if (end > from) ends.push(new Date(end));
+  }
+  if (ends.length === 0 && !hasAny) return [now];
+  // 补得太多时只留最近的几周
+  return ends.slice(-max);
+}
 
 
 /** 讨论速览复用的入口：拿到与观点图谱完全同一批笔记，避免两个功能口径不一致。 */

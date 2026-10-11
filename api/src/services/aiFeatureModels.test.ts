@@ -159,10 +159,45 @@ describe('生图', () => {
     expect(featureChoice('note_image', FULL)).toEqual({ providerId: 'dmx', model: 'doubao-seedream-4-5-251128', source: 'default' });
   });
 
-  it('只有 MiniMax：没有默认选择，按链落到 MiniMax', () => {
+  it('默认那家（DMX）没配：按生图顺序用配了的第一家——只有 MiniMax 就是 MiniMax（出图顺序和原来一样）', () => {
     const rows = FULL.filter(r => r.provider_id !== 'dmx');
-    expect(featureChoice('note_image', rows)).toBeNull();
-    expect(planFeature('note_image', rows).current).toMatchObject({ providerId: 'minimax', source: 'auto' });
+    expect(featureChoice('note_image', rows)).toEqual({ providerId: 'minimax', model: 'image-01', source: 'default' });
+    expect(planFeature('note_image', rows).current).toMatchObject({ providerId: 'minimax', model: 'image-01' });
+  });
+
+  it('千问（百炼）也能画图：只配了千问时默认用千问图像 2.0，可选 2.0 和 2.0 Pro', () => {
+    const qwenOnly = [{ ...FULL.find(r => r.provider_id === 'minimax')!, id: 'r-qwen', provider_id: 'alibaba', enabled_models: ['qwen3.8-flash'] }];
+    expect(featureChoice('note_image', qwenOnly)).toEqual({ providerId: 'alibaba', model: 'qwen-image-2.0', source: 'default' });
+    expect(modelOptionsFor('note_image', qwenOnly).map(o => o.model)).toEqual(['qwen-image-2.0', 'qwen-image-2.0-pro']);
+    // 千问的生图型号不会混进对话模型里
+    expect(modelOptionsFor('note_partner', qwenOnly).map(o => o.model)).not.toContain('qwen-image-2.0');
+    expect(modelOptionsFor('note_partner', qwenOnly).map(o => o.model)).toContain('qwen3.8-flash');
+  });
+
+  it('APIKEY.FAN（GPT、Grok 两个分组）：配好就能画分组里的全部生图型号；对话模型按勾选进候选，默认排在原有几家后面', () => {
+    const base = FULL.find(r => r.provider_id === 'minimax')!;
+    const relay = [
+      { ...base, id: 'r-fan', provider_id: 'apikeyfan', enabled_models: ['gpt-6.1-sol', 'gpt-5.5'] },
+      // 早先只画图时存下的勾选是生图型号：不算对话模型，按目录默认的对话模型
+      { ...base, id: 'r-fan-grok', provider_id: 'apikeyfan-grok', enabled_models: ['grok-imagine-image', 'grok-imagine-image-quality'] },
+    ];
+    expect(modelOptionsFor('note_image', relay).map(o => `${o.providerId}:${o.model}`)).toEqual([
+      'apikeyfan:gpt-image-2', 'apikeyfan:gpt-image-2.5-sunburst', 'apikeyfan:gpt-image-2.5-flare',
+      'apikeyfan-grok:grok-imagine-image', 'apikeyfan-grok:grok-imagine-image-quality',
+    ]);
+    expect(featureChoice('note_image', relay)).toEqual({ providerId: 'apikeyfan', model: 'gpt-image-2', source: 'default' });
+
+    const partner = modelOptionsFor('note_partner', relay).map(o => `${o.providerId}:${o.model}`);
+    expect(partner).toEqual([
+      'apikeyfan:gpt-6.1-sol', 'apikeyfan:gpt-5.5',
+      'apikeyfan-grok:grok-4.7', 'apikeyfan-grok:grok-4.20-0309-non-reasoning', 'apikeyfan-grok:grok-4.5', 'apikeyfan-grok:grok-4.6',
+    ]);
+    expect(modelOptionsFor('workspace_agent', relay).some(o => o.model.includes('image'))).toBe(false);
+
+    // 和别家一起配时，默认还是原来那几家（中转没压测过）
+    const mixed = [...FULL, ...relay];
+    expect(featureChoice('note_partner', mixed)?.providerId).toBe('deepseek');
+    expect(featureChoice('note_image', mixed)?.providerId).toBe('dmx');
   });
 
   it('教师可以改成 DMX 的某个生图模型', () => {

@@ -1,0 +1,47 @@
+/*
+ * animate-in / fade-in / zoom-in-* / slide-in-from-*（tailwindcss-animate 的写法）。
+ * 项目用的是 Tailwind v4，没有装那个插件，代码里六十来处这样写的进场效果一直没生效（2026-10-10 补上）。
+ * 只做进场：元素出现时从起始状态过渡到自己的样式；时长跟 duration-*，默认 150ms。
+ * 起始值的变量不往下继承，子元素自己的 animate-in 不受父元素影响。系统「减少动态效果」时不动。
+ */
+@property --tw-enter-opacity { syntax: "*"; inherits: false; initial-value: 1; }
+@property --tw-enter-scale { syntax: "*"; inherits: false; initial-value: 1; }
+@property --tw-enter-translate-x { syntax: "*"; inherits: false; initial-value: 0; }
+@property --tw-enter-translate-y { syntax: "*"; inherits: false; initial-value: 0; }
+
+@keyframes tw-enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0)
+      scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), var(--tw-enter-scale, 1));
+  }
+}
+
+@utility animate-in {
+  animation: tw-enter var(--tw-duration, 150ms) var(--tw-ease, cubic-bezier(0.25, 1, 0.5, 1));
+}
+@utility fade-in {
+  --tw-enter-opacity: 0;
+}
+@utility zoom-in {
+  --tw-enter-scale: 0;
+}
+@utility zoom-in-* {
+  --tw-enter-scale: calc(--value(integer) / 100);
+}
+@utility slide-in-from-top-* {
+  --tw-enter-translate-y: calc(--value(integer) * var(--spacing) * -1);
+}
+@utility slide-in-from-bottom-* {
+  --tw-enter-translate-y: calc(--value(integer) * var(--spacing));
+}
+@utility slide-in-from-left-* {
+  --tw-enter-translate-x: calc(--value(integer) * var(--spacing) * -1);
+}
+@utility slide-in-from-right-* {
+  --tw-enter-translate-x: calc(--value(integer) * var(--spacing));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in { animation: none; }
+}

@@ -212,6 +212,8 @@ export interface Group {
   memberIds: string[];
   leaderId?: string;
   color?: string;
+  /** 小组 logo（迁移 089），教师在小组管理里上传 */
+  logoUrl?: string | null;
   aiFeedbackCondition?: 'treatment' | 'control' | null;
 }
 
@@ -234,7 +236,7 @@ export interface GroupTask {
 export interface Notification {
   id: string;
   userId: string; // Recipient
-  type: 'system' | 'task' | 'buildon' | 'mention' | 'teacher';
+  type: 'system' | 'task' | 'buildon' | 'mention' | 'teacher' | 'group_assignment';
   title: string;
   message: string;
   read: boolean;
@@ -384,6 +386,10 @@ export interface ViewDefinition {
   description?: string;
   /** 创建者的 user id；Welcome 是虚拟视图，这里为空。 */
   creatorId: string;
+  /** 「为每组建视图」建的视图属于哪个组（迁移 088），其余为空 */
+  groupId?: string | null;
+  /** 那个组的 logo（迁移 089），视图卡片上显示 */
+  groupLogoUrl?: string | null;
   createdAt: string;
   lastModified: string;
 }

@@ -1,5 +1,23 @@
 # Release validation
 
+Checked on **2026-10-11** for the **main source update after v0.7.0**. This is a source commit, not a new tagged release.
+
+## Current checks
+
+- **258 test files / 2,771 tests passed**. Two files containing four optional Python-environment tests were skipped; those skipped cases were not counted as passing.
+- Frontend TypeScript check, frontend build using placeholder browser configuration, and API build passed. Existing chunk-size warnings remain.
+- Existing publication-only dependency patches and prior privacy/research-language corrections are preserved. This update is not a new dependency-security audit.
+- Known local credential values, key-shaped strings, production project/server paths and evaluation fixture IDs were compared against the assembled public package. No matches remained. Source fingerprints and the full public-file manifest were checked. These are bounded automated checks, not a formal privacy audit.
+- Production frontend deployment was checked separately: 53 current JavaScript/CSS assets on both Pages and the public domain matched the private build byte for byte. The public homepage and login page passed 12 checks across three languages and desktop/mobile sizes; existing API health responded successfully. No authenticated student workflows or live AI-provider calls were performed for this copy update.
+
+## Feature and setup boundaries
+
+The source includes student-agent choices and interactive pages, imports into Notes, cross-conversation memory controls, teacher-reviewed AI guidance strategies and page templates, and group assignments/logos. App changelog entries use platform version identifiers independently of GitHub source tags. Personalization uses retrieved context; model weights are not trained. Follow-up activity ratios do not measure learning outcomes.
+
+Existing compatible databases require migrations `088`–`094` after `087`. The migration archive is not verified as a complete fresh-database replay. Evaluation must explicitly select isolated course/space/student fixtures and configure its Note IDs. The public runner has no production-default identities and rejects missing fixture selections before doing evaluation work. Local student-guide media exports and source artwork are excluded; guide links use the public website. Credentials, private operational material and private Git history are excluded.
+
+## Previous source validation
+
 Checked on **2026-10-10** for the **main source update after v0.7.0**. This is a source commit, not a new tagged release.
 
 ## Current source checks

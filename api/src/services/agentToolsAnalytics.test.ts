@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * 假数据库只认线上真实的列，选或筛一个不存在的列，就像 PostgREST 一样返回错误。
  */
 
-const SPACE = '5cd95cfc-6813-444f-8d3a-3971e1935930';
+const SPACE = '10000000-0000-4000-8000-000000000002';
 const OTHER_SPACE = 'e14ce735-46ed-444a-9672-d82ab6ab87f3';
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const [A, B, C, D, GONE, ELSEWHERE] = [1, 2, 3, 4, 5, 6].map(id);

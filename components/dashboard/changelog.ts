@@ -32,6 +32,103 @@ export interface ChangelogEntry {
 /** 最新的排最前面。加新版本就往数组头部插。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    "version": "v1.83",
+    "date": "2026-10-11",
+    "titleZh": "指导策略与模板",
+    "titleEn": "Guidance strategies and page templates",
+    "items": [
+      {
+        "zh": "教师可生成、编写和采用 AI 指导策略，用于后续回答，也可撤回。",
+        "en": "Teachers can generate, write and adopt AI guidance strategies for later answers, or withdraw them.",
+        "for": "teacher"
+      },
+      {
+        "zh": "有基线数据时，使用满 20 次后比较后续互动比例，未提高则自动撤回。",
+        "en": "With a baseline, cards are withdrawn after 20 uses if the rate of follow-up activity does not improve.",
+        "for": "teacher"
+      },
+      {
+        "zh": "已导入笔记的网页可提取结构说明，保存为本课模板。",
+        "en": "Extract structural guidance from pages imported into Notes and save it as a course template.",
+        "for": "teacher"
+      }
+    ]
+  },
+  {
+    "version": "v1.82",
+    "date": "2026-10-11",
+    "titleZh": "学习记忆管理",
+    "titleEn": "Learning memory controls",
+    "items": [
+      {
+        "zh": "学生可查看和删除本课 AI 记忆，或关闭跨对话记忆；选择与导入记录保留 60 天。",
+        "en": "Students can view or delete their AI memories for this course, or turn off cross-conversation memory. Choice and import records are kept for 60 days.",
+        "for": "student"
+      },
+      {
+        "zh": "可删除自己的知识空间智能体对话，同时清除该对话摘要。",
+        "en": "Delete your workspace-agent conversations and their summaries.",
+        "for": "student"
+      }
+    ]
+  },
+  {
+    "version": "v1.81",
+    "date": "2026-10-11",
+    "titleZh": "智能体网页与导入",
+    "titleEn": "Agent pages and Note imports",
+    "items": [
+      {
+        "zh": "Note AI 与知识空间智能体可列出步骤、提供方案选择，并生成或修改互动网页。",
+        "en": "Note AI and the workspace agent can show steps, offer choices, and create or revise interactive pages.",
+        "for": "student"
+      },
+      {
+        "zh": "知识空间智能体的回答和网页可导入自己的笔记；有权查看笔记的人也能打开网页。",
+        "en": "Import workspace-agent answers and pages into your own Notes. People with access to a Note can open its attached page.",
+        "for": "student"
+      }
+    ]
+  },
+  {
+    "version": "v1.80",
+    "date": "2026-10",
+    "titleZh": "小组任务与标识",
+    "titleEn": "Group assignments and logos",
+    "items": [
+      {
+        "zh": "教师可向所选小组发布任务，设置截止时间和显示视图，并修改或撤回。",
+        "en": "Teachers can assign tasks to selected groups, set due dates and views, and edit or withdraw assignments.",
+        "for": "teacher"
+      },
+      {
+        "zh": "组员可确定组长；已有组长时由组长移交，教师可调整。",
+        "en": "Members can choose a leader. An existing leader hands over the role, and teachers can change it."
+      },
+      {
+        "zh": "教师可上传小组标识，显示在小组和视图卡片上。",
+        "en": "Teachers can upload group logos for group and view cards.",
+        "for": "teacher"
+      }
+    ]
+  },
+  {
+    "version": "v1.79",
+    "date": "2026-10-10",
+    "titleZh": "协作文档",
+    "titleEn": "Collaborative documents",
+    "items": [
+      {
+        "zh": "知识空间可创建协作文档，支持多人编辑和 Word 导出。",
+        "en": "Create collaborative documents in the knowledge space, edit together, and export to Word."
+      },
+      {
+        "zh": "可保存版本并查看历史正文；历史版本只读，当前文档继续同步。",
+        "en": "Save versions and preview earlier content. Historical versions are read-only while the current document keeps syncing."
+      }
+    ]
+  },
+  {
     version: 'v0.7.0', date: '2026-10-10',
     titleZh: '讨论分析与来源核对', titleEn: 'Discussion analysis and source checks',
     items: [

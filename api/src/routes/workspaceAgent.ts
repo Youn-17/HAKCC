@@ -34,6 +34,8 @@ import {
   IMAGE_TURN_RULES,
 } from '../services/noteAgentCatalog';
 import { runAgentLoopStream, type AgentStreamEvent } from '../services/agentLoop';
+import { analyzePrompt, answerCheckMetadata, enforceTurnQuota, runAgentTurn } from '../services/agentHarness';
+import { AgentTrace } from '../services/agentTrace';
 import {
   buildAgentContext,
   stripHtml,
@@ -41,6 +43,10 @@ import {
   type AgentRole,
 } from '../services/agentContext';
 import { createDefaultRegistry } from '../services/agentTools';
+import {
+  MAKER_LOOP_TIMEOUT_MS, MAKER_MAX_ITERATIONS, MAKER_RULES, createTurnState, hasMakerTools, loadMakerMemory, makerMemorySection,
+  parseStudentChoice, settlePlan, turnMetadata,
+} from '../services/agentMaker';
 import { isDmxProvider, orderConfigsByHealth, pickModel, pickNativeModel } from '../services/modelRouter';
 import { freeCapacity } from '../services/aiGateway';
 import { summarizeToolResult } from '../services/toolResultSummary';
@@ -59,6 +65,10 @@ import { drawRouteSummary, routeDrawRequest, type DrawRoute, type PreviousDrawin
 import { lengthInstruction, lengthPlanMetadata, maxTokensFor, parseAnswerLength, planAnswerLength, thinkingLikely } from '../services/answerLength';
 import { lastReplyFromTurns, loadLastExchange, loadRecentTurns, loadStoredMemory, streamDrawTurn } from '../services/drawTurn';
 import { loadStudentLearningContext } from '../services/studentLearningContext';
+import { choiceEpisodeText, recordEpisode } from '../services/studentMemory';
+import { activeCards, cardsFor, practiceSection, taskKind, type PracticeCard } from '../services/agentPractices';
+import { BUILTIN_TEMPLATES, listTemplates, templatesSection, type PageTemplate } from '../services/pageTemplates';
+import { logEvent } from '../services/eventService';
 import { detectQuestionLanguage, languageDirective } from '../services/finalAnswer';
 import { fetchSpaceBuildOnGraph, formatBuildOnSection } from '../services/buildOnContext';
 import { fetchAiInteractionData, formatAiInteractionSection } from '../services/aiInteractionContext';
@@ -269,7 +279,7 @@ const WORKSPACE_IDENTITY = [
   'The Build-on links between notes are written out below, after the note list. Use them to answer who built on whom, which ideas are built on most, and which notes nobody has built on yet. Never say you cannot see Build-on relations; if the list says there are none, say there are none.',
   'Notes are numbered in the list; to read one in full, or to see its own Build-on links, call read_note or get_note_context with its note_id.',
   'The AI feedback cards and the AI content inserted into notes (how many, how students responded, which scaffolds they chose) are also written out below from the platform\'s own records. Include them when summarising the discussion or how AI was used; never say these figures are unavailable or have to be added from the back end.',
-  'You cannot create downloadable files or data charts here (generate_image draws pictures; it cannot plot real data). If asked for a Word file, a report or a chart, say so and give the content in your reply instead, with a table for any figures. Never write a download link for a file that was not made.',
+  'You can turn notes into an interactive single-file web page with create_artifact (concept map, comparison table, timeline, quiz, a chart drawn from figures in the notes); it shows up in the chat for the user to open and download. You cannot make Word files. Never write a download link yourself.',
   'Be concise, evidence-oriented, and grounded in the actual workspace data.',
   'When referencing notes, mention them by title so the user can find them.',
 ].join(' ');
@@ -312,7 +322,8 @@ router.get('/workspace-agent/:courseId/conversations', verifyJWT, async (req: Re
     .select('id, title, agent_mode, provider_id, model, space_id, updated_at')
     .eq('user_id', req.user!.id)
     .eq('agent_type', 'workspace')
-    .eq('course_id', req.params.courseId);
+    .eq('course_id', req.params.courseId)
+    .is('deleted_at', null);
   if (spaceId) query = query.eq('space_id', spaceId);
   const { data } = await query.order('updated_at', { ascending: false }).limit(30);
   res.json({ conversations: data ?? [] });
@@ -346,6 +357,32 @@ router.post('/workspace-agent/:courseId/conversations', verifyJWT, async (req: R
 });
 
 // ---------------------------------------------------------------------------
+// DELETE /workspace-agent/:courseId/conversations/:convId — 学生删掉一段对话（2026-10-11）
+// 软删除（和笔记 AI 助手的对话一样，研究数据还在），这段对话的记忆摘要一起清掉：不再出现在列表、
+// 不能接着聊，也不再被别的对话翻出来（studentLearningContext）
+// ---------------------------------------------------------------------------
+
+router.delete('/workspace-agent/:courseId/conversations/:convId', verifyJWT, async (req: Request, res: Response) => {
+  await requireCourseMembership(String(req.params.courseId), req);
+  const { data, error } = await supabase
+    .from('agent_conversations')
+    .update({ deleted_at: new Date().toISOString(), conversation_memory: {} })
+    .eq('id', req.params.convId)
+    .eq('user_id', req.user!.id)
+    .eq('agent_type', 'workspace')
+    .eq('course_id', req.params.courseId)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new ApiError(500, error.message);
+  if (!data || data.length === 0) throw new ApiError(404, 'Conversation not found');
+  logEvent({
+    actor_id: req.user!.id, actor_role: req.user!.role, event_type: 'agent_conversation_deleted', object_type: 'agent_conversation',
+    object_id: String(req.params.convId), metadata_json: { surface: 'workspace', course_id: String(req.params.courseId) },
+  });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
 // Route 3: GET /workspace-agent/:courseId/conversations/:convId/messages
 // ---------------------------------------------------------------------------
 
@@ -358,6 +395,7 @@ router.get('/workspace-agent/:courseId/conversations/:convId/messages', verifyJW
     .eq('user_id', req.user!.id)
     .eq('agent_type', 'workspace')
     .eq('course_id', req.params.courseId)
+    .is('deleted_at', null)
     .single();
   if (!conv) throw new ApiError(404, 'Conversation not found');
 
@@ -427,11 +465,21 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     answer_length?: unknown;
     /** 输入框下面的「画图」按钮：不管怎么措辞都直接出图 */
     force_draw?: boolean;
+    /** 学生点了上一轮选项卡上的哪一个 */
+    choice?: unknown;
   };
+  const studentChoice = parseStudentChoice((req.body as { choice?: unknown }).choice);
 
   if (!content?.trim()) throw new ApiError(400, 'content is required');
   if (!requestedProviderId || !requestedModel) throw new ApiError(400, 'provider_id and model are required');
   if (!checkRateLimit(req.user!.id)) throw new ApiError(429, 'Too many requests. Please wait a moment.');
+  // 工具按课内身份给：教师工具能读全班的数据，凭学生验证码入课的教师账号在这门课里是学生
+  const userRole: AgentRole = !isCourseStaff(standing)
+    ? 'student'
+    : req.user!.role === 'admin' ? 'admin' : 'teacher';
+  const zhQuestion = detectQuestionLanguage(content) === 'zh';
+  // 学生提交问题时（harness）：每日配额在建对话、存提问之前查
+  await enforceTurnQuota(req.user!.id, userRole, zhQuestion);
 
   // 侧栏里选「默认」时传 'auto'：用课程 AI 设置里「知识空间 AI 助手」这一行；
   // 模型没指定就留 'auto'，下面 resolveModelFor 照原规则挑。手选的照旧。
@@ -473,6 +521,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
       .eq('user_id', req.user!.id)
       .eq('agent_type', 'workspace')
       .eq('course_id', courseId)
+      .is('deleted_at', null)
       .maybeSingle();
     if (!existingConv) convId = undefined;
   }
@@ -500,6 +549,7 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     conversation_id: convId,
     role: 'user',
     content: content.trim(),
+    ...(studentChoice ? { ai_metadata: { choice: studentChoice } } : {}),
   });
 
   // 要不要画、是不是改上一张、画成哪种：Jev 判断（drawJudge），没开或出错时按「画一张……」这类说法认；
@@ -621,29 +671,34 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     model: { providerId: provider_id, model: memoryModel, apiKey, endpointUrl: config.endpoint_url } });
   history = restoredMemory.messages;
 
+  // 这一问是不是让 AI 代写、之前是不是接连代写（harness 的 onPromptSubmit）。history 最后一条就是这一问
+  const earlierQuestions = history.filter(m => m.role === 'user').map(m => m.content).slice(0, -1);
+  const promptCheck = analyzePrompt({ question: content, earlierQuestions, role: userRole });
+
   // 课程资料：和下面装上下文、读 Build-on 同时检索（kbSources.ts）。按提问的人检索，别组空间里的附件进不来。
-  // history 最后一条就是这一问
-  const zhQuestion = detectQuestionLanguage(content) === 'zh';
   const kbRun = startKbRetrieval({
     courseId: String(courseId),
     viewer: req.user!,
     question: content.trim(),
-    earlierQuestions: history.filter(m => m.role === 'user').map(m => m.content).slice(0, -1),
+    earlierQuestions,
     contextTitle: null,
     zh: zhQuestion,
     source: 'workspace_ai',
   });
-
-  // 工具按课内身份给：教师工具能读全班的数据，凭学生验证码入课的教师账号在这门课里是学生
-  const userRole: AgentRole = !isCourseStaff(standing)
-    ? 'student'
-    : req.user!.role === 'admin' ? 'admin' : 'teacher';
 
   const modeToolNames = getAgentModeToolNames(normalizedAgentMode);
   const tools = agentRegistry.getToolsForRole(userRole).filter(
     (t) => modeToolNames.includes(t.function.name),
   );
   const toolNames = tools.map((t) => t.function.name);
+  // 列计划、给选项、做网页（agentMaker）；这段对话之前做过的网页和计划一起读出来
+  const makerOn = hasMakerTools(toolNames);
+  const makerMemoryPromise = makerOn ? loadMakerMemory('workspace', String(convId)).catch(() => null) : Promise.resolve(null);
+  // 第五步：老师同意过的做法卡（学生的这类任务才放）和网页模板（做网页时可选），和别的上下文一起读
+  const practicePromise: Promise<PracticeCard[]> = userRole === 'student'
+    ? activeCards(String(courseId)).then(cards => cardsFor(cards, taskKind(content))).catch(() => [])
+    : Promise.resolve([]);
+  const templatesPromise: Promise<PageTemplate[]> = makerOn ? listTemplates(String(courseId)).catch(() => BUILTIN_TEMPLATES) : Promise.resolve([]);
 
   // Build the workspace "note" context (a summary of all notes)
   const workspaceNote = buildWorkspaceNote(space, workspaceNotes, String(courseId));
@@ -735,14 +790,11 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
   res.flushHeaders();
 
   const toolContext = agentContext.toolContext;
-  let fullReply = '';
-  const allToolCalls: Array<{ id: string; name: string }> = [];
   const allToolsUsed = new Set<string>();
-  let agentIterations = 0;
-  let continuations = 0;
-  let truncated = false;
   // 每一步的结果和用时，存进回答里：回看历史时也能看到「用了几步」
   const toolSteps: KbToolStep[] = [];
+  // 这一轮的运行记录（agent_runs / agent_effects），回答发完再写库
+  const trace = new AgentTrace({ userId: req.user!.id, courseId: String(courseId), surface: 'workspace', conversationId: String(convId), title: content.trim().slice(0, 80) });
 
   const keepaliveTimer = setInterval(() => {
     try { res.write(': keepalive\n\n'); } catch {}
@@ -820,22 +872,41 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     }
   }
 
-  let usedProvider = provider_id;
-  let usedModel = resolvedModel;
-
   try {
     const kb = await announceKbRetrieval(
       event => res.write(`data: ${JSON.stringify(event)}\n\n`), kbRun, toolSteps, allToolsUsed, zhQuestion,
     );
-    let sentSources = kb?.citations.sources.length ?? 0;
+    const makerMemory = await makerMemoryPromise;
+    const [practiceCards, pageTemplates] = await Promise.all([practicePromise, templatesPromise]);
+    if (practiceCards.length) trace.record('practice_cards', { ids: practiceCards.map(c => c.id), kind: taskKind(content) });
+    // 学生在选项卡上选了一个：记成「关键时刻」（学生能在「AI 记得什么」里看、删；关了记忆就不记）
+    if (studentChoice && userRole === 'student') {
+      const asked = makerMemory?.pendingQuestion;
+      void recordEpisode({
+        userId: req.user!.id, courseId: String(courseId), type: 'choice',
+        content: choiceEpisodeText(studentChoice, asked && asked.id === studentChoice.questionId ? asked.question : null, zhQuestion),
+        source: { surface: 'workspace', conversation_id: String(convId), question_id: studentChoice.questionId },
+      });
+    }
     const workspaceSystemPrompt = [
       ...promptBeforeMaterials,
+      makerOn ? MAKER_RULES : '',
+      makerOn ? templatesSection(pageTemplates) : '',
+      practiceSection(practiceCards),
+      makerMemory ? makerMemorySection(makerMemory) : '',
       kb?.section ?? '',
       carriesImage ? IMAGE_TURN_RULES : '',
       lengthInstruction(lengthPlan),
     ].filter(Boolean).join('\n\n');
     // 助手这一轮再查课程资料：查到的段落接着自动检索的编号往下编，来源卡片一起列
-    const turnToolContext = kb ? { ...toolContext, kbCitations: kb.citations } : toolContext;
+    const turn = createTurnState({ emit: event => res.write(`data: ${JSON.stringify(event)}\n\n`), surface: 'workspace', conversationId: String(convId) });
+    const turnToolContext = {
+      ...toolContext,
+      surface: 'workspace' as const,
+      conversationId: String(convId),
+      ...(kb ? { kbCitations: kb.citations } : {}),
+      ...(makerOn ? { turn } : {}),
+    };
 
     const baseMessages = agentContext.messages.map((m) => ({
       role: m.role,
@@ -847,104 +918,46 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         function: { name: tc.function?.name ?? '', arguments: tc.function?.arguments ?? '{}' },
       })),
     }));
-    // Fit each fallback model before attaching this turn’s documents/images.
 
-    for (let ci = 0; ci < candidates.length; ci++) {
-      const cand = candidates[ci];
-      usedProvider = cand.providerId;
-      usedModel = cand.model;
-      let emitted = false;
-      let failedBeforeOutput: string | null = null;
-
-      const candidateBudget = modelContextBudget(cand.providerId, cand.model);
-      const candidateHistory = candidateBudget.historyBytes < contextBudget.historyBytes
-        ? (await restoreConversationMemory({ kind: 'workspace', id: String(convId), history: rawHistory, budget: candidateBudget,
-          model: { providerId: cand.providerId, model: cand.model, apiKey: cand.apiKey, endpointUrl: cand.endpointUrl } })).messages
-        : baseMessages;
-      const candidateMessages = selectModelHistory<(typeof baseMessages)[number] | { role: 'user' | 'assistant'; content: string }>(candidateHistory, candidateBudget);
-      const loopMessages = attachImagesToLastUserMessage(withAttachmentNote(candidateMessages, attachmentNote), attachments);
-      const stream = runAgentLoopStream({
-        providerId: cand.providerId,
-        model: cand.model,
-        apiKey: cand.apiKey,
-        endpointUrl: cand.endpointUrl,
-        systemPrompt: workspaceSystemPrompt,
-        messages: loopMessages,
-        tools,
-        executeToolFn: (name, args) => agentRegistry.executeTool(name, args, turnToolContext),
-        // 按目标字数留足余量；会先思考的模型（DeepSeek）思考也算在里面，再多留
-        maxTokens: Math.max(WORKSPACE_MAX_TOKENS, maxTokensFor(lengthPlan.target, thinkingLikely(cand.providerId, cand.model))),
-        maxIterations: WORKSPACE_MAX_ITERATIONS,
-      });
-
-      const toolStartedAt = new Map<string, number>();
-      try {
-        for await (const event of stream) {
-          switch (event.type) {
-            case 'thinking':
-              res.write(`data: ${JSON.stringify({ reasoningStatus: 'thinking', reasoningChunk: event.content })}\n\n`);
-              break;
-            case 'tool_call':
-              emitted = true;
-              allToolCalls.push({ id: event.toolCall.id, name: event.toolCall.function.name });
-              allToolsUsed.add(event.toolCall.function.name);
-              toolStartedAt.set(event.toolCall.function.name, Date.now());
-              res.write(`data: ${JSON.stringify({ toolStatus: 'running', toolName: event.toolCall.function.name })}\n\n`);
-              break;
-            case 'tool_result': {
-              const startedAt = toolStartedAt.get(event.toolName);
-              const ms = startedAt ? Date.now() - startedAt : undefined;
-              // 只推统计性摘要（几条、成没成），不复述内容 —— 内容归模型自己在回答里说
-              const summary = summarizeToolResult(event.toolName, event.result, 'zh');
-              toolSteps.push({ name: event.toolName, summary, ...(ms != null ? { ms } : {}) });
-              res.write(`data: ${JSON.stringify({
-                toolStatus: 'used',
-                toolName: event.toolName,
-                toolNames: Array.from(allToolsUsed),
-                toolSummary: summary,
-                toolDurationMs: ms,
-              })}\n\n`);
-              // 又查到新的课程资料：来源卡片整份重发
-              if (event.toolName === KB_STEP_NAME && kb && kb.citations.sources.length > sentSources) {
-                sentSources = kb.citations.sources.length;
-                res.write(`data: ${JSON.stringify({ kbSources: kb.citations.sources })}\n\n`);
-              }
-              break;
-            }
-            case 'token':
-              emitted = true;
-              fullReply += event.content;
-              res.write(`data: ${JSON.stringify({ token: event.content })}\n\n`);
-              break;
-            case 'done':
-              agentIterations = event.result.iterations;
-              continuations = event.result.continuations ?? 0;
-              truncated = event.result.truncated === true;
-              break;
-            case 'error':
-              if (!emitted && ci < candidates.length - 1) {
-                failedBeforeOutput = event.error;
-              } else {
-                res.write(`data: ${JSON.stringify({ error: event.error })}\n\n`);
-              }
-              break;
-          }
-          if (failedBeforeOutput) break;
-        }
-      } catch (err) {
-        if (emitted || ci === candidates.length - 1) throw err;
-        failedBeforeOutput = err instanceof Error ? err.message : String(err);
-      }
-
-      if (!failedBeforeOutput) break;
-      const next = candidates[ci + 1];
-      console.warn(`[workspace-agent] ${cand.providerId}/${cand.model} failed before output (${failedBeforeOutput.slice(0, 120)}), switching to ${next.providerId}/${next.model}`);
-      res.write(`data: ${JSON.stringify({ providerSwitch: { from: cand.providerId, to: next.providerId, model: next.model } })}\n\n`);
-    }
-
-    // 回答写完：Jev 核对课程资料的引用，来源卡片带上核对结果再推一次（kbCitationCheck.ts）
-    const kbChecked = kb && fullReply.trim() ? await checkKbAnswer(fullReply, kb.citations) : null;
-    if (kbChecked) res.write(`data: ${JSON.stringify({ kbSources: kbChecked.sources })}\n\n`);
+    // 跑循环、推事件、换模型、五个钩子、运行记录都在 harness 里（agentHarness.ts）。
+    // 知识空间智能体在课程设置里允许换：一个字都没吐出来之前出错，就换候选链里的下一家
+    const turnResult = await runAgentTurn({
+      surface: 'workspace',
+      emit: event => res.write(`data: ${JSON.stringify(event)}\n\n`),
+      trace,
+      role: userRole,
+      promptCheck,
+      candidates,
+      failover: true,
+      // 每个候选模型的上下文窗口不同：先按它装历史，再挂这一轮的附件和图
+      messagesFor: async (cand) => {
+        const candidateBudget = modelContextBudget(cand.providerId, cand.model);
+        const candidateHistory = candidateBudget.historyBytes < contextBudget.historyBytes
+          ? (await restoreConversationMemory({ kind: 'workspace', id: String(convId), history: rawHistory, budget: candidateBudget,
+            model: { providerId: cand.providerId, model: cand.model, apiKey: cand.apiKey, endpointUrl: cand.endpointUrl } })).messages
+          : baseMessages;
+        const candidateMessages = selectModelHistory<(typeof baseMessages)[number] | { role: 'user' | 'assistant'; content: string }>(candidateHistory, candidateBudget);
+        return attachImagesToLastUserMessage(withAttachmentNote(candidateMessages, attachmentNote), attachments);
+      },
+      systemPrompt: workspaceSystemPrompt,
+      tools,
+      executeTool: (name, args) => agentRegistry.executeTool(name, args, turnToolContext),
+      // 按目标字数留足余量；会先思考的模型（DeepSeek）思考也算在里面，再多留
+      maxTokensFor: (cand) => Math.max(WORKSPACE_MAX_TOKENS, maxTokensFor(lengthPlan.target, thinkingLikely(cand.providerId, cand.model))),
+      maxIterations: makerOn ? MAKER_MAX_ITERATIONS : WORKSPACE_MAX_ITERATIONS,
+      ...(makerOn ? { totalTimeoutMs: MAKER_LOOP_TIMEOUT_MS } : {}),
+      kb,
+      turn: makerOn ? turn : null,
+      toolSteps,
+      toolsUsed: allToolsUsed,
+      summaryLang: zhQuestion ? 'zh' : 'en',
+    });
+    const fullReply = turnResult.reply;
+    const agentIterations = turnResult.iterations;
+    const { continuations, truncated, endedByTool, kbChecked } = turnResult;
+    const usedProvider = turnResult.used.providerId;
+    const usedModel = turnResult.used.model;
+    const answerCheck = answerCheckMetadata(turnResult.answerCheck);
 
     // Save assistant message to agent_messages
     await supabase.from('agent_messages').insert({
@@ -965,6 +978,14 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
         provider_id: usedProvider,
         model: usedModel,
         requested_provider_id: provider_id,
+        // 计划清单、选项卡、做好的网页（agentMaker）；回看历史时照样显示
+        ...(makerOn ? turnMetadata(turn) : {}),
+        ...(endedByTool ? { ended_by: endedByTool } : {}),
+        // 运行记录的 id、回答结束时检查出了什么（harness）
+        run_id: trace.runId,
+        ...(answerCheck ? { answer_check: answerCheck } : {}),
+        // 放进提示词的做法卡（第五步，试用时按这个算接住率）
+        ...(practiceCards.length ? { practice_cards: practiceCards.map(c => c.id) } : {}),
       },
     });
 
@@ -975,17 +996,18 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
       .eq('id', convId);
 
     // Log to ai_interventions for analytics
-    await supabase.from('ai_interventions').insert({
+    const { error: interventionErr } = await supabase.from('ai_interventions').insert({
       space_id: space.id,
       note_id: null,
       user_id: req.user!.id,
       trigger_type: 'workspace_agent_chat',
-      provider_id,
-      model_name: model,
+      provider_id: usedProvider,
+      model_full_name: usedModel,
       input_context_summary: content.slice(0, 200),
       response_text: fullReply.slice(0, 500),
       visibility_scope: 'private',
     });
+    if (interventionErr) console.error('[ai_interventions] workspace_agent_chat insert failed:', interventionErr.message);
 
     // Update learner profile with interaction metrics (non-blocking)
     if (userRole === 'student') {
@@ -1008,6 +1030,16 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
       tools_used: Array.from(allToolsUsed),
       workspace_notes_count: workspaceNotes.length,
       scaffolding_level: agentContext.learnerProfile?.scaffoldingLevel ?? null,
+      // 研究编码用：这一轮列了几步计划、有没有停下来让学生选、学生上一轮选了什么、做了哪些网页
+      ...(makerOn ? {
+        plan_steps: turn.plan?.steps.length ?? 0,
+        asked_choice: Boolean(turn.question),
+        artifact_ids: turn.artifacts.map(a => a.id),
+      } : {}),
+      ...(studentChoice ? { student_choice: studentChoice } : {}),
+      run_id: trace.runId,
+      prompt_intent: promptCheck.intent,
+      ...(answerCheck ? { answer_check: answerCheck } : {}),
     });
 
     // Send completion event
@@ -1020,11 +1052,18 @@ router.post('/workspace-agent/:courseId/stream', verifyJWT, async (req: Request,
     res.write('data: [DONE]\n\n');
     clearInterval(keepaliveTimer);
     res.end();
+    void trace.persist({
+      status: fullReply.trim() ? 'applied' : 'failed',
+      output: { reply_chars: fullReply.length, ...(endedByTool ? { ended_by: endedByTool } : {}) },
+      metadata: { provider_id: usedProvider, model: usedModel, requested_provider_id: provider_id, ...(turnResult.usage ? { usage: turnResult.usage } : {}) },
+    });
   } catch (err: any) {
+    trace.record('error', { message: String(err?.message ?? 'Workspace agent stream error').slice(0, 300), stage: 'route' });
     res.write(`data: ${JSON.stringify({ type: 'error', error: err.message ?? 'Workspace agent stream error' })}\n\n`);
     res.write('data: [DONE]\n\n');
     clearInterval(keepaliveTimer);
     res.end();
+    void trace.persist({ status: 'failed' });
   }
 });
 

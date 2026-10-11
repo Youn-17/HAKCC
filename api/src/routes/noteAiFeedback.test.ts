@@ -19,6 +19,8 @@ const h = vi.hoisted(() => {
     spaceGroupId: 'group-1' as string | null,
     noteContent: '',
     storedFeedback: [] as Record<string, unknown>[],
+    /** 写 notifications 时库返回的错误；supabase-js 不抛，只放在返回值里 */
+    notificationError: null as { message: string } | null,
     inserts: [] as { table: string; payload: Record<string, unknown> }[],
     updates: [] as { table: string; payload: Record<string, unknown> }[],
     filters: [] as { table: string; col: string; value: unknown }[],
@@ -41,6 +43,7 @@ const h = vi.hoisted(() => {
       };
     }
     if (table === 'relations') return { data: null, error: null, count: 0 };
+    if (table === 'notifications') return { data: null, error: state.notificationError };
     if (table === 'courses') return { data: { instructor_id: 'teacher-1' }, error: null };
     if (table === 'course_members') return { data: { course_id: 'course-1' }, error: null };
     if (table === 'teacher_ai_configs') {
@@ -170,6 +173,7 @@ beforeEach(() => {
   h.state.spaceGroupId = 'group-1';
   h.state.noteContent = '';
   h.state.storedFeedback = [];
+  h.state.notificationError = null;
   h.state.inserts.length = 0;
   h.state.updates.length = 0;
   h.state.filters.length = 0;
@@ -440,12 +444,34 @@ describe('按课内身份区分教职和被试，不看平台身份', () => {
     h.state.user = { id: 'teacher-2', role: 'teacher' };
     expect((await respond()).status).toBe(200);
     expect(notified()).toHaveLength(1);
-    expect(notified()[0].payload).toMatchObject({ user_id: 'teacher-1', type: 'ai_feedback_response' });
+    // 整份比对：模拟库什么列都收，多一个线上没有的键（以前的 metadata）这里就该红
+    expect(notified()[0].payload).toEqual({
+      user_id: 'teacher-1',
+      type: 'ai_feedback_response',
+      title: expect.any(String),
+      message: expect.any(String),
+      link_type: 'note',
+      link_id: 'note-1',
+    });
 
     h.state.inserts.length = 0;
     h.state.user = { id: 'teacher-3', role: 'teacher' };
     expect((await respond()).status).toBe(200);
     expect(notified()).toHaveLength(0);
+  });
+
+  it('通知写不进去时记错误日志，学生这次回应照常成功', async () => {
+    assign('treatment');
+    h.state.notificationError = { message: 'Could not find the column in the schema cache' };
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await call('POST', '/notes/note-1/ai-feedback/fb-old/respond', { status: 'rejected', rejection_tag: 'off_track' });
+      expect(res.status).toBe(200);
+      await vi.waitFor(() => expect(logged).toHaveBeenCalledWith(
+        '[NoteAIFeedback] Failed to notify course instructor:', 'Could not find the column in the schema cache'));
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it('按笔记寻址的路由和支架门控，都不再按平台身份区分教职', () => {

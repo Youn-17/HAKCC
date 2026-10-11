@@ -28,11 +28,25 @@ export type StoredProviderConfig = {
 /** 低于这个预算的 DeepSeek 调用不开思考。1500 留得出 300 左右推理 + 1000 正文。 */
 const SMALL_BUDGET_TOKENS = 1500;
 
+/**
+ * 千问 3 系列（2026-10-11 用课程 key 实测）：思考默认开着，而且 max_tokens 限不住推理。
+ * max_tokens=80 的一道 JSON 判断，qwen3.7-plus 推理了 1212 个 token、26 秒，qwen3.8-max 39 秒（另一次超过 60 秒）。
+ * 课程里的五个型号都认 enable_thinking:false，关掉后 1–2 秒。所以和 DeepSeek 一样，预算小的调用关掉思考。
+ */
+function withQwenOptions(model: string, body: Record<string, unknown>): Record<string, unknown> {
+  if (!/^qwen3/i.test(model)) return body;
+  const budget = Number((body as { max_tokens?: unknown }).max_tokens);
+  if (Number.isFinite(budget) && budget > 0 && budget < SMALL_BUDGET_TOKENS) return { ...body, enable_thinking: false };
+  return body;
+}
+
+/** 各家请求体的怪脾气都在这里处理（起初只有 DeepSeek，名字没改）：现在还有千问 3 系列的思考开关 */
 export function withDeepSeekOptions(
   providerId: string,
   model: string,
   body: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (providerId === 'alibaba') return withQwenOptions(model, body);
   if (providerId !== 'deepseek') return body;
   const normalizedModel = normalizeDeepSeekModel(model, providerId);
   const nextBody = { ...body, model: normalizedModel };
@@ -89,6 +103,10 @@ export function withFastChatOptions(
   // GLM-4.5+ hybrid reasoning models accept thinking.type = disabled
   if (providerId === 'zhipu' && /^glm-(4\.[5-9]|[5-9])/.test(model)) {
     return { ...base, thinking: { type: 'disabled' } };
+  }
+  // 千问 3 系列：快速档不管预算大小都关思考（qwen3.7-plus 开着要 7 秒，关掉 1.5 秒）
+  if (providerId === 'alibaba' && /^qwen3/i.test(model)) {
+    return { ...base, enable_thinking: false };
   }
   return base;
 }

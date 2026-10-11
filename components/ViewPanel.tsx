@@ -10,6 +10,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import RemixIcon from './RemixIcon';
+import { useEnterMotion } from '../hooks/useEnterMotion';
 import { ViewDefinition, Language } from '../types';
 import { viewColor } from './viewPalette';
 
@@ -28,6 +29,8 @@ interface Props {
   onDeleteView: (id: string) => void;
   lang: Language;
   currentUserId?: string;
+  /** 当前用户所在的组：「为每组建视图」建的本组视图标「本组」 */
+  myGroupId?: string | null;
   /** 课程教职（按课内身份）能改名、删除别人建的视图，和后端 PUT/DELETE /views/:id 同口径 */
   isStaff: boolean;
   /** 侧栏可以拖宽到 180px，面板得跟着走，不能写死。 */
@@ -37,7 +40,7 @@ interface Props {
 const ViewPanel: React.FC<Props> = ({
   isOpen, onClose, views, activeViewId, noteCounts, placedViewIds,
   onSelectView, onCreateView, onPlaceCard, onRenameView, onDeleteView,
-  lang, currentUserId, isStaff, offsetLeft,
+  lang, currentUserId, isStaff, offsetLeft, myGroupId,
 }) => {
   const zh = lang === 'zh';
   const [draft, setDraft] = useState('');
@@ -67,6 +70,10 @@ const ViewPanel: React.FC<Props> = ({
     setRenamingId(null);
   };
 
+  // 打开时视图一条条出现
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEnterMotion(panelRef, isOpen ? 'open' : null, { step: 24, maxStagger: 8 });
+
   const canManage = (view: ViewDefinition) =>
     view.creatorId !== '' &&
     (view.creatorId === currentUserId || isStaff);
@@ -75,7 +82,8 @@ const ViewPanel: React.FC<Props> = ({
 
   return (
     <div
-      className="absolute top-0 bottom-0 z-40 flex w-72 flex-col border-r border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-950"
+      ref={panelRef}
+      className="absolute top-0 bottom-0 z-40 flex w-72 flex-col border-r border-gray-200 bg-white shadow-xl animate-in fade-in slide-in-from-left-2 duration-200 dark:border-gray-800 dark:bg-gray-950"
       style={{ left: offsetLeft }}
     >
       <div className="flex h-11 flex-shrink-0 items-center gap-2 border-b border-gray-200 px-4 dark:border-gray-800">
@@ -114,15 +122,25 @@ const ViewPanel: React.FC<Props> = ({
           return (
             <div
               key={view.id}
+              data-enter-item
               className={`mb-0.5 rounded-xl px-2.5 py-2 transition-colors ${
                 isActive ? 'bg-gray-100 dark:bg-gray-900' : 'hover:bg-gray-50 dark:hover:bg-gray-900/60'
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <span
-                  className="h-2.5 w-2.5 flex-shrink-0 rounded-[3px]"
-                  style={{ backgroundColor: color }}
-                />
+                {view.groupLogoUrl ? (
+                  <img
+                    src={view.groupLogoUrl}
+                    alt=""
+                    draggable={false}
+                    className="h-5 w-5 flex-shrink-0 rounded-md bg-white object-contain ring-1 ring-gray-200 dark:ring-gray-700"
+                  />
+                ) : (
+                  <span
+                    className="h-2.5 w-2.5 flex-shrink-0 rounded-[3px]"
+                    style={{ backgroundColor: color }}
+                  />
+                )}
 
                 {renamingId === view.id ? (
                   <input
@@ -140,9 +158,12 @@ const ViewPanel: React.FC<Props> = ({
                 ) : (
                   <button
                     onClick={() => onSelectView(view.id)}
-                    className="min-w-0 flex-1 truncate text-left text-[0.8125rem] text-gray-900 dark:text-gray-100"
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[0.8125rem] text-gray-900 dark:text-gray-100"
                   >
-                    {view.title}
+                    <span className="truncate">{view.title}</span>
+                    {view.groupId && myGroupId && view.groupId === myGroupId && (
+                      <span className="shrink-0 rounded-full bg-[#000080]/[0.07] px-1.5 text-[0.625rem] font-semibold leading-4 text-[#000080] dark:bg-blue-400/10 dark:text-blue-300">{zh ? '本组' : 'My group'}</span>
+                    )}
                   </button>
                 )}
 

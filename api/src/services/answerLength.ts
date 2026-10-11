@@ -40,8 +40,33 @@ export function maxTokensFor(targetChars: number, thinking = false): number {
   return Math.min(12_000, base + (thinking ? 4000 : 0));
 }
 
+/**
+ * 学生在问题里明说了要多短：一句话、只提一个问题、简短说说。这比档位优先（2026-10-11 评测：
+ * 「用一句话概括」答了 606 字，「生成一个 promising question」给了五个问句——提示词里的
+ * 「大约 550 字」压过了学生自己的要求）。
+ */
+export type ExplicitBrevity = 'sentence' | 'question' | 'brief';
+
+// 要的是「AI 这样答」，不是学生在说自己：「我想提一个问题」「我这一句话写得对吗」都不算
+const BREVITY: Array<[ExplicitBrevity, RegExp]> = [
+  ['sentence', /(用|以|就用|只用)(一|1)句话|(一|1)句话(概括|总结|说明|回答|讲清楚?|说一下)|(概括|总结)(成|为)(一|1)句话|\bin (one|a single) sentence\b|\bone[- ]sentence (summary|answer)\b/i],
+  ['question', /(?<![我想要有])(提|给|生成|提出|写)(出)?(我)?(一|1)个.{0,24}(问题|追问|question)(?!清单|列表|们|s\b)|(一|1)个(问题|追问)就(行|好|够)|\b(give|ask|suggest|generate) (me )?(one|a single) (follow-?up |probing )?question\b/i],
+  ['brief', /简短(地|点|些)?(说|回答|讲|概括|一点)|简单(说|讲)一下|说短一点|别太长|(用|在)(两三|一两|三两)句话(内|以内)?|\bbriefly\b|\bkeep it short\b|\bin brief\b|\bin (two|three|a few) sentences\b/i],
+];
+
+export function explicitBrevity(question: string): ExplicitBrevity | null {
+  const q = question.trim();
+  for (const [kind, re] of BREVITY) if (re.test(q)) return kind;
+  return null;
+}
+
+/** 明说了要多短时的目标字数：一句话、一个问题都在一两百字以内 */
+const BREVITY_TARGET: Record<ExplicitBrevity, number> = { sentence: 80, question: 150, brief: 180 };
+
 export interface LengthPlan {
   preset: AnswerLength;
+  /** 学生在问题里明说了要多短（比档位优先） */
+  explicit?: ExplicitBrevity;
   /** 0 浅 – 2 深 */
   depth: number;
   depthSource: 'jev' | 'heuristic';
@@ -75,13 +100,16 @@ export async function planAnswerLength(
     }
   }
   const finalDepth = depth ?? heuristicDepth(question);
-  const target = answerLengthTarget(preset, finalDepth);
+  const explicit = explicitBrevity(question);
+  const target = explicit ? BREVITY_TARGET[explicit] : answerLengthTarget(preset, finalDepth);
   return {
     preset,
+    ...(explicit ? { explicit } : {}),
     depth: Math.round(finalDepth * 100) / 100,
     depthSource: jev ? 'jev' : 'heuristic',
     target,
-    maxTokens: maxTokensFor(target, opts.thinking),
+    // 明说要短也留足 max_tokens：它只防跑飞，会先思考的模型思考也算在里面
+    maxTokens: maxTokensFor(explicit ? answerLengthTarget(preset, finalDepth) : target, opts.thinking),
     ...(jev ? { jevModel: jev.model, jevLatencyMs: jev.latencyMs } : {}),
   };
 }
@@ -92,8 +120,20 @@ const LABEL: Record<AnswerLength, { zh: string; en: string }> = {
   long: { zh: '详细', en: 'detailed' },
 };
 
+const EXPLICIT_RULE: Record<ExplicitBrevity, string> = {
+  sentence: 'The student explicitly asked for ONE sentence. Reply with that single sentence only: no preamble, no list, no follow-up paragraphs.',
+  question: 'The student explicitly asked for ONE question. Give exactly one question, with at most one short sentence of context before it; do not add more questions.',
+  brief: 'The student explicitly asked for a brief answer. Keep it to two or three sentences.',
+};
+
 /** 追加在系统提示词最后 */
-export function lengthInstruction(plan: Pick<LengthPlan, 'preset' | 'target'>): string {
+export function lengthInstruction(plan: Pick<LengthPlan, 'preset' | 'target' | 'explicit'>): string {
+  if (plan.explicit) {
+    return [
+      `Answer length: ${EXPLICIT_RULE[plan.explicit]} This overrides the student's length setting.`,
+      'Always finish: end with a complete sentence.',
+    ].join(' ');
+  }
   const words = Math.round((plan.target * 0.6) / 10) * 10;
   return [
     `Answer length: the student chose "${LABEL[plan.preset].en}" (${LABEL[plan.preset].zh}). Aim for about ${plan.target} Chinese characters (about ${words} English words if you answer in English).`,
@@ -118,6 +158,7 @@ export function lengthPlanMetadata(
 ): Record<string, unknown> {
   return {
     preset: plan.preset,
+    ...(plan.explicit ? { explicit: plan.explicit } : {}),
     depth: plan.depth,
     depth_source: plan.depthSource,
     target: plan.target,

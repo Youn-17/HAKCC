@@ -379,10 +379,9 @@ router.patch('/me', verifyJWT, async (req: Request, res: Response) => {
   const updates: Record<string, unknown> = {};
 
   if (name !== undefined) {
-    // 学生改不了：历史笔记的署名、研究导出的编号都认这个名字。
-    if (req.user!.role !== 'teacher' && req.user!.role !== 'admin') {
-      throw new ApiError(403, '姓名由教师维护，如需更正请联系教师。');
-    }
+    // 2026-10-10 用户：学生也可以改自己的名字（原来只开给教师和管理员）。
+    // 改名会同步两处署名快照（见下），并记一条旧名→新名的操作记录，教师和研究数据能追溯是谁改成了什么；
+    // 研究导出按稳定编号认人，不靠名字。
     if (typeof name !== 'string') throw new ApiError(400, 'name must be a string');
     const trimmed = name.trim();
     if (!trimmed) throw new ApiError(400, '姓名不能为空');
@@ -452,6 +451,17 @@ router.patch('/me', verifyJWT, async (req: Request, res: Response) => {
     // 还会署旧名 —— 刚改完就看见旧名字，会以为没保存成功。
     const auth = req.headers.authorization;
     if (auth?.startsWith('Bearer ')) invalidateAuthCache(auth.slice(7));
+    const previous = (req.user!.name ?? '').trim();
+    if (previous !== fullName) {
+      logEvent({
+        actor_id: req.user!.id,
+        actor_role: req.user!.role,
+        event_type: 'profile_name_changed',
+        object_type: 'user',
+        object_id: req.user!.id,
+        metadata_json: { from: previous || null, to: fullName },
+      });
+    }
   }
 
   res.json({ user: toProfileResponse(data) });

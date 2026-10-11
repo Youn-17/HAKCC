@@ -127,6 +127,20 @@ describe('messagesFromApi：存下来的消息还原成对话', () => {
     expect(out[0].kbSources).toEqual([card]);
     expect(out[1]).not.toHaveProperty('kbSources');
   });
+
+  it('智能体的计划、选项卡、网页（10-11 起）读回来照样显示；学生点的选项也认得', () => {
+    const question = { id: 'q1', question: '用哪种方式呈现？', options: [{ label: '概念图' }, { label: '对比表' }], allowOther: true };
+    const out = messagesFromApi([
+      { ...msg('1', 'assistant', '用哪种方式呈现？'), ai_metadata: { plan: { steps: [{ title: '定方式', status: 'in_progress' }] }, question } } as AgentMessage,
+      { ...msg('2', 'user', '我选：对比表'), ai_metadata: { choice: { questionId: 'q1', label: '对比表' } } } as AgentMessage,
+      { ...msg('3', 'assistant', '做好了'), ai_metadata: { artifacts: [{ id: 'a1', groupId: 'a1', title: '对比表', version: 1, kind: 'html', bytes: 900 }] } } as AgentMessage,
+      msg('4', 'assistant', '普通回答'),
+    ]);
+    expect(out[0].agent).toMatchObject({ plan: { steps: [{ title: '定方式', status: 'in_progress' }] }, question: { id: 'q1' } });
+    expect(out[1]).toMatchObject({ role: 'user', choice: '对比表' });
+    expect(out[2].agent?.artifacts?.map(a => a.title)).toEqual(['对比表']);
+    expect(out[3]).not.toHaveProperty('agent');
+  });
 });
 
 describe('面板宽度', () => {

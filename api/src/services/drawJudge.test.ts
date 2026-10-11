@@ -182,6 +182,18 @@ describe('routeDrawRequest', () => {
     expect(route).toMatchObject({ draw: true, mode: 'edit', form: 'graph' });
   });
 
+  it('要的是网页（里面提到概念图也一样）：不画，交给智能体做网页，不问 Jev；按了「画图」照样画', async () => {
+    const ask = vi.fn();
+    const route = await routeDrawRequest('把讨论做成一个网页：观点卡片、观点关系的概念图、3 道自测题', { config: CONFIG, ask });
+    expect(route).toMatchObject({ draw: false, decidedBy: 'web_page' });
+    expect(ask).not.toHaveBeenCalled();
+    expect((await routeDrawRequest('给我出几道测验题', { config: CONFIG, ask })).draw).toBe(false);
+    const forced = await routeDrawRequest('做成网页', { config: { ...CONFIG, drawJudge: false }, ask, forced: true });
+    expect(forced).toMatchObject({ draw: true, decidedBy: 'forced' });
+    // 没提网页的画图要求照旧
+    expect((await routeDrawRequest('画一张概念图', { config: { ...CONFIG, drawJudge: false }, ask })).draw).toBe(true);
+  });
+
   it('Jev 出错、超时、没开：按正则走，记下出错的类型', async () => {
     const failing = vi.fn(async () => { throw new JevError('timeout', 'slow'); });
     expect(await routeDrawRequest('画一只猫', { config: CONFIG, ask: failing as never }))

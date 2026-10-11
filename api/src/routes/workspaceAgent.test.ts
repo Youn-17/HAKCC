@@ -66,6 +66,8 @@ const h = vi.hoisted(() => {
     otherConfigs: [] as Array<{ provider_id: string; api_key_encrypted: string; endpoint_url: string | null; enabled_models: string[] }>,
     inserts: [] as { table: string; payload: unknown }[],
     updates: [] as { table: string; payload: unknown }[],
+    /** 像线上那样整条拒收 ai_interventions 的写入（PostgREST 不认识的列） */
+    rejectInterventions: false,
   };
 
   type Action = 'select' | 'insert' | 'update';
@@ -91,6 +93,9 @@ const h = vi.hoisted(() => {
     if (action === 'update') return ok(null);
     if (action === 'insert') {
       if (table === 'agent_conversations') return ok({ id: 'conv-new', ...(payload as object) });
+      if (table === 'ai_interventions' && state.rejectInterventions) {
+        return { data: null, error: { code: 'PGRST204', message: "Could not find the 'model_name' column of 'ai_interventions' in the schema cache" } };
+      }
       return ok(null);
     }
     switch (table) {
@@ -335,6 +340,7 @@ beforeEach(() => {
   h.state.otherConfigs = [];
   h.state.inserts.length = 0;
   h.state.updates.length = 0;
+  h.state.rejectInterventions = false;
   h.ensureSpaceAccess.mockReset();
   h.ensureSpaceAccess.mockImplementation(groupGate);
   h.ensureGroupAccess.mockReset();
@@ -763,6 +769,51 @@ describe('回答长度', () => {
   });
 });
 
+/**
+ * 研究数据里的 AI 使用记录（2026-10-11）：以前写的是线上没有的 model_name 列，整条被拒，
+ * 知识空间智能体一条记录都没有。
+ */
+describe('ai_interventions 记录', () => {
+  const loopOpts = () => h.runAgentLoopStream.mock.calls[0][0] as unknown as { providerId: string; model: string };
+  const logged = () => h.state.inserts.filter(i => i.table === 'ai_interventions').map(i => i.payload);
+  // 路由按人限流（每分钟 20 次）：换同组的另一个学生，不占 student-a 的额度
+  beforeEach(() => {
+    h.state.user = { id: 'student-log', role: 'student' };
+    h.state.groupsOf['student-log'] = ['group-a'];
+  });
+
+  it('每一轮记一条，列名和线上一致；记的是真正回答的服务商和型号', async () => {
+    await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a' });
+    expect(logged()).toEqual([{
+      space_id: 'space-a',
+      note_id: null,
+      user_id: 'student-log',
+      trigger_type: 'workspace_agent_chat',
+      provider_id: loopOpts().providerId,
+      model_full_name: loopOpts().model,
+      input_context_summary: ASK.content,
+      response_text: 'AI 的回复',
+      visibility_scope: 'private',
+    }]);
+    expect(loopOpts()).toMatchObject({ providerId: 'deepseek' });
+  });
+
+  it('记录被库拒收：这一轮照常结束，错误写进日志', async () => {
+    h.state.rejectInterventions = true;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await call('POST', '/workspace-agent/course-1/stream', { ...ASK, space_id: 'space-a' });
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('"done":true');
+      expect(res.text).not.toContain('"error"');
+      expect(h.state.inserts.find(i => i.table === 'agent_messages' && (i.payload as { role: string }).role === 'assistant')).toBeTruthy();
+      expect(errors).toHaveBeenCalledWith('[ai_interventions] workspace_agent_chat insert failed:', expect.stringContaining('model_name'));
+    } finally {
+      errors.mockRestore();
+    }
+  });
+});
+
 describe('「画图」按钮', () => {
   it('force_draw：不管怎么措辞都直接出图，不走对话模型', async () => {
     const res = await call('POST', '/workspace-agent/course-1/stream', { ...ASK, content: '一棵知识之树，枝条上挂着同学们的想法', force_draw: true });
@@ -1108,6 +1159,8 @@ describe('课程资料：每轮自动检索，回答下面有来源卡片', () =
   it('助手这一轮又调工具查课程资料：工具拿到这一轮的编号，查到新段落就重发来源卡片', async () => {
     const registry = new KbCitationRegistry([hit('a', '论文A', 3)]);
     h.startKbRetrieval.mockReturnValueOnce(runWith(registry));
+    // 这一轮给了这个工具（harness 只执行这一轮工具单上的）
+    h.getToolsForRole.mockReturnValueOnce([{ type: 'function', function: { name: 'search_course_materials', description: '', parameters: {} } }]);
     h.runAgentLoopStream.mockImplementationOnce((opts: any) => (async function* () {
       await opts.executeToolFn('search_course_materials', { query: '访谈' });
       registry.add([hit('b', '论文B', 9)]);

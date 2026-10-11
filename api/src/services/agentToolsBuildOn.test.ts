@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * 一个读不到笔记、一个永远查不到关系，而助手的指令偏偏让它「用 get_note_context 找 Build-on 关系」。
  */
 
-const SPACE = '5cd95cfc-6813-444f-8d3a-3971e1935930';
+const SPACE = '10000000-0000-4000-8000-000000000002';
 const OTHER_SPACE = 'e14ce735-46ed-444a-9672-d82ab6ab87f3';
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const [A, B, C, GONE, ELSEWHERE] = [id(1), id(2), id(3), id(4), id(5)];

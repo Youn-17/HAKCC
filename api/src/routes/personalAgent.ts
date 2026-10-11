@@ -323,6 +323,7 @@ router.delete('/personal-agent/conversations/:convId', verifyJWT, async (req: Re
     .select('id')
     .eq('id', req.params.convId)
     .eq('user_id', req.user!.id)
+    .eq('agent_type', 'personal')
     .single();
   if (!conv) throw new ApiError(404, 'Conversation not found');
 
@@ -923,12 +924,12 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
     }
 
     // Log to ai_interventions
-    await supabase.from('ai_interventions').insert({
+    const { error: interventionErr } = await supabase.from('ai_interventions').insert({
       space_id: contextSpaceId,
       user_id: userId,
       trigger_type: 'personal_agent_chat',
       provider_id: resolvedProviderId,
-      model_name: resolvedModel,
+      model_full_name: resolvedModel,
       input_context_summary: content.slice(0, 200),
       response_text: fullReply.slice(0, 500),
       visibility_scope: 'private',
@@ -941,6 +942,7 @@ router.post('/personal-agent/stream', verifyJWT, async (req: Request, res: Respo
         scaffolding_level: agentContext.learnerProfile?.scaffoldingLevel ?? null,
       },
     });
+    if (interventionErr) console.error('[ai_interventions] personal_agent_chat insert failed:', interventionErr.message);
 
     res.write(`data: ${JSON.stringify({
       done: true,
@@ -971,7 +973,7 @@ router.get('/personal-agent/history', verifyJWT, async (req: Request, res: Respo
 
   const { data, error } = await supabase
     .from('ai_interventions')
-    .select('id, trigger_type, provider_id, model_name, input_context_summary, response_text, created_at, trigger_context')
+    .select('id, trigger_type, provider_id, model_name:model_full_name, input_context_summary, response_text, created_at, trigger_context')
     .eq('user_id', req.user!.id)
     .eq('trigger_type', 'personal_agent_chat')
     .order('created_at', { ascending: false })

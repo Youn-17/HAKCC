@@ -188,12 +188,12 @@ const AssessmentPanel: React.FC<AssessmentPanelProps> = ({
   const aiInsight = (() => {
     if (tDist.T1 > 0 && tTotal > 0 && tDist.T1 / tTotal > 0.15) {
       return zh
-        ? `近 2 周学生在"照搬AI"模块的参与度较低，建议增加案例演练与分组讨论环节，并关注 ${riskCount} 名低参与学生的学习状态。`
-        : `T1 (undigested AI) usage is elevated at ${Math.round(tDist.T1 / tTotal * 100)}%. Consider adding case exercises and group discussions. Monitor ${riskCount} low-engagement students.`;
+        ? `分类记录中，T1（未消化 AI 内容）占 ${Math.round(tDist.T1 / tTotal * 100)}%。可查看原文，判断是否需要补充解释。`
+        : `T1 (undigested AI content) accounts for ${Math.round(tDist.T1 / tTotal * 100)}% of classified records. Review the source text to decide whether more explanation is needed.`;
     }
     return zh
-      ? `课堂参与度提升空间显著。建议关注 ${riskCount} 名低参与学生，增加互动讨论和反思环节以提升整体话语质量。`
-      : `Classroom engagement has room for improvement. Monitor ${riskCount} low-engagement students and increase discussion prompts.`;
+      ? `有 ${riskCount} 名学生近 5 天没有 AI 互动记录。可结合笔记和回应记录，判断是否需要提醒。`
+      : `${riskCount} students have no AI interaction recorded in the last 5 days. Review their Notes and replies before deciding whether to follow up.`;
   })();
 
   // Donut segments for scaffolding distribution
@@ -252,7 +252,7 @@ const AssessmentPanel: React.FC<AssessmentPanelProps> = ({
               {zh ? '教学评估' : 'Teaching Assessment'}
             </h1>
             <p className="mt-1 text-[0.8125rem] leading-relaxed text-gray-500 dark:text-gray-400">
-              {zh ? 'AI 全流程辅助，驱动教学改进' : 'AI-powered assessment & improvement'}
+              {zh ? '查看反馈记录，讨论教学建议' : 'Review feedback records and discuss teaching suggestions'}
             </p>
           </div>
           <img src="/assets/Teaching Evaluation.png" alt="" className="hidden h-24 w-auto flex-shrink-0 object-contain lg:block" />
@@ -338,16 +338,16 @@ const AssessmentPanel: React.FC<AssessmentPanelProps> = ({
 
               {/* AI Insight card */}
               <button
-                onClick={() => onSendMessage(zh ? '根据当前数据生成详细的教学评估洞察报告' : 'Generate detailed teaching assessment insights based on current data')}
+                onClick={() => onSendMessage(zh ? '根据当前数据整理教学评估报告，说明依据及需要核查的地方' : 'Prepare a teaching assessment report with supporting data and points to verify')}
                 className="group relative col-span-2 overflow-hidden rounded-2xl border border-blue-200/60 bg-gradient-to-br from-blue-50 via-white to-indigo-50/50 p-4 text-left shadow-sm transition-all hover:shadow-md active:scale-[0.98] dark:border-blue-800/40 dark:from-blue-950/30 dark:via-gray-900 dark:to-indigo-950/20"
               >
                 <div className="flex items-center gap-2 text-[0.75rem] font-semibold text-[#000080] dark:text-[#93AAFD]">
                   <RemixIcon name="sparkling-2-fill" size={14} />
-                  AI {zh ? '洞察' : 'Insight'}
-                  <span className="ml-auto text-[0.6875rem] font-normal text-gray-400">{zh ? '本周洞察' : 'This week'}</span>
+                  {zh ? '数据提示' : 'Data notes'}
+                  <span className="ml-auto text-[0.6875rem] font-normal text-gray-400">{zh ? '当前数据' : 'Current data'}</span>
                 </div>
                 <div className="mt-3 text-[0.875rem] font-semibold leading-snug text-gray-900 dark:text-gray-100">
-                  {zh ? '课堂参与度提升空间显著' : 'Engagement improvement opportunity'}
+                  {zh ? '参与记录与反馈' : 'Participation and feedback'}
                 </div>
                 <div className="mt-2 text-[0.6875rem] leading-relaxed text-gray-500 dark:text-gray-400">
                   {aiInsight}

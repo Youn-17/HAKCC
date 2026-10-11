@@ -7,11 +7,11 @@ import {
   engagementBarChartConfig, timelineChartConfig, comparisonBarChartConfig,
 } from './fileGenerator';
 import {
-  saveReflection,
   getOrCreateProfile,
   type ScaffoldingLevel,
 } from './learnerProfileService';
 import { detectTriggers } from './triggerEngine';
+import { rememberProfile } from './studentMemory';
 import { semanticSearchNotes, embedSpaceNotes } from './embeddingService';
 import { searchKnowledgeBaseDetailed } from './knowledgeBase';
 import { pageLabel, type KbCitationRegistry } from './kbSources';
@@ -21,6 +21,7 @@ import { produceDrawing } from './drawTurn';
 import {
   describeSpaceGraph, fetchSpaceBuildOnGraph, isNoteId, longestBuildOnChain, SPACE_RELATIONS_LIMIT, type BuildOnLink,
 } from './buildOnContext';
+import { registerMakerTools, type AgentTurnState } from './agentMaker';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,6 +40,8 @@ export type ToolExecutionResult = {
   success: boolean;
   data: unknown;
   error?: string;
+  /** 这一轮到此为止、等学生回应（ask_choice） */
+  endTurn?: boolean;
 };
 
 export type ToolContext = {
@@ -54,6 +57,11 @@ export type ToolContext = {
    * 结果带 ref，回答标 [ref]，来源卡片也列出来；不给（教师端几个助手）就照旧按名字引用。
    */
   kbCitations?: KbCitationRegistry;
+  /** 这一轮的计划、选项、做好的网页（agentMaker）。只有笔记 AI 助手和知识空间智能体给 */
+  turn?: AgentTurnState;
+  /** 哪个智能体、哪段对话（记忆的出处；知识空间是 agent_conversations.id，笔记 AI 是 thread id） */
+  surface?: 'note' | 'workspace' | 'personal';
+  conversationId?: string;
 };
 
 export type ToolAccess = 'all' | 'teacher' | 'student';
@@ -2019,19 +2027,26 @@ export function createDefaultRegistry(): ToolRegistry {
       return { success: false, data: null, error: 'content is required' };
     }
 
-    const validTypes = ['insight', 'knowledge_gap', 'misconception', 'progress', 'interest', 'strength'];
-    const type = validTypes.includes(reflectionType) ? reflectionType : 'insight';
-
-    await saveReflection({
+    // 记进学生能看、能删的「AI 记得什么」：意思差不多的合并进原来那条；学生关掉了记忆就不记（studentMemory.ts）
+    const result = await rememberProfile({
       userId: context.userId,
       courseId: context.courseId,
-      reflectionType: type as any,
+      type: reflectionType,
       content,
-      topicKeywords: keywords,
-      relevanceScore: Number(args.relevance ?? 0.5),
+      keywords,
+      relevance: args.relevance,
+      conversationId: context.surface === 'workspace' ? context.conversationId ?? null : null,
+      source: {
+        ...(context.surface ? { surface: context.surface } : {}),
+        ...(context.surface === 'note' && context.conversationId ? { thread_id: context.conversationId } : {}),
+        ...(context.noteId && context.surface === 'note' ? { note_id: context.noteId } : {}),
+      },
     });
-
-    return { success: true, data: { saved: true, type, keywords } };
+    if (result.reason === 'off') {
+      return { success: true, data: { saved: false, note: 'The student has turned memory off. Nothing was saved; do not try again.' } };
+    }
+    if (!result.saved) return { success: false, data: null, error: 'Could not save this observation' };
+    return { success: true, data: { saved: true, merged: Boolean(result.merged), keywords } };
   };
 
   registry.registerTool(
@@ -2041,8 +2056,10 @@ export function createDefaultRegistry(): ToolRegistry {
       function: {
         name: 'save_reflection',
         description:
-          'Save an observation about the student for future conversations. Use this to record knowledge gaps, misconceptions, interests, or progress you noticed. ' +
-          'These reflections will be available in future sessions to personalize the interaction.',
+          'Save an observation about the student for future conversations in this course: a knowledge gap, misconception, interest, progress or strength you noticed. ' +
+          'The student can read and delete these under "AI 记得什么", so write one short, respectful sentence in the language the student uses, about their learning ' +
+          '(e.g. "还分不清路径个性化和目标个性化" / "Interested in who benefits from personalized tutors"). ' +
+          'Never save anything they asked you not to remember, and nothing personal or sensitive (health, family, private life). A very similar earlier observation gets updated instead of duplicated.',
         parameters: {
           type: 'object',
           properties: {
@@ -2053,7 +2070,7 @@ export function createDefaultRegistry(): ToolRegistry {
             },
             content: {
               type: 'string',
-              description: 'The reflection content. Be specific and actionable, e.g., "Student confuses correlation with causation when discussing climate data" or "Student shows strong ability to synthesize multiple viewpoints".',
+              description: 'One short sentence the student would recognize as fair, e.g. "常把相关当成因果" or "Good at pulling several views together".',
             },
             keywords: {
               type: 'array',
@@ -2278,6 +2295,9 @@ export function createDefaultRegistry(): ToolRegistry {
     executeSaveTeachingInsight,
     'teacher',
   );
+
+  // 列计划、给选项、做网页（agentMaker.ts，2026-10-11）
+  registerMakerTools(registry);
 
   return registry;
 }

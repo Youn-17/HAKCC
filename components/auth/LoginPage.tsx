@@ -108,7 +108,7 @@ const T = {
     wikiKF: 'Knowledge Forum — Wikipedia',
     auth: {
       loginTitle: '欢迎回来',
-      loginSub: '登录以继续您的知识建构之旅',
+      loginSub: '登录后查看课程，继续讨论',
       registerTitle: '加入社区',
       registerSub: '创建账户，开始协作学习',
       tabs: { login: '登录', register: '注册' },
@@ -147,7 +147,7 @@ const T = {
     wikiKF: 'Knowledge Forum — Wikipedia',
     auth: {
       loginTitle: 'Welcome back',
-      loginSub: 'Sign in to continue your knowledge-building journey',
+      loginSub: 'Sign in to view your courses and continue the discussion',
       registerTitle: 'Join the community',
       registerSub: 'Create an account to start collaborative learning',
       tabs: { login: 'Sign In', register: 'Register' },
@@ -186,7 +186,7 @@ const T = {
     wikiKF: 'Knowledge Forum — Wikipedia',
     auth: {
       loginTitle: '歡迎回來',
-      loginSub: '登入以繼續您的知識建構之旅',
+      loginSub: '登入後查看課程，繼續討論',
       registerTitle: '加入社區',
       registerSub: '創建帳號，開始協作學習',
       tabs: { login: '登入', register: '註冊' },

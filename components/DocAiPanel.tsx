@@ -290,7 +290,7 @@ const DocAiPanel: React.FC<Props> = ({ noteId, courseId, docTitle, docText, refi
       <div ref={listRef} className="flex-1 overflow-y-auto overscroll-contain px-3 py-3">
         {refining && !noText && (
           <div className="mb-2 rounded-xl border px-3 py-2 text-[0.6875rem] leading-5" style={chipStyle(MORANDI.dustyBlue)}>
-            {zh ? '正在深度解析这份 PDF' : 'Parsing this PDF in depth'}
+            {zh ? '正在读取 PDF 内容' : 'Reading PDF content'}
             {progress ? `（${progress.done}/${progress.total} 页）` : ''}
             {zh
               ? '。现在就可以提问，AI 读的是初步文字；解析完成后会自动换成更准确的版本。'

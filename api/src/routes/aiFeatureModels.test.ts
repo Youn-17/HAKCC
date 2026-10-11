@@ -285,3 +285,26 @@ describe('删除服务商配置', () => {
     expect(h.state.updates).toHaveLength(0);
   });
 });
+
+describe('只改启用的模型（不用重输 Key）', () => {
+  it('课程教职改勾选：只动 enabled_models，Key 和接口地址不变，返回里没有密钥', async () => {
+    const res = await call('PATCH', '/courses/course-1/ai-configs/deepseek', { enabled_models: ['deepseek-flash'] });
+    expect(res.status).toBe(200);
+    const row = h.state.rows.find(r => r.id === 'r-deepseek')!;
+    expect(row.enabled_models).toEqual(['deepseek-flash']);
+    expect(row.api_key_encrypted).toBe(KEY);
+    expect(res.json.config.enabledModels).toEqual(['deepseek-flash']);
+    expectNoSecrets(res.text.replace(SECRET_ENDPOINT, ''));
+    expect(res.text).not.toContain('enc:v1');
+  });
+
+  it('空名单 400；没配过的服务商 404；学生、别门课的教师 403', async () => {
+    expect((await call('PATCH', '/courses/course-1/ai-configs/deepseek', { enabled_models: [] })).status).toBe(400);
+    expect((await call('PATCH', '/courses/course-1/ai-configs/openai', { enabled_models: ['gpt-4o'] })).status).toBe(404);
+    h.state.user = { id: 'student-1', role: 'student' };
+    expect((await call('PATCH', '/courses/course-1/ai-configs/deepseek', { enabled_models: ['deepseek-flash'] })).status).toBe(403);
+    h.state.user = { id: 'teacher-2', role: 'teacher' };
+    expect((await call('PATCH', '/courses/course-1/ai-configs/deepseek', { enabled_models: ['deepseek-flash'] })).status).toBe(403);
+    expect(h.state.rows.find(r => r.id === 'r-deepseek')!.enabled_models).toEqual(['deepseek-flash', 'deepseek-v4-pro']);
+  });
+});
